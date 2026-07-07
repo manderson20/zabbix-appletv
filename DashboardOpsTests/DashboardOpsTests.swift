@@ -274,4 +274,38 @@ struct DashboardOpsTests {
         #expect(triggerHosts.first?.hosts.first?.name == "Bruno-1")
     }
 
+    @Test func zabbixAPIResponseDecodesHostInterfaces() throws {
+        let responseData = try #require(
+            """
+            {
+              "jsonrpc": "2.0",
+              "result": [
+                { "hostid": "10359", "interfaces": [ { "type": "1", "available": "0" }, { "type": "2", "available": "1" } ] }
+              ],
+              "id": 1
+            }
+            """.data(using: .utf8)
+        )
+
+        let response = try JSONDecoder().decode(ZabbixAPIResponse<[ZabbixHostAvailability]>.self, from: responseData)
+        let hosts = try response.resolvedResult()
+
+        #expect(hosts.first?.interfaces.count == 2)
+        #expect(hosts.first?.interfaces[1].type.intValue == 2)
+        #expect(hosts.first?.interfaces[1].available.intValue == 1)
+    }
+
+    @Test func zabbixAPIResponseParsesCountOutputAsInt() throws {
+        let responseData = try #require(
+            """
+            { "jsonrpc": "2.0", "result": "912", "id": 1 }
+            """.data(using: .utf8)
+        )
+
+        let response = try JSONDecoder().decode(ZabbixAPIResponse<String>.self, from: responseData)
+        let count = try response.resolvedResult()
+
+        #expect(Int(count) == 912)
+    }
+
 }

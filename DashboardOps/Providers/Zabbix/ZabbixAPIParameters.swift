@@ -110,3 +110,44 @@ nonisolated struct ZabbixTriggerGetParameters: Encodable, Sendable {
         self.selectHosts = selectHosts
     }
 }
+
+/// Filters `host.get`/`item.get` to enabled objects only.
+nonisolated struct ZabbixEnabledFilter: Encodable, Sendable {
+    /// 0 = enabled, matching Zabbix's own status convention.
+    let status = 0
+}
+
+/// Parameters for `host.get` when resolving interface availability for the "hostavail" widget.
+nonisolated struct ZabbixHostAvailabilityParameters: Encodable, Sendable {
+    /// Host fields to return.
+    let output: [String]
+
+    /// Requests each host's interfaces with their type and availability.
+    let selectInterfaces: [String]
+
+    /// Restricts results to enabled hosts.
+    let filter: ZabbixEnabledFilter
+
+    init(output: [String] = ["hostid"], selectInterfaces: [String] = ["type", "available"]) {
+        self.output = output
+        self.selectInterfaces = selectInterfaces
+        self.filter = ZabbixEnabledFilter()
+    }
+}
+
+/// Parameters for a `host.get` call that returns only a count of enabled hosts.
+nonisolated struct ZabbixHostCountParameters: Encodable, Sendable {
+    let countOutput = true
+    let filter = ZabbixEnabledFilter()
+}
+
+/// Parameters for an `item.get` call that returns only a count of enabled items.
+nonisolated struct ZabbixItemCountParameters: Encodable, Sendable {
+    let countOutput = true
+    let filter = ZabbixEnabledFilter()
+}
+
+/// Parameters for a `problem.get` call that returns only a count of active problems.
+nonisolated struct ZabbixProblemCountParameters: Encodable, Sendable {
+    let countOutput = true
+}

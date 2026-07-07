@@ -152,6 +152,53 @@ actor ZabbixAPIClient {
         )
     }
 
+    /// Fetches enabled hosts with their monitoring interfaces, for the "hostavail" widget.
+    func hostsWithInterfaces(serverBaseURL: URL, authToken: String) async throws -> [ZabbixHostAvailability] {
+        try await send(
+            method: "host.get",
+            params: ZabbixHostAvailabilityParameters(),
+            serverBaseURL: serverBaseURL,
+            authToken: authToken,
+            resultType: [ZabbixHostAvailability].self
+        )
+    }
+
+    /// Counts enabled hosts.
+    func hostCount(serverBaseURL: URL, authToken: String) async throws -> Int {
+        let count = try await send(
+            method: "host.get",
+            params: ZabbixHostCountParameters(),
+            serverBaseURL: serverBaseURL,
+            authToken: authToken,
+            resultType: String.self
+        )
+        return Int(count) ?? 0
+    }
+
+    /// Counts enabled items.
+    func itemCount(serverBaseURL: URL, authToken: String) async throws -> Int {
+        let count = try await send(
+            method: "item.get",
+            params: ZabbixItemCountParameters(),
+            serverBaseURL: serverBaseURL,
+            authToken: authToken,
+            resultType: String.self
+        )
+        return Int(count) ?? 0
+    }
+
+    /// Counts currently active problems.
+    func problemCount(serverBaseURL: URL, authToken: String) async throws -> Int {
+        let count = try await send(
+            method: "problem.get",
+            params: ZabbixProblemCountParameters(),
+            serverBaseURL: serverBaseURL,
+            authToken: authToken,
+            resultType: String.self
+        )
+        return Int(count) ?? 0
+    }
+
     private func send<Parameters, Result>(
         method: String,
         params: Parameters,
