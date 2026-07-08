@@ -420,6 +420,18 @@ actor ZabbixAPIClient {
         )
     }
 
+    /// Fetches an uploaded image's base64-encoded content, e.g. a map's background image.
+    func image(serverBaseURL: URL, authToken: String, imageID: String) async throws -> ZabbixImage? {
+        let images = try await send(
+            method: "image.get",
+            params: ZabbixImageGetParameters(imageID: imageID),
+            serverBaseURL: serverBaseURL,
+            authToken: authToken,
+            resultType: [ZabbixImage].self
+        )
+        return images.first
+    }
+
     private func send<Parameters, Result>(
         method: String,
         params: Parameters,

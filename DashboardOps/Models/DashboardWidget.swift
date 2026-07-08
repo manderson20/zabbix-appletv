@@ -375,6 +375,9 @@ nonisolated struct NetworkMapDiagram: Sendable {
     /// Map canvas height in pixels.
     let height: Int
 
+    /// Decoded background image data, if the map has one configured.
+    let backgroundImageData: Data?
+
     /// Elements placed on the map.
     let elements: [NetworkMapElement]
 

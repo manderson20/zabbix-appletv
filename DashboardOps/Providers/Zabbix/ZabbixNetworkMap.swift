@@ -30,6 +30,9 @@ nonisolated struct ZabbixNetworkMap: Decodable, Sendable {
     /// Map canvas height in pixels.
     let height: ZabbixNumericString
 
+    /// Background image identifier. "0" means no background image is configured.
+    let backgroundid: String
+
     /// Elements (hosts, images, host groups, or sub-maps) placed on the map.
     let selements: [ZabbixMapElement]
 
@@ -91,4 +94,13 @@ nonisolated struct ZabbixMapLinkTrigger: Decodable, Sendable {
 
     /// Override color as a "RRGGBB" hex string, applied while this trigger is in the PROBLEM state.
     let color: String
+}
+
+/// An uploaded image's base64-encoded content, as returned by `image.get` with `select_image`.
+nonisolated struct ZabbixImage: Decodable, Sendable {
+    /// Zabbix image identifier.
+    let imageid: String
+
+    /// Base64-encoded image data.
+    let image: String
 }

@@ -452,6 +452,7 @@ struct DashboardOpsTests {
                   "name": "District High Level Topology",
                   "width": "1800",
                   "height": "850",
+                  "backgroundid": "191",
                   "selements": [
                     { "selementid": "6", "elementtype": "0", "label": "{HOST.NAME}", "x": "100", "y": "50", "elements": [ { "hostid": "10084" } ] },
                     { "selementid": "5", "elementtype": "4", "label": "Core Switch", "x": "300", "y": "50", "elements": [] }
@@ -478,6 +479,27 @@ struct DashboardOpsTests {
         #expect(map.selements.count == 2)
         #expect(map.selements[0].elements.first?.hostid == "10084")
         #expect(map.links.first?.linktriggers.first?.color == "DD0000")
+        #expect(map.backgroundid == "191")
+    }
+
+    @Test func zabbixAPIResponseDecodesImageBase64Content() throws {
+        let responseData = try #require(
+            """
+            {
+              "jsonrpc": "2.0",
+              "result": [
+                { "imageid": "191", "image": "aGVsbG8=" }
+              ],
+              "id": 1
+            }
+            """.data(using: .utf8)
+        )
+
+        let response = try JSONDecoder().decode(ZabbixAPIResponse<[ZabbixImage]>.self, from: responseData)
+        let image = try #require(response.resolvedResult().first)
+        let decodedData = try #require(Data(base64Encoded: image.image))
+
+        #expect(String(data: decodedData, encoding: .utf8) == "hello")
     }
 
 }

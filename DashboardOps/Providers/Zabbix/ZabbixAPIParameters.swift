@@ -497,7 +497,7 @@ nonisolated struct ZabbixNetworkMapGetParameters: Encodable, Sendable {
 
     init(
         mapID: String,
-        output: [String] = ["sysmapid", "name", "width", "height"],
+        output: [String] = ["sysmapid", "name", "width", "height", "backgroundid"],
         selectSelements: String = "extend",
         selectLinks: String = "extend"
     ) {
@@ -519,5 +519,19 @@ nonisolated struct ZabbixSLAGetParameters: Encodable, Sendable {
     init(slaIDs: [String]? = nil, output: [String] = ["slaid", "name", "slo"]) {
         self.slaids = slaIDs
         self.output = output
+    }
+}
+
+/// Parameters for `image.get` when fetching a single image's base64-encoded content.
+nonisolated struct ZabbixImageGetParameters: Encodable, Sendable {
+    /// Image identifier to fetch.
+    let imageids: [String]
+
+    /// Requests the base64-encoded image content, not just its metadata.
+    let select_image: Bool
+
+    init(imageID: String) {
+        self.imageids = [imageID]
+        self.select_image = true
     }
 }

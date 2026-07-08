@@ -8,6 +8,7 @@
 import Charts
 import MapKit
 import SwiftUI
+import UIKit
 
 struct GeomapWidgetContentView: View {
     let markers: [GeoMapMarker]
@@ -50,6 +51,10 @@ struct GeomapWidgetContentView: View {
 struct NetworkMapWidgetContentView: View {
     let diagram: NetworkMapDiagram
 
+    private var backgroundImage: UIImage? {
+        diagram.backgroundImageData.flatMap { UIImage(data: $0) }
+    }
+
     var body: some View {
         if diagram.elements.isEmpty {
             Text("This map has no elements")
@@ -60,27 +65,37 @@ struct NetworkMapWidgetContentView: View {
                 let scaleX = geometry.size.width / CGFloat(max(diagram.width, 1))
                 let scaleY = geometry.size.height / CGFloat(max(diagram.height, 1))
 
-                Canvas { context, _ in
-                    for link in diagram.links {
-                        var path = Path()
-                        path.move(to: CGPoint(x: CGFloat(link.fromX) * scaleX, y: CGFloat(link.fromY) * scaleY))
-                        path.addLine(to: CGPoint(x: CGFloat(link.toX) * scaleX, y: CGFloat(link.toY) * scaleY))
-                        context.stroke(path, with: .color(Color(hex: link.colorHex) ?? .gray), lineWidth: 2)
+                ZStack(alignment: .topLeading) {
+                    if let backgroundImage {
+                        Image(uiImage: backgroundImage)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: geometry.size.width, height: geometry.size.height)
+                            .clipped()
                     }
-                }
 
-                ForEach(diagram.elements) { element in
-                    VStack(spacing: 2) {
-                        Circle()
-                            .fill(element.severity == 0 ? Color.green : severityIndicatorColor(for: element.severity))
-                            .frame(width: 14, height: 14)
-                        Text(element.label)
-                            .font(.system(size: 12, weight: .medium, design: .rounded))
-                            .foregroundStyle(DashboardTheme.primaryText)
-                            .lineLimit(1)
-                            .fixedSize()
+                    Canvas { context, _ in
+                        for link in diagram.links {
+                            var path = Path()
+                            path.move(to: CGPoint(x: CGFloat(link.fromX) * scaleX, y: CGFloat(link.fromY) * scaleY))
+                            path.addLine(to: CGPoint(x: CGFloat(link.toX) * scaleX, y: CGFloat(link.toY) * scaleY))
+                            context.stroke(path, with: .color(Color(hex: link.colorHex) ?? .gray), lineWidth: 2)
+                        }
                     }
-                    .position(x: CGFloat(element.x) * scaleX, y: CGFloat(element.y) * scaleY)
+
+                    ForEach(diagram.elements) { element in
+                        VStack(spacing: 2) {
+                            Circle()
+                                .fill(element.severity == 0 ? Color.green : severityIndicatorColor(for: element.severity))
+                                .frame(width: 14, height: 14)
+                            Text(element.label)
+                                .font(.system(size: 12, weight: .medium, design: .rounded))
+                                .foregroundStyle(DashboardTheme.primaryText)
+                                .lineLimit(1)
+                                .fixedSize()
+                        }
+                        .position(x: CGFloat(element.x) * scaleX, y: CGFloat(element.y) * scaleY)
+                    }
                 }
             }
         }

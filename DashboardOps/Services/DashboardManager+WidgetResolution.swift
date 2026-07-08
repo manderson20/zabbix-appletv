@@ -458,6 +458,8 @@ extension DashboardManager {
             return .unsupported(rawType: widget.type)
         }
 
+        let backgroundImageData = try await backgroundImageData(forImageID: map.backgroundid, serverBaseURL: serverBaseURL, authToken: authToken)
+
         let hostIDs = map.selements.compactMap { $0.elementtype.intValue == 0 ? $0.elements.first?.hostid : nil }
         let hosts = try await zabbixAPIClient.hosts(serverBaseURL: serverBaseURL, authToken: authToken, hostIDs: hostIDs.isEmpty ? nil : hostIDs)
         let hostNameByID = Dictionary(uniqueKeysWithValues: hosts.map { ($0.hostid, $0.name) })
@@ -485,7 +487,25 @@ extension DashboardManager {
             return NetworkMapLink(id: link.linkid, fromX: from.x, fromY: from.y, toX: to.x, toY: to.y, colorHex: overrideColor ?? link.color)
         }
 
-        return .networkMap(NetworkMapDiagram(width: map.width.intValue, height: map.height.intValue, elements: elements, links: links))
+        return .networkMap(
+            NetworkMapDiagram(
+                width: map.width.intValue,
+                height: map.height.intValue,
+                backgroundImageData: backgroundImageData,
+                elements: elements,
+                links: links
+            )
+        )
+    }
+
+    /// Fetches and decodes a map's background image. Returns `nil` when no background is
+    /// configured ("0", Zabbix's convention for "none") or the image fails to decode.
+    private func backgroundImageData(forImageID imageID: String, serverBaseURL: URL, authToken: String) async throws -> Data? {
+        guard imageID != "0", !imageID.isEmpty,
+              let image = try await zabbixAPIClient.image(serverBaseURL: serverBaseURL, authToken: authToken, imageID: imageID) else {
+            return nil
+        }
+        return Data(base64Encoded: image.image)
     }
 
     // MARK: - Map navigation tree
