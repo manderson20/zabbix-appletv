@@ -106,6 +106,18 @@ private struct DashboardWidgetCardView: View {
             LineChartWidgetContentView(series: series)
         case let .pieChart(slices):
             PieChartWidgetContentView(slices: slices)
+        case let .geomap(markers):
+            GeomapWidgetContentView(markers: markers)
+        case let .networkMap(diagram):
+            NetworkMapWidgetContentView(diagram: diagram)
+        case let .mapList(maps):
+            MapListWidgetContentView(maps: maps)
+        case let .hostList(hosts):
+            HostListWidgetContentView(hosts: hosts)
+        case let .itemList(items):
+            ItemListWidgetContentView(items: items)
+        case let .slaReport(entries):
+            SLAReportWidgetContentView(entries: entries)
         case let .unsupported(rawType):
             Text("The \"\(rawType)\" widget isn't supported yet.")
                 .font(.system(size: 18, weight: .regular, design: .rounded))

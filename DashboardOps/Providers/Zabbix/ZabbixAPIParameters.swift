@@ -439,3 +439,85 @@ nonisolated struct ZabbixHostListParameters: Encodable, Sendable {
         self.filter = ZabbixEnabledFilter()
     }
 }
+
+/// Parameters for `host.get` when resolving hosts with geographic coordinates for the geomap widget.
+nonisolated struct ZabbixHostInventoryParameters: Encodable, Sendable {
+    /// Restricts to these host groups, when specified.
+    let groupids: [String]?
+
+    /// Restricts to these hosts, when specified.
+    let hostids: [String]?
+
+    /// Host fields to return.
+    let output: [String]
+
+    /// Requests each host's inventory data.
+    let selectInventory: [String]
+
+    /// Restricts results to enabled hosts.
+    let filter: ZabbixEnabledFilter
+
+    init(
+        groupIDs: [String]? = nil,
+        hostIDs: [String]? = nil,
+        output: [String] = ["hostid", "name"],
+        selectInventory: [String] = ["location_lat", "location_lon"]
+    ) {
+        self.groupids = groupIDs
+        self.hostids = hostIDs
+        self.output = output
+        self.selectInventory = selectInventory
+        self.filter = ZabbixEnabledFilter()
+    }
+}
+
+/// Parameters for `map.get` when listing available network maps by name only.
+nonisolated struct ZabbixMapListParameters: Encodable, Sendable {
+    /// Map fields to return.
+    let output: [String]
+
+    init(output: [String] = ["sysmapid", "name"]) {
+        self.output = output
+    }
+}
+
+/// Parameters for `map.get` when fetching a single map's full topology.
+nonisolated struct ZabbixNetworkMapGetParameters: Encodable, Sendable {
+    /// Map identifier to fetch.
+    let sysmapids: [String]
+
+    /// Map fields to return.
+    let output: [String]
+
+    /// Requests full element details.
+    let selectSelements: String
+
+    /// Requests full link details.
+    let selectLinks: String
+
+    init(
+        mapID: String,
+        output: [String] = ["sysmapid", "name", "width", "height"],
+        selectSelements: String = "extend",
+        selectLinks: String = "extend"
+    ) {
+        self.sysmapids = [mapID]
+        self.output = output
+        self.selectSelements = selectSelements
+        self.selectLinks = selectLinks
+    }
+}
+
+/// Parameters for `sla.get`.
+nonisolated struct ZabbixSLAGetParameters: Encodable, Sendable {
+    /// SLA identifiers to fetch, when specified.
+    let slaids: [String]?
+
+    /// SLA fields to return.
+    let output: [String]
+
+    init(slaIDs: [String]? = nil, output: [String] = ["slaid", "name", "slo"]) {
+        self.slaids = slaIDs
+        self.output = output
+    }
+}

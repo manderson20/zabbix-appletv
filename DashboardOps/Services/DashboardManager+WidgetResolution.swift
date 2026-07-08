@@ -154,9 +154,31 @@ extension DashboardManager {
         case "piechart":
             return try await resolvePieChart(widget, serverBaseURL: serverBaseURL, authToken: authToken)
 
+        case "geomap":
+            return try await resolveGeomap(widget, serverBaseURL: serverBaseURL, authToken: authToken)
+
+        case "map":
+            return try await resolveNetworkMap(widget, serverBaseURL: serverBaseURL, authToken: authToken)
+
+        case "navtree":
+            return try await resolveMapNavigationTree(serverBaseURL: serverBaseURL, authToken: authToken)
+
+        case "hostnavigator":
+            return try await resolveHostNavigator(widget, serverBaseURL: serverBaseURL, authToken: authToken)
+
+        case "itemnavigator":
+            return try await resolveItemNavigator(widget, serverBaseURL: serverBaseURL, authToken: authToken)
+
+        case "slareport":
+            return try await resolveSLAReport(widget, serverBaseURL: serverBaseURL, authToken: authToken)
+
         // "graphprototype" (low-level discovery graphs) falls through to unsupported: resolving it
         // requires walking discovered hosts/items from a prototype pattern, a distinct and deeper
         // feature than every other widget here.
+        //
+        // "favgraphs"/"favmaps" (favorite graphs/maps) also fall through: favorites are per-user
+        // frontend session state (Zabbix's "profile" idx storage), not exposed by the JSON-RPC API
+        // — verified there is no favorite.get or equivalent method.
         default:
             return .unsupported(rawType: widget.type)
         }
@@ -360,27 +382,20 @@ extension DashboardManager {
     // MARK: - Problem hosts
 
     private func resolveProblemHosts(serverBaseURL: URL, authToken: String) async throws -> DashboardWidgetKind {
-        let problems = try await zabbixAPIClient.problems(serverBaseURL: serverBaseURL, authToken: authToken)
-        let triggerIDs = Array(Set(problems.map(\.objectid)))
-        let triggerHosts = try await zabbixAPIClient.triggerHosts(serverBaseURL: serverBaseURL, authToken: authToken, triggerIDs: triggerIDs)
-        let hostIDByTriggerID = Dictionary(uniqueKeysWithValues: triggerHosts.map { ($0.triggerid, $0.hosts.first?.hostid) })
-
-        let hostIDs = Array(Set(problems.compactMap { hostIDByTriggerID[$0.objectid] ?? nil }))
+        let resolved = try await activeProblemsWithHostID(serverBaseURL: serverBaseURL, authToken: authToken)
+        let hostIDs = Array(Set(resolved.map(\.hostID)))
         let hostGroups = try await zabbixAPIClient.hostGroups(serverBaseURL: serverBaseURL, authToken: authToken, hostIDs: hostIDs)
         let groupsByHostID = Dictionary(uniqueKeysWithValues: hostGroups.map { ($0.hostid, $0.hostgroups) })
 
         var summaryByGroup: [String: (name: String, count: Int, maxSeverity: Int)] = [:]
 
-        for problem in problems {
-            guard let hostID = hostIDByTriggerID[problem.objectid] ?? nil,
-                  let groups = groupsByHostID[hostID] else {
-                continue
-            }
+        for entry in resolved {
+            guard let groups = groupsByHostID[entry.hostID] else { continue }
 
             for group in groups {
                 var summary = summaryByGroup[group.groupid] ?? (name: group.name, count: 0, maxSeverity: 0)
                 summary.count += 1
-                summary.maxSeverity = max(summary.maxSeverity, problem.severity.intValue)
+                summary.maxSeverity = max(summary.maxSeverity, entry.problem.severity.intValue)
                 summaryByGroup[group.groupid] = summary
             }
         }
@@ -389,6 +404,189 @@ extension DashboardManager {
             summaryByGroup.map { groupID, summary in
                 HostGroupProblemSummary(id: groupID, groupName: summary.name, count: summary.count, maxSeverity: summary.maxSeverity)
             }.sorted { $0.maxSeverity == $1.maxSeverity ? $0.count > $1.count : $0.maxSeverity > $1.maxSeverity }
+        )
+    }
+
+    // MARK: - Geomap
+
+    private func resolveGeomap(
+        _ widget: ZabbixWidget,
+        serverBaseURL: URL,
+        authToken: String
+    ) async throws -> DashboardWidgetKind {
+        let groupIDs = Self.indexedValues(widget.fields, name: "groupids")
+        let hostIDs = Self.indexedValues(widget.fields, name: "hostids")
+
+        let hosts = try await zabbixAPIClient.hostsWithInventory(
+            serverBaseURL: serverBaseURL,
+            authToken: authToken,
+            groupIDs: groupIDs.isEmpty ? nil : groupIDs,
+            hostIDs: hostIDs.isEmpty ? nil : hostIDs
+        )
+
+        let severityByHostID = try await maxSeverityByHostID(serverBaseURL: serverBaseURL, authToken: authToken)
+
+        let markers = hosts.compactMap { host -> GeoMapMarker? in
+            guard let latitude = host.inventory.locationLatitude.flatMap(Double.init),
+                  let longitude = host.inventory.locationLongitude.flatMap(Double.init) else {
+                return nil
+            }
+            return GeoMapMarker(
+                id: host.hostid,
+                hostName: host.name,
+                latitude: latitude,
+                longitude: longitude,
+                severity: severityByHostID[host.hostid] ?? 0
+            )
+        }
+
+        return .geomap(markers)
+    }
+
+    // MARK: - Network map
+
+    /// The "sysmapid" field name (a single scalar map reference) is Zabbix's standard convention;
+    /// the alternative "compatible widget as data source" configuration isn't implemented — this
+    /// resolves only a directly configured map.
+    private func resolveNetworkMap(
+        _ widget: ZabbixWidget,
+        serverBaseURL: URL,
+        authToken: String
+    ) async throws -> DashboardWidgetKind {
+        guard let mapID = Self.fieldValue(widget.fields, name: "sysmapid"),
+              let map = try await zabbixAPIClient.networkMap(serverBaseURL: serverBaseURL, authToken: authToken, mapID: mapID) else {
+            return .unsupported(rawType: widget.type)
+        }
+
+        let hostIDs = map.selements.compactMap { $0.elementtype.intValue == 0 ? $0.elements.first?.hostid : nil }
+        let hosts = try await zabbixAPIClient.hosts(serverBaseURL: serverBaseURL, authToken: authToken, hostIDs: hostIDs.isEmpty ? nil : hostIDs)
+        let hostNameByID = Dictionary(uniqueKeysWithValues: hosts.map { ($0.hostid, $0.name) })
+        let severityByHostID = try await maxSeverityByHostID(serverBaseURL: serverBaseURL, authToken: authToken)
+
+        let activeTriggerIDs = Set(try await zabbixAPIClient.problems(serverBaseURL: serverBaseURL, authToken: authToken).map(\.objectid))
+
+        var severityByElementID: [String: Int] = [:]
+        let elements = map.selements.map { selement -> NetworkMapElement in
+            let hostID = selement.elementtype.intValue == 0 ? selement.elements.first?.hostid : nil
+            let label = hostID.flatMap { hostNameByID[$0] } ?? Self.cleanedMapLabel(selement.label)
+            let severity = hostID.flatMap { severityByHostID[$0] } ?? 0
+            severityByElementID[selement.selementid] = severity
+
+            return NetworkMapElement(id: selement.selementid, label: label, x: selement.x.intValue, y: selement.y.intValue, severity: severity)
+        }
+
+        let elementsByID = Dictionary(uniqueKeysWithValues: elements.map { ($0.id, $0) })
+        let links = map.links.compactMap { link -> NetworkMapLink? in
+            guard let from = elementsByID[link.selementid1], let to = elementsByID[link.selementid2] else {
+                return nil
+            }
+            let overrideColor = link.linktriggers.first { activeTriggerIDs.contains($0.triggerid) }?.color
+
+            return NetworkMapLink(id: link.linkid, fromX: from.x, fromY: from.y, toX: to.x, toY: to.y, colorHex: overrideColor ?? link.color)
+        }
+
+        return .networkMap(NetworkMapDiagram(width: map.width.intValue, height: map.height.intValue, elements: elements, links: links))
+    }
+
+    // MARK: - Map navigation tree
+
+    /// Renders as a flat list of available map names. The tree's whole purpose is letting a user
+    /// click through a hierarchy to choose which map a paired Map widget shows — a selection model
+    /// with no clear unattended-kiosk equivalent, per the static-display treatment agreed for
+    /// navigator-style widgets.
+    private func resolveMapNavigationTree(serverBaseURL: URL, authToken: String) async throws -> DashboardWidgetKind {
+        let maps = try await zabbixAPIClient.maps(serverBaseURL: serverBaseURL, authToken: authToken)
+        return .mapList(maps.map { MapListEntry(id: $0.sysmapid, name: $0.name) })
+    }
+
+    // MARK: - Host navigator
+
+    /// Static list, per the agreed treatment for navigator-style widgets on an unattended kiosk
+    /// display — the interactive drill-down into other widgets isn't implemented.
+    private func resolveHostNavigator(
+        _ widget: ZabbixWidget,
+        serverBaseURL: URL,
+        authToken: String
+    ) async throws -> DashboardWidgetKind {
+        let groupIDs = Self.indexedValues(widget.fields, name: "groupids")
+        let hostIDs = Self.indexedValues(widget.fields, name: "hostids")
+
+        let hosts = try await zabbixAPIClient.hosts(
+            serverBaseURL: serverBaseURL,
+            authToken: authToken,
+            groupIDs: groupIDs.isEmpty ? nil : groupIDs,
+            hostIDs: hostIDs.isEmpty ? nil : hostIDs
+        )
+
+        let resolved = try await activeProblemsWithHostID(serverBaseURL: serverBaseURL, authToken: authToken)
+        var countByHostID: [String: Int] = [:]
+        var maxSeverityByHostID: [String: Int] = [:]
+        for entry in resolved {
+            countByHostID[entry.hostID, default: 0] += 1
+            maxSeverityByHostID[entry.hostID] = max(maxSeverityByHostID[entry.hostID] ?? 0, entry.problem.severity.intValue)
+        }
+
+        return .hostList(
+            hosts.prefix(100).map { host in
+                HostListEntry(
+                    id: host.hostid,
+                    name: host.name,
+                    problemCount: countByHostID[host.hostid] ?? 0,
+                    maxSeverity: maxSeverityByHostID[host.hostid] ?? 0
+                )
+            }
+        )
+    }
+
+    // MARK: - Item navigator
+
+    /// Static list, per the agreed treatment for navigator-style widgets.
+    private func resolveItemNavigator(
+        _ widget: ZabbixWidget,
+        serverBaseURL: URL,
+        authToken: String
+    ) async throws -> DashboardWidgetKind {
+        let groupIDs = Self.indexedValues(widget.fields, name: "groupids")
+        let hostIDs = Self.indexedValues(widget.fields, name: "hostids")
+        let namePattern = Self.fieldValue(widget.fields, name: "item")
+
+        let items = try await zabbixAPIClient.itemsMatching(
+            serverBaseURL: serverBaseURL,
+            authToken: authToken,
+            groupIDs: groupIDs.isEmpty ? nil : groupIDs,
+            hostIDs: hostIDs.isEmpty ? nil : hostIDs,
+            namePattern: namePattern
+        )
+
+        return .itemList(
+            items.prefix(100).map { item in
+                ItemListEntry(
+                    id: item.itemid,
+                    name: item.name,
+                    hostName: item.hosts.first?.name ?? "",
+                    lastValue: item.lastvalue ?? "\u{2014}",
+                    units: item.units ?? ""
+                )
+            }
+        )
+    }
+
+    // MARK: - SLA report
+
+    /// Shows each SLA's configured target only, not a computed period report — see
+    /// `ZabbixSLA`'s documentation for why.
+    private func resolveSLAReport(
+        _ widget: ZabbixWidget,
+        serverBaseURL: URL,
+        authToken: String
+    ) async throws -> DashboardWidgetKind {
+        let slaID = Self.fieldValue(widget.fields, name: "slaid")
+        let slas = try await zabbixAPIClient.slas(serverBaseURL: serverBaseURL, authToken: authToken, slaIDs: slaID.map { [$0] })
+
+        return .slaReport(
+            slas.map { sla in
+                SLAReportEntry(id: sla.slaid, name: sla.name, targetSLO: "\(sla.slo)%")
+            }
         )
     }
 
@@ -695,6 +893,48 @@ extension DashboardManager {
         return Dictionary(uniqueKeysWithValues: triggerHosts.compactMap { entry in
             entry.hosts.first.map { (entry.triggerid, $0.name) }
         })
+    }
+
+    /// Resolves each active problem's host ID, dropping problems whose trigger's host can't be
+    /// resolved. Shared by widgets that need to correlate problems with hosts (problem hosts,
+    /// geomap, network map, host navigator).
+    private func activeProblemsWithHostID(
+        serverBaseURL: URL,
+        authToken: String
+    ) async throws -> [(problem: ZabbixProblemSummary, hostID: String)] {
+        let problems = try await zabbixAPIClient.problems(serverBaseURL: serverBaseURL, authToken: authToken)
+        let triggerIDs = Array(Set(problems.map(\.objectid)))
+        let triggerHosts = try await zabbixAPIClient.triggerHosts(serverBaseURL: serverBaseURL, authToken: authToken, triggerIDs: triggerIDs)
+        let hostIDByTriggerID = Dictionary(uniqueKeysWithValues: triggerHosts.compactMap { entry in
+            entry.hosts.first.map { (entry.triggerid, $0.hostid) }
+        })
+
+        return problems.compactMap { problem in
+            hostIDByTriggerID[problem.objectid].map { (problem, $0) }
+        }
+    }
+
+    /// Computes the highest active-problem severity per host.
+    private func maxSeverityByHostID(serverBaseURL: URL, authToken: String) async throws -> [String: Int] {
+        let resolved = try await activeProblemsWithHostID(serverBaseURL: serverBaseURL, authToken: authToken)
+        var result: [String: Int] = [:]
+        for entry in resolved {
+            result[entry.hostID] = max(result[entry.hostID] ?? 0, entry.problem.severity.intValue)
+        }
+        return result
+    }
+
+    /// Strips unresolved macro placeholders like "{HOST.NAME}" from a map element's configured
+    /// label, used as a fallback when the element isn't a host (whose real name is resolved
+    /// separately via its host ID).
+    private static func cleanedMapLabel(_ label: String) -> String {
+        let withoutNewlines = label.replacingOccurrences(of: "\r\n", with: " ").trimmingCharacters(in: .whitespaces)
+        guard let regex = try? NSRegularExpression(pattern: "\\{[^}]*\\}") else {
+            return withoutNewlines
+        }
+        let range = NSRange(withoutNewlines.startIndex..., in: withoutNewlines)
+        return regex.stringByReplacingMatches(in: withoutNewlines, range: range, withTemplate: "")
+            .trimmingCharacters(in: .whitespaces)
     }
 
     private static func interfaceTypeName(_ type: Int) -> String {

@@ -370,6 +370,56 @@ actor ZabbixAPIClient {
         )
     }
 
+    /// Fetches hosts with their inventory location fields, for the geomap widget.
+    func hostsWithInventory(
+        serverBaseURL: URL,
+        authToken: String,
+        groupIDs: [String]? = nil,
+        hostIDs: [String]? = nil
+    ) async throws -> [ZabbixHostWithInventory] {
+        try await send(
+            method: "host.get",
+            params: ZabbixHostInventoryParameters(groupIDs: groupIDs, hostIDs: hostIDs),
+            serverBaseURL: serverBaseURL,
+            authToken: authToken,
+            resultType: [ZabbixHostWithInventory].self
+        )
+    }
+
+    /// Lists available network maps by name.
+    func maps(serverBaseURL: URL, authToken: String) async throws -> [ZabbixMapSummary] {
+        try await send(
+            method: "map.get",
+            params: ZabbixMapListParameters(),
+            serverBaseURL: serverBaseURL,
+            authToken: authToken,
+            resultType: [ZabbixMapSummary].self
+        )
+    }
+
+    /// Fetches a single network map's full topology (elements and links).
+    func networkMap(serverBaseURL: URL, authToken: String, mapID: String) async throws -> ZabbixNetworkMap? {
+        let maps = try await send(
+            method: "map.get",
+            params: ZabbixNetworkMapGetParameters(mapID: mapID),
+            serverBaseURL: serverBaseURL,
+            authToken: authToken,
+            resultType: [ZabbixNetworkMap].self
+        )
+        return maps.first
+    }
+
+    /// Fetches SLA definitions.
+    func slas(serverBaseURL: URL, authToken: String, slaIDs: [String]? = nil) async throws -> [ZabbixSLA] {
+        try await send(
+            method: "sla.get",
+            params: ZabbixSLAGetParameters(slaIDs: slaIDs),
+            serverBaseURL: serverBaseURL,
+            authToken: authToken,
+            resultType: [ZabbixSLA].self
+        )
+    }
+
     private func send<Parameters, Result>(
         method: String,
         params: Parameters,

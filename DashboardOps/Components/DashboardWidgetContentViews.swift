@@ -6,7 +6,207 @@
 //
 
 import Charts
+import MapKit
 import SwiftUI
+
+struct GeomapWidgetContentView: View {
+    let markers: [GeoMapMarker]
+
+    private var cameraPosition: MapCameraPosition {
+        guard !markers.isEmpty else {
+            return .automatic
+        }
+
+        let latitudes = markers.map(\.latitude)
+        let longitudes = markers.map(\.longitude)
+        let center = CLLocationCoordinate2D(
+            latitude: (latitudes.min()! + latitudes.max()!) / 2,
+            longitude: (longitudes.min()! + longitudes.max()!) / 2
+        )
+        let span = MKCoordinateSpan(
+            latitudeDelta: max((latitudes.max()! - latitudes.min()!) * 1.4, 1),
+            longitudeDelta: max((longitudes.max()! - longitudes.min()!) * 1.4, 1)
+        )
+        return .region(MKCoordinateRegion(center: center, span: span))
+    }
+
+    var body: some View {
+        if markers.isEmpty {
+            Text("No hosts with valid coordinates")
+                .font(.system(size: 16, weight: .regular, design: .rounded))
+                .foregroundStyle(DashboardTheme.secondaryText)
+        } else {
+            Map(initialPosition: cameraPosition) {
+                ForEach(markers) { marker in
+                    Marker(marker.hostName, coordinate: CLLocationCoordinate2D(latitude: marker.latitude, longitude: marker.longitude))
+                        .tint(marker.severity == 0 ? .green : severityIndicatorColor(for: marker.severity))
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: DashboardTheme.cardCornerRadius, style: .continuous))
+        }
+    }
+}
+
+struct NetworkMapWidgetContentView: View {
+    let diagram: NetworkMapDiagram
+
+    var body: some View {
+        if diagram.elements.isEmpty {
+            Text("This map has no elements")
+                .font(.system(size: 16, weight: .regular, design: .rounded))
+                .foregroundStyle(DashboardTheme.secondaryText)
+        } else {
+            GeometryReader { geometry in
+                let scaleX = geometry.size.width / CGFloat(max(diagram.width, 1))
+                let scaleY = geometry.size.height / CGFloat(max(diagram.height, 1))
+
+                Canvas { context, _ in
+                    for link in diagram.links {
+                        var path = Path()
+                        path.move(to: CGPoint(x: CGFloat(link.fromX) * scaleX, y: CGFloat(link.fromY) * scaleY))
+                        path.addLine(to: CGPoint(x: CGFloat(link.toX) * scaleX, y: CGFloat(link.toY) * scaleY))
+                        context.stroke(path, with: .color(Color(hex: link.colorHex) ?? .gray), lineWidth: 2)
+                    }
+                }
+
+                ForEach(diagram.elements) { element in
+                    VStack(spacing: 2) {
+                        Circle()
+                            .fill(element.severity == 0 ? Color.green : severityIndicatorColor(for: element.severity))
+                            .frame(width: 14, height: 14)
+                        Text(element.label)
+                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                            .foregroundStyle(DashboardTheme.primaryText)
+                            .lineLimit(1)
+                            .fixedSize()
+                    }
+                    .position(x: CGFloat(element.x) * scaleX, y: CGFloat(element.y) * scaleY)
+                }
+            }
+        }
+    }
+}
+
+struct MapListWidgetContentView: View {
+    let maps: [MapListEntry]
+
+    var body: some View {
+        if maps.isEmpty {
+            Text("No maps available")
+                .font(.system(size: 16, weight: .regular, design: .rounded))
+                .foregroundStyle(DashboardTheme.secondaryText)
+        } else {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(maps) { map in
+                        Text(map.name)
+                            .font(.system(size: 16, weight: .medium, design: .rounded))
+                            .foregroundStyle(DashboardTheme.primaryText)
+                            .lineLimit(1)
+                    }
+                }
+            }
+        }
+    }
+}
+
+struct HostListWidgetContentView: View {
+    let hosts: [HostListEntry]
+
+    var body: some View {
+        if hosts.isEmpty {
+            Text("No hosts match this widget's filters")
+                .font(.system(size: 16, weight: .regular, design: .rounded))
+                .foregroundStyle(DashboardTheme.secondaryText)
+        } else {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(hosts) { host in
+                        HStack(spacing: 8) {
+                            Circle()
+                                .fill(host.maxSeverity == 0 ? Color.green : severityIndicatorColor(for: host.maxSeverity))
+                                .frame(width: 10, height: 10)
+
+                            Text(host.name)
+                                .font(.system(size: 16, weight: .medium, design: .rounded))
+                                .foregroundStyle(DashboardTheme.primaryText)
+                                .lineLimit(1)
+
+                            if host.problemCount > 0 {
+                                Spacer()
+                                Text("\(host.problemCount)")
+                                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                    .foregroundStyle(DashboardTheme.secondaryText)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+struct ItemListWidgetContentView: View {
+    let items: [ItemListEntry]
+
+    var body: some View {
+        if items.isEmpty {
+            Text("No items match this widget's filters")
+                .font(.system(size: 16, weight: .regular, design: .rounded))
+                .foregroundStyle(DashboardTheme.secondaryText)
+        } else {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(items) { item in
+                        HStack {
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(item.name)
+                                    .font(.system(size: 15, weight: .medium, design: .rounded))
+                                    .foregroundStyle(DashboardTheme.primaryText)
+                                    .lineLimit(1)
+                                Text(item.hostName)
+                                    .font(.system(size: 12, weight: .regular, design: .rounded))
+                                    .foregroundStyle(DashboardTheme.secondaryText)
+                                    .lineLimit(1)
+                            }
+                            Spacer()
+                            Text(item.units.isEmpty ? item.lastValue : "\(item.lastValue) \(item.units)")
+                                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                                .foregroundStyle(DashboardTheme.accent)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+struct SLAReportWidgetContentView: View {
+    let entries: [SLAReportEntry]
+
+    var body: some View {
+        if entries.isEmpty {
+            Text("No SLA selected, or no SLAs configured")
+                .font(.system(size: 16, weight: .regular, design: .rounded))
+                .foregroundStyle(DashboardTheme.secondaryText)
+        } else {
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(entries) { entry in
+                    HStack {
+                        Text(entry.name)
+                            .font(.system(size: 17, weight: .medium, design: .rounded))
+                            .foregroundStyle(DashboardTheme.primaryText)
+                            .lineLimit(1)
+                        Spacer()
+                        Text("Target \(entry.targetSLO)")
+                            .font(.system(size: 15, weight: .semibold, design: .rounded))
+                            .foregroundStyle(DashboardTheme.accent)
+                    }
+                }
+            }
+        }
+    }
+}
 
 struct LineChartWidgetContentView: View {
     let series: [ChartSeries]

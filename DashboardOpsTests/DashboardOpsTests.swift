@@ -419,4 +419,65 @@ struct DashboardOpsTests {
         #expect(datasets[0]["color"] == "FF465C")
     }
 
+    @Test func hostInventoryDecodesBothEmptyArrayAndPopulatedObjectShapes() throws {
+        // host.get's "inventory" field is an empty array [] when inventory isn't populated for a
+        // host, but a keyed object when it is — verified against a live Zabbix 7.0 server.
+        let emptyArrayData = try #require(
+            """
+            { "hostid": "10084", "name": "Zabbix Server", "inventory": [] }
+            """.data(using: .utf8)
+        )
+        let populatedData = try #require(
+            """
+            { "hostid": "11426", "name": "Kismet-Data Center", "inventory": { "location_lat": "40.6892", "location_lon": "-74.0466" } }
+            """.data(using: .utf8)
+        )
+
+        let emptyHost = try JSONDecoder().decode(ZabbixHostWithInventory.self, from: emptyArrayData)
+        let populatedHost = try JSONDecoder().decode(ZabbixHostWithInventory.self, from: populatedData)
+
+        #expect(emptyHost.inventory.locationLatitude == nil)
+        #expect(populatedHost.inventory.locationLatitude == "40.6892")
+        #expect(populatedHost.inventory.locationLongitude == "-74.0466")
+    }
+
+    @Test func zabbixAPIResponseDecodesNetworkMapTopology() throws {
+        let responseData = try #require(
+            """
+            {
+              "jsonrpc": "2.0",
+              "result": [
+                {
+                  "sysmapid": "3",
+                  "name": "District High Level Topology",
+                  "width": "1800",
+                  "height": "850",
+                  "selements": [
+                    { "selementid": "6", "elementtype": "0", "label": "{HOST.NAME}", "x": "100", "y": "50", "elements": [ { "hostid": "10084" } ] },
+                    { "selementid": "5", "elementtype": "4", "label": "Core Switch", "x": "300", "y": "50", "elements": [] }
+                  ],
+                  "links": [
+                    {
+                      "linkid": "3",
+                      "selementid1": "6",
+                      "selementid2": "5",
+                      "color": "00CC00",
+                      "linktriggers": [ { "triggerid": "18670", "color": "DD0000" } ]
+                    }
+                  ]
+                }
+              ],
+              "id": 1
+            }
+            """.data(using: .utf8)
+        )
+
+        let response = try JSONDecoder().decode(ZabbixAPIResponse<[ZabbixNetworkMap]>.self, from: responseData)
+        let map = try #require(response.resolvedResult().first)
+
+        #expect(map.selements.count == 2)
+        #expect(map.selements[0].elements.first?.hostid == "10084")
+        #expect(map.links.first?.linktriggers.first?.color == "DD0000")
+    }
+
 }

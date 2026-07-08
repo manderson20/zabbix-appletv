@@ -39,9 +39,10 @@ nonisolated struct DashboardWidgetFrame: Sendable, Equatable {
 
 /// Native renderings supported for a dashboard widget.
 ///
-/// Map widgets ("map", "geomap", "mapnavtree", "favmaps"), the graph prototype widget (tied to
-/// low-level discovery, a distinct and deeper feature), and the URL widget are handled separately
-/// from this build-out — see the widget build-out plan for status.
+/// The graph prototype widget (tied to low-level discovery, a distinct and deeper feature),
+/// favorite maps/graphs (favorites are frontend session state, not exposed by the JSON-RPC API),
+/// and the URL widget (tvOS has no in-app browser) are the only Zabbix 7.0 widget types without a
+/// native rendering here — see the widget build-out plan for the reasoning behind each.
 nonisolated enum DashboardWidgetKind: Sendable {
     case clock
     case itemValue(name: String, value: String, units: String)
@@ -62,6 +63,12 @@ nonisolated enum DashboardWidgetKind: Sendable {
     case dataOverview([DataOverviewEntry])
     case lineChart([ChartSeries])
     case pieChart([ChartSlice])
+    case geomap([GeoMapMarker])
+    case networkMap(NetworkMapDiagram)
+    case mapList([MapListEntry])
+    case hostList([HostListEntry])
+    case itemList([ItemListEntry])
+    case slaReport([SLAReportEntry])
     case unsupported(rawType: String)
 }
 
@@ -340,4 +347,127 @@ nonisolated struct ChartSlice: Identifiable, Sendable {
 
     /// Latest value.
     let value: Double
+}
+
+/// A host marker on a geomap widget.
+nonisolated struct GeoMapMarker: Identifiable, Sendable {
+    /// Stable marker identifier.
+    let id: String
+
+    /// Host display name.
+    let hostName: String
+
+    /// Latitude.
+    let latitude: Double
+
+    /// Longitude.
+    let longitude: Double
+
+    /// This host's highest active problem severity, 0 if none.
+    let severity: Int
+}
+
+/// A network topology diagram for a map widget.
+nonisolated struct NetworkMapDiagram: Sendable {
+    /// Map canvas width in pixels, defining the coordinate space for element positions.
+    let width: Int
+
+    /// Map canvas height in pixels.
+    let height: Int
+
+    /// Elements placed on the map.
+    let elements: [NetworkMapElement]
+
+    /// Lines connecting pairs of elements.
+    let links: [NetworkMapLink]
+}
+
+/// A single element on a network map diagram.
+nonisolated struct NetworkMapElement: Identifiable, Sendable {
+    /// Stable element identifier.
+    let id: String
+
+    /// Display label — the host's real name when resolvable, otherwise the map's configured label.
+    let label: String
+
+    /// X position in the map's pixel coordinate space.
+    let x: Int
+
+    /// Y position in the map's pixel coordinate space.
+    let y: Int
+
+    /// This element's highest active problem severity, 0 if none or not a host element.
+    let severity: Int
+}
+
+/// A single connecting line between two network map elements.
+nonisolated struct NetworkMapLink: Identifiable, Sendable {
+    /// Stable link identifier.
+    let id: String
+
+    /// First endpoint's position.
+    let fromX: Int
+    let fromY: Int
+
+    /// Second endpoint's position.
+    let toX: Int
+    let toY: Int
+
+    /// Line color as a "RRGGBB" hex string — the base color, or a linked trigger's color while
+    /// that trigger is in the PROBLEM state.
+    let colorHex: String
+}
+
+/// A single map name in a map navigation tree widget.
+nonisolated struct MapListEntry: Identifiable, Sendable {
+    /// Stable entry identifier.
+    let id: String
+
+    /// Map display name.
+    let name: String
+}
+
+/// A single host shown in a static host navigator list.
+nonisolated struct HostListEntry: Identifiable, Sendable {
+    /// Stable entry identifier.
+    let id: String
+
+    /// Host display name.
+    let name: String
+
+    /// Number of active problems on this host.
+    let problemCount: Int
+
+    /// This host's highest active problem severity, 0 if none.
+    let maxSeverity: Int
+}
+
+/// A single item shown in a static item navigator list.
+nonisolated struct ItemListEntry: Identifiable, Sendable {
+    /// Stable entry identifier.
+    let id: String
+
+    /// Item display name.
+    let name: String
+
+    /// Host the item belongs to.
+    let hostName: String
+
+    /// Most recent recorded value, if any.
+    let lastValue: String
+
+    /// Unit label, e.g. "%" or "°F".
+    let units: String
+}
+
+/// A single SLA's configured target, shown in an SLA report widget.
+nonisolated struct SLAReportEntry: Identifiable, Sendable {
+    /// Stable entry identifier.
+    let id: String
+
+    /// SLA display name.
+    let name: String
+
+    /// Target SLO, e.g. "99.9%".
+    let targetSLO: String
 }
