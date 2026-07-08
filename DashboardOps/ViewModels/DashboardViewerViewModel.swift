@@ -37,11 +37,19 @@ final class DashboardViewerViewModel: ObservableObject {
     /// repeats for any further attempts.
     private static let startupRetryDelaysSeconds = [5, 15, 30, 60]
 
+    /// Retry delay used once Zabbix itself has rejected a request (bad credentials, a disabled
+    /// account, revoked permissions) rather than the request simply failing to reach it. Those
+    /// don't self-heal on their own — only a human fixing the account will — so hammering the
+    /// login endpoint every 60 seconds forever is pointless. Still fully automatic: whoever fixes
+    /// the account doesn't need to touch the Apple TV, it just recovers within half an hour.
+    private static let credentialFailureRetryDelaySeconds = 30 * 60
+
     private let dashboardManager: DashboardManager
     private let zabbixSessionService: ZabbixSessionService
     private var hasPrepared = false
     private var explicitDashboard: Dashboard?
     private var lastRefreshedAt: [String: Date] = [:]
+    private var lastCredentialFailureAt: Date?
     private var refreshTask: Task<Void, Never>?
     private var backoffSleepTask: Task<Void, Never>?
     private var prepareTask: Task<Void, Never>?
@@ -78,10 +86,10 @@ final class DashboardViewerViewModel: ObservableObject {
     private func runPrepareLoop() async {
         var attempt = 0
         while !Task.isCancelled {
-            let succeeded = await attemptLoad()
-            if succeeded || Task.isCancelled { return }
+            guard let failure = await attemptLoad() else { return }
+            guard !Task.isCancelled else { return }
 
-            let delaySeconds = Self.startupRetryDelaysSeconds[min(attempt, Self.startupRetryDelaysSeconds.count - 1)]
+            let delaySeconds = Self.retryDelaySeconds(forAttempt: attempt, after: failure)
             attempt += 1
             statusMessage += " Retrying in \(delaySeconds)s\u{2026}"
 
@@ -94,8 +102,26 @@ final class DashboardViewerViewModel: ObservableObject {
         }
     }
 
-    /// Attempts one connect-and-load cycle. Returns whether it succeeded.
-    private func attemptLoad() async -> Bool {
+    /// Chooses the next retry delay based on what kind of failure just happened. A `ZabbixAPIError`
+    /// means the server was reached and responded — it rejected the login/request itself (bad
+    /// credentials, disabled account, revoked permissions), which a faster retry won't fix. Any
+    /// other error (network unreachable, DNS not resolved yet at boot, timeout) is treated as
+    /// transient and keeps the normal fast backoff.
+    private static func retryDelaySeconds(forAttempt attempt: Int, after failure: LoadFailure) -> Int {
+        if failure.isServerRejection {
+            return credentialFailureRetryDelaySeconds
+        }
+        return startupRetryDelaysSeconds[min(attempt, startupRetryDelaysSeconds.count - 1)]
+    }
+
+    /// A failed connect-and-load attempt, tagged with whether Zabbix itself rejected the request.
+    private struct LoadFailure {
+        let isServerRejection: Bool
+    }
+
+    /// Attempts one connect-and-load cycle. Returns `nil` on success, or a `LoadFailure` describing
+    /// what went wrong.
+    private func attemptLoad() async -> LoadFailure? {
         renderingState = .loading
         statusMessage = "Connecting to Zabbix"
         canRetry = false
@@ -109,7 +135,7 @@ final class DashboardViewerViewModel: ObservableObject {
                 renderingState = .unavailable
                 statusMessage = "No dashboards are available for this Zabbix server."
                 canRetry = true
-                return false
+                return LoadFailure(isServerRejection: false)
             }
 
             selectedDashboard = dashboard
@@ -123,7 +149,7 @@ final class DashboardViewerViewModel: ObservableObject {
                 renderingState = .unavailable
                 statusMessage = "This dashboard has no widgets to display."
                 canRetry = true
-                return false
+                return LoadFailure(isServerRejection: false)
             }
 
             renderingState = .ready
@@ -134,12 +160,12 @@ final class DashboardViewerViewModel: ObservableObject {
                 lastRefreshedAt[widget.id] = now
             }
             startRefreshLoop(dashboardID: dashboard.providerDashboardID)
-            return true
+            return nil
         } catch {
             renderingState = .unavailable
             statusMessage = error.localizedDescription
             canRetry = true
-            return false
+            return LoadFailure(isServerRejection: error is ZabbixAPIError)
         }
     }
 
@@ -187,6 +213,7 @@ final class DashboardViewerViewModel: ObservableObject {
         selectedDashboard = nil
         widgets = []
         lastRefreshedAt.removeAll()
+        lastCredentialFailureAt = nil
         canRetry = false
     }
 
@@ -236,6 +263,7 @@ final class DashboardViewerViewModel: ObservableObject {
             let updatedWidgets = try await dashboardManager.refreshWidgets(dueWidgetIDs, forDashboard: dashboardID)
             guard !updatedWidgets.isEmpty else { return }
 
+            lastCredentialFailureAt = nil
             for widget in updatedWidgets {
                 lastRefreshedAt[widget.id] = now
             }
@@ -245,6 +273,20 @@ final class DashboardViewerViewModel: ObservableObject {
         } catch {
             // A dashboard that's already on screen shouldn't flash an error over a transient
             // network blip or an expired session — reconnect quietly and let the next tick retry.
+            //
+            // But if Zabbix itself rejected the request (the account was disabled or its password
+            // changed mid-session, say), reconnecting will keep failing the same way every tick —
+            // as often as every 5-30s depending on which widgets are due. That's the same "don't
+            // hammer a failure only a human can fix" case as the startup path, just reachable after
+            // the dashboard was already showing, so it gets the same slow-down treatment.
+            if error is ZabbixAPIError {
+                let now = Date()
+                if let last = lastCredentialFailureAt, now.timeIntervalSince(last) < TimeInterval(Self.credentialFailureRetryDelaySeconds) {
+                    return
+                }
+                lastCredentialFailureAt = now
+            }
+
             _ = try? await zabbixSessionService.connect()
         }
     }
