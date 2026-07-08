@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UIKit
 
 /// Full-screen dashboard viewer.
 ///
@@ -62,5 +63,14 @@ struct DashboardViewerScreen: View {
         }
         .toolbar(.hidden, for: .navigationBar)
         .persistentSystemOverlays(.hidden)
+        .onAppear {
+            // Keeps the Apple TV from going to its screensaver/sleep while the dashboard is on
+            // screen — this app has no expected remote interaction during normal operation, so
+            // tvOS's default idle behavior would otherwise defeat an always-on wall display.
+            UIApplication.shared.isIdleTimerDisabled = true
+        }
+        .onDisappear {
+            UIApplication.shared.isIdleTimerDisabled = false
+        }
     }
 }

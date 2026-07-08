@@ -216,12 +216,14 @@ struct DashboardOpsTests {
                 id: "1",
                 title: "Clock",
                 frame: DashboardWidgetFrame(x: 0, y: 0, width: 4, height: 2),
+                refreshIntervalSeconds: nil,
                 kind: .clock
             ),
             RenderableDashboardWidget(
                 id: "2",
                 title: "CPU Load",
                 frame: DashboardWidgetFrame(x: 4, y: 0, width: 8, height: 4),
+                refreshIntervalSeconds: 30,
                 kind: .itemValue(name: "CPU Load", value: "0.42", units: "")
             )
         ]
@@ -500,6 +502,17 @@ struct DashboardOpsTests {
         let decodedData = try #require(Data(base64Encoded: image.image))
 
         #expect(String(data: decodedData, encoding: .utf8) == "hello")
+    }
+
+    @Test func refreshIntervalSecondsParsesRfRateField() throws {
+        // "rf_rate" verified on a live server's "problems" (30s) and "systeminfo" (120s) widgets.
+        let thirtySeconds = [ZabbixWidgetField(name: "rf_rate", value: "30")]
+        let disabled = [ZabbixWidgetField(name: "rf_rate", value: "0")]
+        let absent: [ZabbixWidgetField] = []
+
+        #expect(DashboardManager.refreshIntervalSeconds(from: thirtySeconds) == 30)
+        #expect(DashboardManager.refreshIntervalSeconds(from: disabled) == nil)
+        #expect(DashboardManager.refreshIntervalSeconds(from: absent) == nil)
     }
 
 }

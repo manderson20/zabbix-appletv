@@ -15,6 +15,57 @@ import Foundation
 /// against a live example are called out per case; the underlying API methods themselves are
 /// stable, well-documented core Zabbix API (item.get, trigger.get, host.get, etc.).
 extension DashboardManager {
+    /// Resolves the current server URL and auth token, connecting to Zabbix first if needed.
+    func connection() async throws -> (serverBaseURL: URL, authToken: String) {
+        guard let configuration = try await settingsService.loadServerConfiguration(),
+              let serverBaseURL = configuration.baseURL else {
+            throw DashboardOpsError.missingServerConfiguration
+        }
+
+        let session: UserSession
+        if let activeSession = await zabbixSessionService.activeSession() {
+            session = activeSession
+        } else {
+            session = try await zabbixSessionService.connect()
+        }
+
+        guard let authToken = session.authToken else {
+            throw DashboardOpsError.missingCredential
+        }
+
+        return (serverBaseURL, authToken)
+    }
+
+    /// Resolves each widget's data and refresh interval into `RenderableDashboardWidget`s.
+    func renderableWidgets(
+        for widgets: [ZabbixWidget],
+        serverBaseURL: URL,
+        authToken: String
+    ) async throws -> [RenderableDashboardWidget] {
+        var result: [RenderableDashboardWidget] = []
+        result.reserveCapacity(widgets.count)
+
+        for widget in widgets {
+            let kind = try await resolveWidgetKind(widget, serverBaseURL: serverBaseURL, authToken: authToken)
+            result.append(
+                RenderableDashboardWidget(
+                    id: widget.widgetid,
+                    title: widget.name?.isEmpty == false ? widget.name! : widget.type.capitalized,
+                    frame: DashboardWidgetFrame(
+                        x: widget.x.intValue,
+                        y: widget.y.intValue,
+                        width: widget.width.intValue,
+                        height: widget.height.intValue
+                    ),
+                    refreshIntervalSeconds: Self.refreshIntervalSeconds(from: widget.fields),
+                    kind: kind
+                )
+            )
+        }
+
+        return result
+    }
+
     func resolveWidgetKind(
         _ widget: ZabbixWidget,
         serverBaseURL: URL,
@@ -970,6 +1021,16 @@ extension DashboardManager {
     /// Returns the value of a scalar widget field, e.g. "min" or "show_lines".
     static func fieldValue(_ fields: [ZabbixWidgetField], name: String) -> String? {
         fields.first { $0.name == name }?.value
+    }
+
+    /// Returns the widget's own Zabbix-configured refresh interval in seconds ("rf_rate"),
+    /// verified against a live server (e.g. 30s on a "problems" widget, 120s on "systeminfo").
+    /// `nil` when the field is absent or explicitly "0" ("No refresh" in Zabbix's own UI).
+    static func refreshIntervalSeconds(from fields: [ZabbixWidgetField]) -> Int? {
+        guard let rate = fieldValue(fields, name: "rf_rate").flatMap(Int.init), rate > 0 else {
+            return nil
+        }
+        return rate
     }
 
     /// Returns all values for a dot-indexed widget field array, e.g. "groupids.0", "groupids.1".

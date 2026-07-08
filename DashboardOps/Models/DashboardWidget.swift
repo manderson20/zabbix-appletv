@@ -18,6 +18,10 @@ nonisolated struct RenderableDashboardWidget: Identifiable, Sendable {
     /// Grid position and size.
     let frame: DashboardWidgetFrame
 
+    /// This widget's own Zabbix-configured refresh interval, in seconds. `nil` means the widget
+    /// isn't periodically refreshed (matches Zabbix's own "No refresh" option).
+    let refreshIntervalSeconds: Int?
+
     /// Native rendering for this widget.
     let kind: DashboardWidgetKind
 }

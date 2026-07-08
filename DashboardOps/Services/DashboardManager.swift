@@ -38,22 +38,11 @@ actor DashboardManager {
             return []
         }
 
-        guard let configuration = try await settingsService.loadServerConfiguration(),
-              let serverBaseURL = configuration.baseURL else {
+        guard let configuration = try await settingsService.loadServerConfiguration() else {
             throw DashboardOpsError.missingServerConfiguration
         }
 
-        let session: UserSession
-        if let activeSession = await zabbixSessionService.activeSession() {
-            session = activeSession
-        } else {
-            session = try await zabbixSessionService.connect()
-        }
-
-        guard let authToken = session.authToken else {
-            throw DashboardOpsError.missingCredential
-        }
-
+        let (serverBaseURL, authToken) = try await connection()
         let summaries = try await zabbixAPIClient.dashboards(serverBaseURL: serverBaseURL, authToken: authToken)
 
         return summaries.enumerated().map { index, summary in
@@ -77,22 +66,7 @@ actor DashboardManager {
     /// Only the dashboard's first page is rendered; multi-page (tabbed) dashboards are a future
     /// enhancement.
     func widgets(forDashboard dashboardID: String) async throws -> [RenderableDashboardWidget] {
-        guard let configuration = try await settingsService.loadServerConfiguration(),
-              let serverBaseURL = configuration.baseURL else {
-            throw DashboardOpsError.missingServerConfiguration
-        }
-
-        let session: UserSession
-        if let activeSession = await zabbixSessionService.activeSession() {
-            session = activeSession
-        } else {
-            session = try await zabbixSessionService.connect()
-        }
-
-        guard let authToken = session.authToken else {
-            throw DashboardOpsError.missingCredential
-        }
-
+        let (serverBaseURL, authToken) = try await connection()
         let detail = try await zabbixAPIClient.dashboardDetail(
             serverBaseURL: serverBaseURL,
             authToken: authToken,
@@ -103,26 +77,26 @@ actor DashboardManager {
             return []
         }
 
-        var renderableWidgets: [RenderableDashboardWidget] = []
-        renderableWidgets.reserveCapacity(widgets.count)
+        return try await renderableWidgets(for: widgets, serverBaseURL: serverBaseURL, authToken: authToken)
+    }
 
-        for widget in widgets {
-            let kind = try await resolveWidgetKind(widget, serverBaseURL: serverBaseURL, authToken: authToken)
-            renderableWidgets.append(
-                RenderableDashboardWidget(
-                    id: widget.widgetid,
-                    title: widget.name?.isEmpty == false ? widget.name! : widget.type.capitalized,
-                    frame: DashboardWidgetFrame(
-                        x: widget.x.intValue,
-                        y: widget.y.intValue,
-                        width: widget.width.intValue,
-                        height: widget.height.intValue
-                    ),
-                    kind: kind
-                )
-            )
+    /// Re-resolves data for a subset of a dashboard's widgets, identified by widget ID, without
+    /// touching the rest. Used for per-widget periodic refresh driven by each widget's own
+    /// Zabbix-configured refresh interval — callers merge the returned widgets back into their
+    /// own full widget list.
+    func refreshWidgets(_ widgetIDs: Set<String>, forDashboard dashboardID: String) async throws -> [RenderableDashboardWidget] {
+        guard !widgetIDs.isEmpty else {
+            return []
         }
 
-        return renderableWidgets
+        let (serverBaseURL, authToken) = try await connection()
+        let detail = try await zabbixAPIClient.dashboardDetail(
+            serverBaseURL: serverBaseURL,
+            authToken: authToken,
+            dashboardID: dashboardID
+        )
+
+        let matchingWidgets = (detail.pages.first?.widgets ?? []).filter { widgetIDs.contains($0.widgetid) }
+        return try await renderableWidgets(for: matchingWidgets, serverBaseURL: serverBaseURL, authToken: authToken)
     }
 }
