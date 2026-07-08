@@ -102,6 +102,10 @@ private struct DashboardWidgetCardView: View {
             ItemHistoryWidgetContentView(series: series)
         case let .dataOverview(entries):
             DataOverviewWidgetContentView(entries: entries)
+        case let .lineChart(series):
+            LineChartWidgetContentView(series: series)
+        case let .pieChart(slices):
+            PieChartWidgetContentView(slices: slices)
         case let .unsupported(rawType):
             Text("The \"\(rawType)\" widget isn't supported yet.")
                 .font(.system(size: 18, weight: .regular, design: .rounded))

@@ -254,11 +254,17 @@ actor ZabbixAPIClient {
         authToken: String,
         itemID: String,
         historyValueType: Int,
-        limit: Int = 10
+        sinceUnixTime: Int,
+        limit: Int = 100
     ) async throws -> [ZabbixHistoryValue] {
         try await send(
             method: "history.get",
-            params: ZabbixHistoryGetParameters(historyValueType: historyValueType, itemIDs: [itemID], limit: limit),
+            params: ZabbixHistoryGetParameters(
+                historyValueType: historyValueType,
+                itemIDs: [itemID],
+                sinceUnixTime: sinceUnixTime,
+                limit: limit
+            ),
             serverBaseURL: serverBaseURL,
             authToken: authToken,
             resultType: [ZabbixHistoryValue].self
@@ -331,6 +337,36 @@ actor ZabbixAPIClient {
             serverBaseURL: serverBaseURL,
             authToken: authToken,
             resultType: [ZabbixHostListEntry].self
+        )
+    }
+
+    /// Resolves hosts by their exact technical name.
+    func hostsByName(serverBaseURL: URL, authToken: String, names: [String]) async throws -> [ZabbixHostListEntry] {
+        guard !names.isEmpty else {
+            return []
+        }
+
+        return try await send(
+            method: "host.get",
+            params: ZabbixHostByNameParameters(names: names),
+            serverBaseURL: serverBaseURL,
+            authToken: authToken,
+            resultType: [ZabbixHostListEntry].self
+        )
+    }
+
+    /// Resolves a classic Graph object's member items.
+    func graphs(serverBaseURL: URL, authToken: String, graphIDs: [String]) async throws -> [ZabbixGraphDefinition] {
+        guard !graphIDs.isEmpty else {
+            return []
+        }
+
+        return try await send(
+            method: "graph.get",
+            params: ZabbixGraphGetParameters(graphIDs: graphIDs),
+            serverBaseURL: serverBaseURL,
+            authToken: authToken,
+            resultType: [ZabbixGraphDefinition].self
         )
     }
 

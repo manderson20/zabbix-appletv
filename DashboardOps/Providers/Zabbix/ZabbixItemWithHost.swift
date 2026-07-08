@@ -23,6 +23,9 @@ nonisolated struct ZabbixItemWithHost: Decodable, Sendable {
     /// Unit label configured on the item.
     let units: String?
 
+    /// Zabbix value type: 0 = float, 1 = character, 2 = log, 3 = unsigned, 4 = text.
+    let value_type: ZabbixNumericString?
+
     /// Hosts the item belongs to (an item belongs to exactly one host).
     let hosts: [ZabbixHostReference]
 }

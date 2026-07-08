@@ -236,7 +236,7 @@ nonisolated struct ZabbixItemSearchParameters: Encodable, Sendable {
         groupIDs: [String]? = nil,
         hostIDs: [String]? = nil,
         namePattern: String? = nil,
-        output: [String] = ["itemid", "name", "lastvalue", "units"],
+        output: [String] = ["itemid", "name", "lastvalue", "units", "value_type"],
         selectHosts: [String] = ["hostid", "name"]
     ) {
         self.groupids = groupIDs
@@ -253,13 +253,19 @@ nonisolated struct ZabbixItemNameSearch: Encodable, Sendable {
     let name: String
 }
 
-/// Parameters for `history.get`/`trend.get` when fetching an item's recent values.
+/// Parameters for `history.get` when fetching an item's recent values.
+///
+/// Always time-bounded: an unbounded `history.get` call risks the same timeout an unbounded
+/// `alert.get` call hit against a live server with a large history table.
 nonisolated struct ZabbixHistoryGetParameters: Encodable, Sendable {
     /// Zabbix value type: 0 = float, 1 = character, 2 = log, 3 = unsigned, 4 = text.
     let history: Int
 
     /// Item identifiers to fetch history for.
     let itemids: [String]
+
+    /// Unix timestamp; only values at or after this time are returned.
+    let time_from: Int
 
     /// Field to sort by.
     let sortfield: String
@@ -270,12 +276,58 @@ nonisolated struct ZabbixHistoryGetParameters: Encodable, Sendable {
     /// Maximum number of values to return per item.
     let limit: Int
 
-    init(historyValueType: Int, itemIDs: [String], sortfield: String = "clock", sortorder: String = "DESC", limit: Int = 10) {
+    init(
+        historyValueType: Int,
+        itemIDs: [String],
+        sinceUnixTime: Int,
+        sortfield: String = "clock",
+        sortorder: String = "DESC",
+        limit: Int = 100
+    ) {
         self.history = historyValueType
         self.itemids = itemIDs
+        self.time_from = sinceUnixTime
         self.sortfield = sortfield
         self.sortorder = sortorder
         self.limit = limit
+    }
+}
+
+/// Parameters for `host.get` when resolving hosts by their exact technical name, as used by chart
+/// widgets whose datasets reference a host by name rather than ID (e.g. "ds.0.hosts.0").
+nonisolated struct ZabbixHostByNameParameters: Encodable, Sendable {
+    /// Exact host technical names to resolve.
+    let filter: ZabbixHostNameFilter
+
+    /// Host fields to return.
+    let output: [String]
+
+    init(names: [String], output: [String] = ["hostid", "name"]) {
+        self.filter = ZabbixHostNameFilter(host: names)
+        self.output = output
+    }
+}
+
+/// Exact host name filter for `host.get`.
+nonisolated struct ZabbixHostNameFilter: Encodable, Sendable {
+    let host: [String]
+}
+
+/// Parameters for `graph.get` when resolving a classic graph's member items.
+nonisolated struct ZabbixGraphGetParameters: Encodable, Sendable {
+    /// Graph identifiers to fetch.
+    let graphids: [String]
+
+    /// Graph fields to return.
+    let output: [String]
+
+    /// Requests each graph's member items and their configured colors.
+    let selectGraphItems: [String]
+
+    init(graphIDs: [String], output: [String] = ["graphid", "name"], selectGraphItems: [String] = ["itemid", "color"]) {
+        self.graphids = graphIDs
+        self.output = output
+        self.selectGraphItems = selectGraphItems
     }
 }
 

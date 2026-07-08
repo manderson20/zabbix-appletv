@@ -145,6 +145,18 @@ extension DashboardManager {
         case "dataover":
             return try await resolveDataOverview(widget, serverBaseURL: serverBaseURL, authToken: authToken)
 
+        case "svggraph":
+            return try await resolveSVGGraph(widget, serverBaseURL: serverBaseURL, authToken: authToken)
+
+        case "graph":
+            return try await resolveClassicGraph(widget, serverBaseURL: serverBaseURL, authToken: authToken)
+
+        case "piechart":
+            return try await resolvePieChart(widget, serverBaseURL: serverBaseURL, authToken: authToken)
+
+        // "graphprototype" (low-level discovery graphs) falls through to unsupported: resolving it
+        // requires walking discovered hosts/items from a prototype pattern, a distinct and deeper
+        // feature than every other widget here.
         default:
             return .unsupported(rawType: widget.type)
         }
@@ -476,6 +488,7 @@ extension DashboardManager {
                 authToken: authToken,
                 itemID: item.itemid,
                 historyValueType: historyValueType,
+                sinceUnixTime: Int(Date().timeIntervalSince1970) - Self.defaultHistoryWindowSeconds,
                 limit: 5
             )
 
@@ -528,7 +541,148 @@ extension DashboardManager {
         )
     }
 
+    // MARK: - SVG graph
+
+    /// Dataset fields ("ds.N.hosts.0", "ds.N.items.0", "ds.N.color") verified against a live
+    /// Zabbix 7.0 server. Only the first host/item pair per dataset is resolved; svggraph datasets
+    /// can in principle aggregate multiple hosts or items per line, which isn't implemented here.
+    private func resolveSVGGraph(
+        _ widget: ZabbixWidget,
+        serverBaseURL: URL,
+        authToken: String
+    ) async throws -> DashboardWidgetKind {
+        let datasets = Self.indexedFieldGroups(widget.fields, prefix: "ds")
+        guard !datasets.isEmpty else {
+            return .unsupported(rawType: widget.type)
+        }
+
+        var series: [ChartSeries] = []
+        for dataset in datasets {
+            guard let hostName = dataset["hosts.0"], let itemPattern = dataset["items.0"] else { continue }
+
+            let hosts = try await zabbixAPIClient.hostsByName(serverBaseURL: serverBaseURL, authToken: authToken, names: [hostName])
+            guard let host = hosts.first else { continue }
+
+            let items = try await zabbixAPIClient.itemsMatching(
+                serverBaseURL: serverBaseURL,
+                authToken: authToken,
+                hostIDs: [host.hostid],
+                namePattern: itemPattern
+            )
+            guard let item = items.first else { continue }
+
+            let points = try await recentPoints(for: item.itemid, valueType: item.value_type?.intValue ?? 0, serverBaseURL: serverBaseURL, authToken: authToken)
+
+            series.append(
+                ChartSeries(
+                    id: "\(widget.widgetid).\(item.itemid)",
+                    name: "\(host.name): \(item.name)",
+                    colorHex: dataset["color"] ?? "3DC9B0",
+                    points: points
+                )
+            )
+        }
+
+        return series.isEmpty ? .unsupported(rawType: widget.type) : .lineChart(series)
+    }
+
+    // MARK: - Classic graph
+
+    /// The "graphid" field name is Zabbix's standard convention for referencing a Graph object, not
+    /// yet verified against a live example (no dashboard using the classic "graph" widget type was
+    /// available to check against).
+    private func resolveClassicGraph(
+        _ widget: ZabbixWidget,
+        serverBaseURL: URL,
+        authToken: String
+    ) async throws -> DashboardWidgetKind {
+        guard let graphID = Self.fieldValue(widget.fields, name: "graphid") else {
+            return .unsupported(rawType: widget.type)
+        }
+
+        let graphs = try await zabbixAPIClient.graphs(serverBaseURL: serverBaseURL, authToken: authToken, graphIDs: [graphID])
+        guard let graph = graphs.first, !graph.gitems.isEmpty else {
+            return .unsupported(rawType: widget.type)
+        }
+
+        let items = try await zabbixAPIClient.items(serverBaseURL: serverBaseURL, authToken: authToken, itemIDs: graph.gitems.map(\.itemid))
+        let itemsByID = Dictionary(uniqueKeysWithValues: items.map { ($0.itemid, $0) })
+
+        var series: [ChartSeries] = []
+        for gitem in graph.gitems {
+            guard let item = itemsByID[gitem.itemid] else { continue }
+
+            let points = try await recentPoints(for: item.itemid, valueType: item.value_type?.intValue ?? 0, serverBaseURL: serverBaseURL, authToken: authToken)
+
+            series.append(ChartSeries(id: "\(widget.widgetid).\(item.itemid)", name: item.name, colorHex: gitem.color, points: points))
+        }
+
+        return series.isEmpty ? .unsupported(rawType: widget.type) : .lineChart(series)
+    }
+
+    // MARK: - Pie chart
+
+    /// Reuses the same "ds.N.*" dataset fields as svggraph (Zabbix's newer chart widgets share the
+    /// dataset concept), showing each dataset's latest value rather than its history.
+    private func resolvePieChart(
+        _ widget: ZabbixWidget,
+        serverBaseURL: URL,
+        authToken: String
+    ) async throws -> DashboardWidgetKind {
+        let datasets = Self.indexedFieldGroups(widget.fields, prefix: "ds")
+        guard !datasets.isEmpty else {
+            return .unsupported(rawType: widget.type)
+        }
+
+        var slices: [ChartSlice] = []
+        for dataset in datasets {
+            guard let hostName = dataset["hosts.0"], let itemPattern = dataset["items.0"] else { continue }
+
+            let hosts = try await zabbixAPIClient.hostsByName(serverBaseURL: serverBaseURL, authToken: authToken, names: [hostName])
+            guard let host = hosts.first else { continue }
+
+            let items = try await zabbixAPIClient.itemsMatching(
+                serverBaseURL: serverBaseURL,
+                authToken: authToken,
+                hostIDs: [host.hostid],
+                namePattern: itemPattern
+            )
+            guard let item = items.first, let value = item.lastvalue.flatMap(Double.init) else { continue }
+
+            slices.append(ChartSlice(id: "\(widget.widgetid).\(item.itemid)", name: "\(host.name): \(item.name)", colorHex: dataset["color"] ?? "3DC9B0", value: value))
+        }
+
+        return slices.isEmpty ? .unsupported(rawType: widget.type) : .pieChart(slices)
+    }
+
     // MARK: - Shared helpers
+
+    /// Fetches an item's recent history, bounded to the last 24 hours to avoid the timeout an
+    /// unbounded `history.get` call risks against a server with a large history table.
+    private func recentPoints(
+        for itemID: String,
+        valueType: Int,
+        serverBaseURL: URL,
+        authToken: String
+    ) async throws -> [ChartPoint] {
+        let values = try await zabbixAPIClient.history(
+            serverBaseURL: serverBaseURL,
+            authToken: authToken,
+            itemID: itemID,
+            historyValueType: valueType,
+            sinceUnixTime: Int(Date().timeIntervalSince1970) - Self.defaultHistoryWindowSeconds,
+            limit: 200
+        )
+
+        return values.reversed().compactMap { value in
+            guard let doubleValue = Double(value.value), let timestamp = TimeInterval(value.clock) else {
+                return nil
+            }
+            return ChartPoint(id: "\(itemID).\(value.clock)", date: Date(timeIntervalSince1970: timestamp), value: doubleValue)
+        }
+    }
+
+    private static let defaultHistoryWindowSeconds = 24 * 3600
 
     /// Resolves host names for a set of trigger identifiers in one batched lookup.
     private func hostNamesByTriggerID(

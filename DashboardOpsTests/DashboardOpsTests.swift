@@ -379,4 +379,44 @@ struct DashboardOpsTests {
         #expect(triggers.first?.hosts.first?.hostid == "10461")
     }
 
+    @Test func zabbixAPIResponseDecodesGraphDefinitionGitemsKey() throws {
+        // graph.get's selectGraphItems response key is "gitems" (verified against a live Zabbix
+        // 7.0 server), not "graphitems".
+        let responseData = try #require(
+            """
+            {
+              "jsonrpc": "2.0",
+              "result": [
+                { "graphid": "392", "name": "Zabbix server performance", "gitems": [ { "itemid": "22187", "color": "00C800" } ] }
+              ],
+              "id": 1
+            }
+            """.data(using: .utf8)
+        )
+
+        let response = try JSONDecoder().decode(ZabbixAPIResponse<[ZabbixGraphDefinition]>.self, from: responseData)
+        let graphs = try response.resolvedResult()
+
+        #expect(graphs.first?.gitems.first?.itemid == "22187")
+        #expect(graphs.first?.gitems.first?.color == "00C800")
+    }
+
+    @Test func widgetFieldHelpersGroupNestedDatasetFields() throws {
+        // svggraph's dataset fields are doubly-indexed ("ds.0.hosts.0", "ds.0.items.0"), verified
+        // against a live Zabbix 7.0 server. indexedFieldGroups must preserve the ".0" suffix on the
+        // sub-key rather than splitting on every dot.
+        let fields = [
+            ZabbixWidgetField(name: "ds.0.hosts.0", value: "Kismet-Data Center"),
+            ZabbixWidgetField(name: "ds.0.items.0", value: "Temperature"),
+            ZabbixWidgetField(name: "ds.0.color", value: "FF465C")
+        ]
+
+        let datasets = DashboardManager.indexedFieldGroups(fields, prefix: "ds")
+
+        #expect(datasets.count == 1)
+        #expect(datasets[0]["hosts.0"] == "Kismet-Data Center")
+        #expect(datasets[0]["items.0"] == "Temperature")
+        #expect(datasets[0]["color"] == "FF465C")
+    }
+
 }

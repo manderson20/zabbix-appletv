@@ -5,7 +5,72 @@
 //  Created by Codex on 7/7/26.
 //
 
+import Charts
 import SwiftUI
+
+struct LineChartWidgetContentView: View {
+    let series: [ChartSeries]
+
+    var body: some View {
+        if series.allSatisfy({ $0.points.isEmpty }) {
+            Text("No data in the last 24 hours")
+                .font(.system(size: 16, weight: .regular, design: .rounded))
+                .foregroundStyle(DashboardTheme.secondaryText)
+        } else {
+            Chart {
+                ForEach(series) { line in
+                    ForEach(line.points) { point in
+                        LineMark(x: .value("Time", point.date), y: .value(line.name, point.value))
+                            .foregroundStyle(Color(hex: line.colorHex) ?? DashboardTheme.accent)
+                    }
+                }
+            }
+            .chartLegend(series.count > 1 ? .visible : .hidden)
+            .chartXAxis {
+                AxisMarks(values: .automatic(desiredCount: 3)) {
+                    AxisValueLabel(format: .dateTime.hour().minute())
+                }
+            }
+            .chartYAxis {
+                AxisMarks(position: .leading)
+            }
+        }
+    }
+}
+
+struct PieChartWidgetContentView: View {
+    let slices: [ChartSlice]
+
+    var body: some View {
+        if slices.isEmpty {
+            Text("No data available")
+                .font(.system(size: 16, weight: .regular, design: .rounded))
+                .foregroundStyle(DashboardTheme.secondaryText)
+        } else {
+            HStack(spacing: 12) {
+                Chart(slices) { slice in
+                    SectorMark(angle: .value("Value", slice.value), innerRadius: .ratio(0.5))
+                        .foregroundStyle(Color(hex: slice.colorHex) ?? DashboardTheme.accent)
+                }
+                .frame(maxWidth: 110)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(slices.prefix(6)) { slice in
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(Color(hex: slice.colorHex) ?? DashboardTheme.accent)
+                                .frame(width: 10, height: 10)
+                            Text(slice.name)
+                                .font(.system(size: 13, weight: .regular, design: .rounded))
+                                .foregroundStyle(DashboardTheme.secondaryText)
+                                .lineLimit(1)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
 
 /// Custom arc-based gauge, since SwiftUI's native `Gauge` control is unavailable on tvOS.
 struct GaugeWidgetContentView: View {

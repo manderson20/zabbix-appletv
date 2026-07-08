@@ -39,9 +39,9 @@ nonisolated struct DashboardWidgetFrame: Sendable, Equatable {
 
 /// Native renderings supported for a dashboard widget.
 ///
-/// Chart widgets ("graph", "svggraph", "graphprototype", "piechart"), map widgets ("map",
-/// "geomap", "mapnavtree", "favmaps"), and the URL widget are handled separately from this initial
-/// tier — see the widget build-out plan for status.
+/// Map widgets ("map", "geomap", "mapnavtree", "favmaps"), the graph prototype widget (tied to
+/// low-level discovery, a distinct and deeper feature), and the URL widget are handled separately
+/// from this build-out — see the widget build-out plan for status.
 nonisolated enum DashboardWidgetKind: Sendable {
     case clock
     case itemValue(name: String, value: String, units: String)
@@ -60,6 +60,8 @@ nonisolated enum DashboardWidgetKind: Sendable {
     case webMonitoring([WebScenarioSummary])
     case itemHistory([ItemHistorySeries])
     case dataOverview([DataOverviewEntry])
+    case lineChart([ChartSeries])
+    case pieChart([ChartSlice])
     case unsupported(rawType: String)
 }
 
@@ -296,4 +298,46 @@ nonisolated struct DataOverviewEntry: Identifiable, Sendable {
 
     /// Unit label, e.g. "%" or "°F".
     let units: String
+}
+
+/// A single time series shown as a line on a chart widget.
+nonisolated struct ChartSeries: Identifiable, Sendable {
+    /// Stable series identifier.
+    let id: String
+
+    /// Series label, typically "Host: Item".
+    let name: String
+
+    /// Line color as a "RRGGBB" hex string.
+    let colorHex: String
+
+    /// Recent data points, oldest first.
+    let points: [ChartPoint]
+}
+
+/// A single point on a chart series.
+nonisolated struct ChartPoint: Identifiable, Sendable {
+    /// Stable point identifier.
+    let id: String
+
+    /// Date the value was recorded.
+    let date: Date
+
+    /// Recorded value.
+    let value: Double
+}
+
+/// A single slice of a pie chart widget, showing one dataset's latest value.
+nonisolated struct ChartSlice: Identifiable, Sendable {
+    /// Stable slice identifier.
+    let id: String
+
+    /// Slice label, typically "Host: Item".
+    let name: String
+
+    /// Slice color as a "RRGGBB" hex string.
+    let colorHex: String
+
+    /// Latest value.
+    let value: Double
 }
