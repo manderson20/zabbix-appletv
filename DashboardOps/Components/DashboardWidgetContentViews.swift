@@ -242,11 +242,20 @@ struct LineChartWidgetContentView: View {
             Chart {
                 ForEach(series) { line in
                     ForEach(line.points) { point in
+                        // `foregroundStyle(by:)` (a plottable grouping value), not a bare
+                        // `Color` modifier, is what tells Swift Charts these points belong to
+                        // distinct series — without it, points from different series interleave
+                        // into one zigzagging path sorted by x-position instead of staying as
+                        // separate connected lines.
                         LineMark(x: .value("Time", point.date), y: .value(line.name, point.value))
-                            .foregroundStyle(Color(hex: line.colorHex) ?? DashboardTheme.accent)
+                            .foregroundStyle(by: .value("Series", line.name))
                     }
                 }
             }
+            .chartForegroundStyleScale(
+                domain: series.map(\.name),
+                range: series.map { Color(hex: $0.colorHex) ?? DashboardTheme.accent }
+            )
             .chartLegend(series.count > 1 ? .visible : .hidden)
             .chartXAxis {
                 AxisMarks(values: .automatic(desiredCount: 3)) {
@@ -314,33 +323,37 @@ struct GaugeWidgetContentView: View {
     }
 
     var body: some View {
-        VStack(spacing: 6) {
-            ZStack {
-                Circle()
-                    .trim(from: 0, to: 0.75)
-                    .stroke(DashboardTheme.secondaryCardBackground, style: StrokeStyle(lineWidth: 10, lineCap: .round))
-                    .rotationEffect(.degrees(135))
+        GeometryReader { geometry in
+            let diameter = max(min(geometry.size.width, geometry.size.height - 26), 40)
 
-                Circle()
-                    .trim(from: 0, to: 0.75 * fraction)
-                    .stroke(gaugeTint, style: StrokeStyle(lineWidth: 10, lineCap: .round))
-                    .rotationEffect(.degrees(135))
+            VStack(spacing: 6) {
+                ZStack {
+                    Circle()
+                        .trim(from: 0, to: 0.75)
+                        .stroke(DashboardTheme.secondaryCardBackground, style: StrokeStyle(lineWidth: max(diameter * 0.09, 6), lineCap: .round))
+                        .rotationEffect(.degrees(135))
 
-                Text(ZabbixValueFormatting.format(reading.value, units: reading.units))
-                    .font(.system(size: 20, weight: .bold, design: .rounded))
-                    .foregroundStyle(DashboardTheme.primaryText)
-                    .minimumScaleFactor(0.5)
+                    Circle()
+                        .trim(from: 0, to: 0.75 * fraction)
+                        .stroke(gaugeTint, style: StrokeStyle(lineWidth: max(diameter * 0.09, 6), lineCap: .round))
+                        .rotationEffect(.degrees(135))
+
+                    Text(ZabbixValueFormatting.format(reading.value, units: reading.units))
+                        .font(.system(size: diameter * 0.2, weight: .bold, design: .rounded))
+                        .foregroundStyle(DashboardTheme.primaryText)
+                        .minimumScaleFactor(0.5)
+                        .lineLimit(1)
+                        .padding(.horizontal, 8)
+                }
+                .frame(width: diameter, height: diameter)
+
+                Text(reading.name)
+                    .font(.system(size: 15, weight: .regular, design: .rounded))
+                    .foregroundStyle(DashboardTheme.secondaryText)
                     .lineLimit(1)
-                    .padding(.horizontal, 8)
             }
-            .frame(maxWidth: 90, maxHeight: 90)
-
-            Text(reading.name)
-                .font(.system(size: 15, weight: .regular, design: .rounded))
-                .foregroundStyle(DashboardTheme.secondaryText)
-                .lineLimit(1)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         }
-        .frame(maxWidth: .infinity)
     }
 
     private var gaugeTint: Color {

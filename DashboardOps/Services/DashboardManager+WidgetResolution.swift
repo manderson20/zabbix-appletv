@@ -813,21 +813,63 @@ extension DashboardManager {
     // MARK: - SVG graph
 
     /// Dataset fields ("ds.N.hosts.0", "ds.N.items.0", "ds.N.color") verified against a live
-    /// Zabbix 7.0 server. Only the first host/item pair per dataset is resolved; svggraph datasets
-    /// can in principle aggregate multiple hosts or items per line, which isn't implemented here.
+    /// Zabbix 7.0 server. Also verified live: a single "ds.N" dataset can list several item name
+    /// patterns ("ds.N.items.0", "ds.N.items.1", ...) that all share the dataset's one configured
+    /// base color — Zabbix auto-shades each matched item so they stay distinguishable — and a
+    /// widget can additionally define "or.N" ("override") entries, each a single manually-added
+    /// item with its own explicit color layered on top of the pattern-matched datasets. Missing
+    /// either of these dropped real lines/colors that appear on the live server's graphs.
     private func resolveSVGGraph(
         _ widget: ZabbixWidget,
         serverBaseURL: URL,
         authToken: String
     ) async throws -> DashboardWidgetKind {
         let datasets = Self.indexedFieldGroups(widget.fields, prefix: "ds")
-        guard !datasets.isEmpty else {
+        let overrides = Self.indexedFieldGroups(widget.fields, prefix: "or")
+        guard !datasets.isEmpty || !overrides.isEmpty else {
             return .unsupported(rawType: widget.type)
         }
 
         var series: [ChartSeries] = []
+
         for dataset in datasets {
-            guard let hostName = dataset["hosts.0"], let itemPattern = dataset["items.0"] else { continue }
+            let hostNames = Self.valuesWithNumberedSuffix(dataset, prefix: "hosts.")
+            let itemPatterns = Self.valuesWithNumberedSuffix(dataset, prefix: "items.")
+            guard !hostNames.isEmpty, !itemPatterns.isEmpty else { continue }
+
+            let hosts = try await zabbixAPIClient.hostsByName(serverBaseURL: serverBaseURL, authToken: authToken, names: hostNames)
+            let baseColorHex = dataset["color"] ?? "3DC9B0"
+
+            var matchIndex = 0
+            for host in hosts {
+                for itemPattern in itemPatterns {
+                    let items = try await zabbixAPIClient.itemsMatching(
+                        serverBaseURL: serverBaseURL,
+                        authToken: authToken,
+                        hostIDs: [host.hostid],
+                        namePattern: itemPattern
+                    )
+
+                    for item in items {
+                        let points = try await recentPoints(for: item.itemid, valueType: item.value_type?.intValue ?? 0, serverBaseURL: serverBaseURL, authToken: authToken)
+
+                        series.append(
+                            ChartSeries(
+                                id: "\(widget.widgetid).\(item.itemid)",
+                                name: "\(host.name): \(item.name)",
+                                colorHex: Self.shadedColorHex(baseColorHex, index: matchIndex),
+                                units: item.units ?? "",
+                                points: points
+                            )
+                        )
+                        matchIndex += 1
+                    }
+                }
+            }
+        }
+
+        for override in overrides {
+            guard let hostName = override["hosts.0"], let itemPattern = override["items.0"] else { continue }
 
             let hosts = try await zabbixAPIClient.hostsByName(serverBaseURL: serverBaseURL, authToken: authToken, names: [hostName])
             guard let host = hosts.first else { continue }
@@ -846,7 +888,7 @@ extension DashboardManager {
                 ChartSeries(
                     id: "\(widget.widgetid).\(item.itemid)",
                     name: "\(host.name): \(item.name)",
-                    colorHex: dataset["color"] ?? "3DC9B0",
+                    colorHex: override["color"] ?? "3DC9B0",
                     units: item.units ?? "",
                     points: points
                 )
@@ -854,6 +896,37 @@ extension DashboardManager {
         }
 
         return series.isEmpty ? .unsupported(rawType: widget.type) : .lineChart(series)
+    }
+
+    /// Returns all values for keys like "prefix0", "prefix1", ... in a dataset dictionary, in
+    /// ascending numeric order (e.g. "items.0", "items.1" -> their values in index order).
+    private static func valuesWithNumberedSuffix(_ group: [String: String], prefix: String) -> [String] {
+        group.keys
+            .filter { $0.hasPrefix(prefix) }
+            .compactMap { key -> (Int, String)? in
+                guard let index = Int(key.dropFirst(prefix.count)) else { return nil }
+                return (index, key)
+            }
+            .sorted { $0.0 < $1.0 }
+            .compactMap { group[$0.1] }
+    }
+
+    /// Lightens a base hex color for the Nth item matched by the same dataset pattern, so items
+    /// sharing one configured color stay visually distinguishable — approximating Zabbix's own
+    /// per-item auto-shading within a multi-item dataset.
+    private static func shadedColorHex(_ hex: String, index: Int) -> String {
+        guard index > 0, hex.count == 6, let value = UInt32(hex, radix: 16) else { return hex }
+
+        let lightenFactor = min(Double(index) * 0.35, 0.75)
+        let r = Double((value >> 16) & 0xFF)
+        let g = Double((value >> 8) & 0xFF)
+        let b = Double(value & 0xFF)
+
+        func lightened(_ component: Double) -> Int {
+            Int(component + (255 - component) * lightenFactor)
+        }
+
+        return String(format: "%02X%02X%02X", lightened(r), lightened(g), lightened(b))
     }
 
     // MARK: - Classic graph
@@ -931,11 +1004,13 @@ extension DashboardManager {
     /// unbounded `history.get` call risks against a server with a large history table.
     ///
     /// Fetches up to `maxHistoryPointsFetched` points (enough to cover 24h even for an item
-    /// polled every ~40s) rather than a small limit — a small limit combined with `sortorder:
+    /// polled every ~15s) rather than a small limit — a small limit combined with `sortorder:
     /// DESC` returns only the newest slice of the window, which for a frequently-sampled item
     /// (verified live: 480 points/24h at a 30s interval) covered barely 10 of the requested 24
-    /// hours. The result is then evenly downsampled for display, so density never affects how
-    /// much of the time window is actually shown, matching Zabbix's own graph behavior.
+    /// hours. Points are returned as fetched (chronological), undownsampled: Zabbix's own graphs
+    /// render every history point rather than averaging, and Swift Charts handles a few thousand
+    /// `LineMark`s without difficulty, so thinning them out was only making the chart look
+    /// smoothed-over compared to the real dashboard.
     private func recentPoints(
         for itemID: String,
         valueType: Int,
@@ -951,28 +1026,16 @@ extension DashboardManager {
             limit: Self.maxHistoryPointsFetched
         )
 
-        let points = values.reversed().compactMap { value -> ChartPoint? in
+        return values.reversed().compactMap { value -> ChartPoint? in
             guard let doubleValue = Double(value.value), let timestamp = TimeInterval(value.clock) else {
                 return nil
             }
             return ChartPoint(id: "\(itemID).\(value.clock)", date: Date(timeIntervalSince1970: timestamp), value: doubleValue)
         }
-
-        return Self.downsampled(points, maxCount: Self.maxChartPointsDisplayed)
-    }
-
-    /// Reduces a chronological array to at most `maxCount` evenly-spaced entries, keeping the
-    /// first and last, so a chart's shape stays representative of the full series rather than
-    /// just its tail.
-    private static func downsampled<T>(_ values: [T], maxCount: Int) -> [T] {
-        guard values.count > maxCount, maxCount > 1 else { return values }
-        let stride = Double(values.count - 1) / Double(maxCount - 1)
-        return (0..<maxCount).map { values[Int((Double($0) * stride).rounded())] }
     }
 
     private static let defaultHistoryWindowSeconds = 24 * 3600
-    private static let maxHistoryPointsFetched = 3000
-    private static let maxChartPointsDisplayed = 300
+    private static let maxHistoryPointsFetched = 6000
 
     /// Classifies each host's set of interfaces (already filtered to one type, or unfiltered for
     /// the "Total hosts" row) into available/unavailable/mixed/unknown, matching Zabbix's own

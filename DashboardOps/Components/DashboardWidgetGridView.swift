@@ -35,7 +35,8 @@ struct DashboardWidgetGridView: View {
                     DashboardWidgetCardView(widget: widget)
                         .frame(
                             width: columnWidth * CGFloat(widget.frame.width),
-                            height: rowHeight * CGFloat(widget.frame.height)
+                            height: rowHeight * CGFloat(widget.frame.height),
+                            alignment: .top
                         )
                         .offset(
                             x: columnWidth * CGFloat(widget.frame.x),
@@ -53,7 +54,7 @@ private struct DashboardWidgetCardView: View {
 
     var body: some View {
         DashboardCard {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 10) {
                 Text(widget.title)
                     .font(.system(size: 22, weight: .bold, design: .rounded))
                     .foregroundStyle(DashboardTheme.primaryText)
@@ -61,6 +62,7 @@ private struct DashboardWidgetCardView: View {
 
                 content
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .padding(6)
     }
@@ -133,6 +135,7 @@ private struct ClockWidgetContentView: View {
                 .font(.system(size: 40, weight: .semibold, design: .rounded))
                 .foregroundStyle(DashboardTheme.primaryText)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
     }
 }
 
@@ -161,6 +164,7 @@ private struct ItemValueWidgetContentView: View {
                 .foregroundStyle(DashboardTheme.secondaryText)
                 .lineLimit(1)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
     }
 }
 

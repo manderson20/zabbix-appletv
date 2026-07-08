@@ -18,8 +18,8 @@ struct DashboardCard<Content: View>: View {
 
     var body: some View {
         content
-            .padding(30)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(18)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .background(DashboardTheme.cardBackground)
             .clipShape(RoundedRectangle(cornerRadius: DashboardTheme.cardCornerRadius, style: .continuous))
     }
