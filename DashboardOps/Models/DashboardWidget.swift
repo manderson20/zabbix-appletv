@@ -53,7 +53,7 @@ nonisolated enum DashboardWidgetKind: Sendable {
     case problems([DashboardProblem])
     case problemsBySeverity([SeverityCount])
     case hostAvailability([HostInterfaceAvailability])
-    case systemOverview(hostCount: Int, itemCount: Int, problemCount: Int)
+    case systemInformation(serverVersion: String, isRunning: Bool)
     case gauge(GaugeReading)
     case honeycomb([HoneycombCell])
     case topHosts(columns: [String], rows: [TopHostsRow])
@@ -105,9 +105,11 @@ nonisolated struct SeverityCount: Identifiable, Sendable {
     var id: Int { severity }
 }
 
-/// Availability breakdown for one monitoring interface type, shown in a host availability widget.
+/// Availability breakdown for one monitoring interface type (or the combined "Total hosts" row),
+/// shown in a host availability widget. Each count is per-host: a host contributes to "mixed"
+/// when it has more than one interface of this type and they disagree on availability.
 nonisolated struct HostInterfaceAvailability: Identifiable, Sendable {
-    /// Human-readable interface type, e.g. "Zabbix Agent" or "SNMP".
+    /// Human-readable interface type, e.g. "Zabbix Agent" or "SNMP", or "Total hosts".
     let interfaceTypeName: String
 
     /// Number of hosts with this interface type currently available.
@@ -116,8 +118,13 @@ nonisolated struct HostInterfaceAvailability: Identifiable, Sendable {
     /// Number of hosts with this interface type currently unavailable.
     let unavailable: Int
 
+    /// Number of hosts with two or more interfaces of this type disagreeing on availability.
+    let mixed: Int
+
     /// Number of hosts with this interface type in an unknown state.
     let unknown: Int
+
+    var total: Int { available + unavailable + mixed + unknown }
 
     var id: String { interfaceTypeName }
 }
@@ -141,6 +148,10 @@ nonisolated struct GaugeReading: Sendable {
 
     /// Threshold values that color the gauge arc, in ascending order.
     let thresholds: [GaugeThreshold]
+
+    /// A single fixed arc color ("value_arc_color"), used when the widget isn't configured with
+    /// threshold color bands — Zabbix's gauge widget supports either mode.
+    let fixedArcColorHex: String?
 }
 
 /// A single threshold marker on a gauge.
@@ -321,6 +332,10 @@ nonisolated struct ChartSeries: Identifiable, Sendable {
 
     /// Line color as a "RRGGBB" hex string.
     let colorHex: String
+
+    /// The underlying item's unit string (e.g. "bps", "B", "%"), used to scale axis labels the
+    /// way Zabbix's own graphs do (bps -> Kbps -> Mbps -> Gbps).
+    let units: String
 
     /// Recent data points, oldest first.
     let points: [ChartPoint]

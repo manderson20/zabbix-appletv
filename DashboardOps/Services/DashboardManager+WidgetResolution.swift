@@ -50,7 +50,7 @@ extension DashboardManager {
             result.append(
                 RenderableDashboardWidget(
                     id: widget.widgetid,
-                    title: widget.name?.isEmpty == false ? widget.name! : widget.type.capitalized,
+                    title: widget.name?.isEmpty == false ? widget.name! : Self.defaultTitle(forWidgetType: widget.type),
                     frame: DashboardWidgetFrame(
                         x: widget.x.intValue,
                         y: widget.y.intValue,
@@ -133,35 +133,27 @@ extension DashboardManager {
 
             let hosts = try await zabbixAPIClient.hostsWithInterfaces(serverBaseURL: serverBaseURL, authToken: authToken)
 
-            return .hostAvailability(
-                requestedTypes.sorted().map { type in
-                    var available = 0
-                    var unavailable = 0
-                    var unknown = 0
-
-                    for interface in hosts.flatMap(\.interfaces) where interface.type.intValue == type {
-                        switch interface.available.intValue {
-                        case 1: available += 1
-                        case 2: unavailable += 1
-                        default: unknown += 1
-                        }
-                    }
-
-                    return HostInterfaceAvailability(
-                        interfaceTypeName: Self.interfaceTypeName(type),
-                        available: available,
-                        unavailable: unavailable,
-                        unknown: unknown
+            var rows: [HostInterfaceAvailability] = [
+                Self.hostAvailabilityRow(name: "Total hosts", interfacesByHost: hosts.map(\.interfaces))
+            ]
+            rows.append(
+                contentsOf: requestedTypes.sorted().map { type in
+                    Self.hostAvailabilityRow(
+                        name: Self.interfaceTypeName(type),
+                        interfacesByHost: hosts.map { host in host.interfaces.filter { $0.type.intValue == type } }
                     )
                 }
             )
 
-        case "systeminfo":
-            async let hostCount = zabbixAPIClient.hostCount(serverBaseURL: serverBaseURL, authToken: authToken)
-            async let itemCount = zabbixAPIClient.itemCount(serverBaseURL: serverBaseURL, authToken: authToken)
-            async let problemCount = zabbixAPIClient.problemCount(serverBaseURL: serverBaseURL, authToken: authToken)
+            return .hostAvailability(rows)
 
-            return try await .systemOverview(hostCount: hostCount, itemCount: itemCount, problemCount: problemCount)
+        case "systeminfo":
+            // Zabbix's own frontend determines "server is running" via a direct socket check to
+            // the zabbix_server trapper port, which isn't reachable from this app. Reaching this
+            // point at all means the API call just succeeded, so a live, authenticated session is
+            // the closest available proxy for "the environment is up."
+            let serverVersion = try await zabbixAPIClient.apiVersion(serverBaseURL: serverBaseURL)
+            return .systemInformation(serverVersion: serverVersion, isRunning: true)
 
         case "gauge":
             return try await resolveGauge(widget, serverBaseURL: serverBaseURL, authToken: authToken)
@@ -266,7 +258,15 @@ extension DashboardManager {
             .sorted { $0.value < $1.value }
 
         return .gauge(
-            GaugeReading(name: item.name, value: value, minValue: minValue, maxValue: maxValue, units: item.units ?? "", thresholds: thresholds)
+            GaugeReading(
+                name: item.name,
+                value: value,
+                minValue: minValue,
+                maxValue: maxValue,
+                units: item.units ?? "",
+                thresholds: thresholds,
+                fixedArcColorHex: Self.fieldValue(widget.fields, name: "value_arc_color")
+            )
         )
     }
 
@@ -847,6 +847,7 @@ extension DashboardManager {
                     id: "\(widget.widgetid).\(item.itemid)",
                     name: "\(host.name): \(item.name)",
                     colorHex: dataset["color"] ?? "3DC9B0",
+                    units: item.units ?? "",
                     points: points
                 )
             )
@@ -883,7 +884,7 @@ extension DashboardManager {
 
             let points = try await recentPoints(for: item.itemid, valueType: item.value_type?.intValue ?? 0, serverBaseURL: serverBaseURL, authToken: authToken)
 
-            series.append(ChartSeries(id: "\(widget.widgetid).\(item.itemid)", name: item.name, colorHex: gitem.color, points: points))
+            series.append(ChartSeries(id: "\(widget.widgetid).\(item.itemid)", name: item.name, colorHex: gitem.color, units: item.units ?? "", points: points))
         }
 
         return series.isEmpty ? .unsupported(rawType: widget.type) : .lineChart(series)
@@ -928,6 +929,13 @@ extension DashboardManager {
 
     /// Fetches an item's recent history, bounded to the last 24 hours to avoid the timeout an
     /// unbounded `history.get` call risks against a server with a large history table.
+    ///
+    /// Fetches up to `maxHistoryPointsFetched` points (enough to cover 24h even for an item
+    /// polled every ~40s) rather than a small limit — a small limit combined with `sortorder:
+    /// DESC` returns only the newest slice of the window, which for a frequently-sampled item
+    /// (verified live: 480 points/24h at a 30s interval) covered barely 10 of the requested 24
+    /// hours. The result is then evenly downsampled for display, so density never affects how
+    /// much of the time window is actually shown, matching Zabbix's own graph behavior.
     private func recentPoints(
         for itemID: String,
         valueType: Int,
@@ -940,18 +948,60 @@ extension DashboardManager {
             itemID: itemID,
             historyValueType: valueType,
             sinceUnixTime: Int(Date().timeIntervalSince1970) - Self.defaultHistoryWindowSeconds,
-            limit: 200
+            limit: Self.maxHistoryPointsFetched
         )
 
-        return values.reversed().compactMap { value in
+        let points = values.reversed().compactMap { value -> ChartPoint? in
             guard let doubleValue = Double(value.value), let timestamp = TimeInterval(value.clock) else {
                 return nil
             }
             return ChartPoint(id: "\(itemID).\(value.clock)", date: Date(timeIntervalSince1970: timestamp), value: doubleValue)
         }
+
+        return Self.downsampled(points, maxCount: Self.maxChartPointsDisplayed)
+    }
+
+    /// Reduces a chronological array to at most `maxCount` evenly-spaced entries, keeping the
+    /// first and last, so a chart's shape stays representative of the full series rather than
+    /// just its tail.
+    private static func downsampled<T>(_ values: [T], maxCount: Int) -> [T] {
+        guard values.count > maxCount, maxCount > 1 else { return values }
+        let stride = Double(values.count - 1) / Double(maxCount - 1)
+        return (0..<maxCount).map { values[Int((Double($0) * stride).rounded())] }
     }
 
     private static let defaultHistoryWindowSeconds = 24 * 3600
+    private static let maxHistoryPointsFetched = 3000
+    private static let maxChartPointsDisplayed = 300
+
+    /// Classifies each host's set of interfaces (already filtered to one type, or unfiltered for
+    /// the "Total hosts" row) into available/unavailable/mixed/unknown, matching Zabbix's own
+    /// host availability widget: a host with two or more interfaces disagreeing on availability
+    /// counts as "mixed" rather than being double-counted.
+    private static func hostAvailabilityRow(name: String, interfacesByHost: [[ZabbixHostInterface]]) -> HostInterfaceAvailability {
+        var available = 0
+        var unavailable = 0
+        var mixed = 0
+        var unknown = 0
+
+        for interfaces in interfacesByHost where !interfaces.isEmpty {
+            let statuses = Set(interfaces.map(\.available.intValue))
+            let hasAvailable = statuses.contains(1)
+            let hasUnavailable = statuses.contains(2)
+
+            if hasAvailable, hasUnavailable {
+                mixed += 1
+            } else if hasAvailable {
+                available += 1
+            } else if hasUnavailable {
+                unavailable += 1
+            } else {
+                unknown += 1
+            }
+        }
+
+        return HostInterfaceAvailability(interfaceTypeName: name, available: available, unavailable: unavailable, mixed: mixed, unknown: unknown)
+    }
 
     /// Resolves host names for a set of trigger identifiers in one batched lookup.
     private func hostNamesByTriggerID(
@@ -1015,6 +1065,45 @@ extension DashboardManager {
         case 3: "IPMI"
         case 4: "JMX"
         default: "Interface Type \(type)"
+        }
+    }
+
+    /// Zabbix's own default widget title, shown for a widget with no custom name set — matches
+    /// what the Zabbix frontend itself displays, not a capitalized version of the internal API
+    /// type string (e.g. "Host availability", not "Hostavail").
+    static func defaultTitle(forWidgetType type: String) -> String {
+        switch type {
+        case "actionlog": "Action log"
+        case "clock": "Clock"
+        case "dataover": "Data overview"
+        case "discovery": "Discovery status"
+        case "favgraphs": "Favorite graphs"
+        case "favmaps": "Favorite maps"
+        case "gauge": "Gauge"
+        case "geomap": "Geomap"
+        case "graph": "Graph (classic)"
+        case "svggraph": "Graph"
+        case "graphprototype": "Graph prototype"
+        case "honeycomb": "Honeycomb"
+        case "hostavail": "Host availability"
+        case "hostnavigator": "Host navigator"
+        case "item": "Item value"
+        case "itemhistory": "Item history"
+        case "itemnavigator": "Item navigator"
+        case "map": "Map"
+        case "navtree": "Map navigation tree"
+        case "piechart": "Pie chart"
+        case "problemhosts": "Problem hosts"
+        case "problems": "Problems"
+        case "problemsbysv": "Problems by severity"
+        case "slareport": "SLA report"
+        case "systeminfo": "System information"
+        case "tophosts": "Top hosts"
+        case "toptriggers": "Top triggers"
+        case "trigover": "Trigger overview"
+        case "url": "URL"
+        case "web": "Web monitoring"
+        default: type.capitalized
         }
     }
 

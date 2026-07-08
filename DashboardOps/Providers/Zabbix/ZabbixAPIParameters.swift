@@ -135,23 +135,6 @@ nonisolated struct ZabbixHostAvailabilityParameters: Encodable, Sendable {
     }
 }
 
-/// Parameters for a `host.get` call that returns only a count of enabled hosts.
-nonisolated struct ZabbixHostCountParameters: Encodable, Sendable {
-    let countOutput = true
-    let filter = ZabbixEnabledFilter()
-}
-
-/// Parameters for an `item.get` call that returns only a count of enabled items.
-nonisolated struct ZabbixItemCountParameters: Encodable, Sendable {
-    let countOutput = true
-    let filter = ZabbixEnabledFilter()
-}
-
-/// Parameters for a `problem.get` call that returns only a count of active problems.
-nonisolated struct ZabbixProblemCountParameters: Encodable, Sendable {
-    let countOutput = true
-}
-
 /// Parameters for `trigger.get` when fetching currently active (problem-state) triggers.
 nonisolated struct ZabbixActiveTriggerGetParameters: Encodable, Sendable {
     /// Trigger fields to return.

@@ -78,8 +78,8 @@ private struct DashboardWidgetCardView: View {
             ProblemsBySeverityWidgetContentView(counts: counts)
         case let .hostAvailability(breakdown):
             HostAvailabilityWidgetContentView(breakdown: breakdown)
-        case let .systemOverview(hostCount, itemCount, problemCount):
-            SystemOverviewWidgetContentView(hostCount: hostCount, itemCount: itemCount, problemCount: problemCount)
+        case let .systemInformation(serverVersion, isRunning):
+            SystemInformationWidgetContentView(serverVersion: serverVersion, isRunning: isRunning)
         case let .gauge(reading):
             GaugeWidgetContentView(reading: reading)
         case let .honeycomb(cells):
@@ -141,9 +141,16 @@ private struct ItemValueWidgetContentView: View {
     let value: String
     let units: String
 
+    private var displayValue: String {
+        guard let numericValue = Double(value) else {
+            return units.isEmpty ? value : "\(value) \(units)"
+        }
+        return ZabbixValueFormatting.format(numericValue, units: units)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(units.isEmpty ? value : "\(value) \(units)")
+            Text(displayValue)
                 .font(.system(size: 40, weight: .bold, design: .rounded))
                 .foregroundStyle(DashboardTheme.accent)
                 .lineLimit(1)
@@ -194,81 +201,109 @@ private struct ProblemsWidgetContentView: View {
     }
 }
 
+/// Large, full-height colored blocks per severity with the count centered, matching Zabbix's own
+/// "Problems by severity" widget (rather than small numbers over a thin capsule bar).
 private struct ProblemsBySeverityWidgetContentView: View {
     let counts: [SeverityCount]
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 4) {
             ForEach(counts) { count in
-                VStack(spacing: 6) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(severityIndicatorColor(for: count.severity))
+
                     Text("\(count.count)")
                         .font(.system(size: 26, weight: .bold, design: .rounded))
-                        .foregroundStyle(DashboardTheme.primaryText)
-
-                    Capsule()
-                        .fill(severityIndicatorColor(for: count.severity))
-                        .frame(height: 6)
+                        .foregroundStyle(.white)
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
     }
 }
 
+/// A table with column headers (Available/Not available/Mixed/Unknown/Total) and one row per
+/// interface type plus a combined "Total hosts" row, matching Zabbix's own host availability
+/// widget layout.
 private struct HostAvailabilityWidgetContentView: View {
     let breakdown: [HostInterfaceAvailability]
 
+    private static let nameColumnWidth: CGFloat = 130
+
+    private struct Column {
+        let title: String
+        let color: Color
+        let keyPath: KeyPath<HostInterfaceAvailability, Int>
+    }
+
+    private static let columns: [Column] = [
+        Column(title: "Available", color: .green, keyPath: \.available),
+        Column(title: "Not available", color: .red, keyPath: \.unavailable),
+        Column(title: "Mixed", color: .orange, keyPath: \.mixed),
+        Column(title: "Unknown", color: .gray, keyPath: \.unknown),
+    ]
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        // Deliberately compact: this is an unattended kiosk display, so a scrollable table isn't
+        // an option the way it would be on an interactive screen — everything has to fit within
+        // whatever grid height the dashboard's own layout allotted the widget.
+        Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 3) {
+            GridRow {
+                Text("")
+                    .frame(width: Self.nameColumnWidth, alignment: .leading)
+                ForEach(Self.columns, id: \.title) { column in
+                    Text(column.title)
+                        .foregroundStyle(column.color)
+                }
+                Text("Total")
+                    .foregroundStyle(DashboardTheme.secondaryText)
+            }
+            .font(.system(size: 11, weight: .semibold, design: .rounded))
+
             ForEach(breakdown) { row in
-                HStack(spacing: 12) {
+                GridRow {
                     Text(row.interfaceTypeName)
-                        .font(.system(size: 16, weight: .semibold, design: .rounded))
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
                         .foregroundStyle(DashboardTheme.secondaryText)
-                        .frame(width: 100, alignment: .leading)
+                        .frame(width: Self.nameColumnWidth, alignment: .leading)
                         .lineLimit(1)
 
-                    availabilityLabel(count: row.available, color: .green)
-                    availabilityLabel(count: row.unavailable, color: .red)
-                    availabilityLabel(count: row.unknown, color: .gray)
+                    ForEach(Self.columns, id: \.title) { column in
+                        Text("\(row[keyPath: column.keyPath])")
+                            .font(.system(size: 14, weight: .semibold, design: .rounded))
+                            .foregroundStyle(DashboardTheme.primaryText)
+                    }
+
+                    Text("\(row.total)")
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                        .foregroundStyle(DashboardTheme.primaryText)
                 }
             }
         }
     }
-
-    private func availabilityLabel(count: Int, color: Color) -> some View {
-        HStack(spacing: 4) {
-            Circle()
-                .fill(color)
-                .frame(width: 10, height: 10)
-            Text("\(count)")
-                .font(.system(size: 18, weight: .semibold, design: .rounded))
-                .foregroundStyle(DashboardTheme.primaryText)
-        }
-    }
 }
 
-private struct SystemOverviewWidgetContentView: View {
-    let hostCount: Int
-    let itemCount: Int
-    let problemCount: Int
+private struct SystemInformationWidgetContentView: View {
+    let serverVersion: String
+    let isRunning: Bool
 
     var body: some View {
-        HStack(spacing: 24) {
-            statistic(label: "Hosts", value: hostCount)
-            statistic(label: "Items", value: itemCount)
-            statistic(label: "Active Problems", value: problemCount)
+        VStack(alignment: .leading, spacing: 10) {
+            statusRow(label: "Zabbix server is running", value: isRunning ? "Yes" : "No", color: isRunning ? .green : .red)
+            statusRow(label: "Zabbix server version", value: serverVersion, color: DashboardTheme.secondaryText)
         }
     }
 
-    private func statistic(label: String, value: Int) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("\(value)")
-                .font(.system(size: 28, weight: .bold, design: .rounded))
-                .foregroundStyle(DashboardTheme.accent)
-
-            Text(label)
-                .font(.system(size: 15, weight: .regular, design: .rounded))
+    private func statusRow(label: String, value: String, color: Color) -> some View {
+        HStack(spacing: 6) {
+            Text("\(label):")
+                .font(.system(size: 16, weight: .regular, design: .rounded))
                 .foregroundStyle(DashboardTheme.secondaryText)
+
+            Text(value)
+                .font(.system(size: 16, weight: .semibold, design: .rounded))
+                .foregroundStyle(color)
         }
     }
 }

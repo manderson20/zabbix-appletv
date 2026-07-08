@@ -163,42 +163,6 @@ actor ZabbixAPIClient {
         )
     }
 
-    /// Counts enabled hosts.
-    func hostCount(serverBaseURL: URL, authToken: String) async throws -> Int {
-        let count = try await send(
-            method: "host.get",
-            params: ZabbixHostCountParameters(),
-            serverBaseURL: serverBaseURL,
-            authToken: authToken,
-            resultType: String.self
-        )
-        return Int(count) ?? 0
-    }
-
-    /// Counts enabled items.
-    func itemCount(serverBaseURL: URL, authToken: String) async throws -> Int {
-        let count = try await send(
-            method: "item.get",
-            params: ZabbixItemCountParameters(),
-            serverBaseURL: serverBaseURL,
-            authToken: authToken,
-            resultType: String.self
-        )
-        return Int(count) ?? 0
-    }
-
-    /// Counts currently active problems.
-    func problemCount(serverBaseURL: URL, authToken: String) async throws -> Int {
-        let count = try await send(
-            method: "problem.get",
-            params: ZabbixProblemCountParameters(),
-            serverBaseURL: serverBaseURL,
-            authToken: authToken,
-            resultType: String.self
-        )
-        return Int(count) ?? 0
-    }
-
     /// Fetches triggers currently in the PROBLEM state, with their hosts.
     func activeTriggers(
         serverBaseURL: URL,

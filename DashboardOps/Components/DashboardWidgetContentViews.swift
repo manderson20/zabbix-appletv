@@ -226,6 +226,13 @@ struct SLAReportWidgetContentView: View {
 struct LineChartWidgetContentView: View {
     let series: [ChartSeries]
 
+    private var units: String { series.first?.units ?? "" }
+
+    private var yAxisScale: ZabbixValueFormatting.Scale {
+        let maxValue = series.flatMap(\.points).map(\.value).max() ?? 0
+        return ZabbixValueFormatting.scale(forMaxMagnitude: maxValue, units: units)
+    }
+
     var body: some View {
         if series.allSatisfy({ $0.points.isEmpty }) {
             Text("No data in the last 24 hours")
@@ -247,7 +254,16 @@ struct LineChartWidgetContentView: View {
                 }
             }
             .chartYAxis {
-                AxisMarks(position: .leading)
+                let scale = yAxisScale
+                AxisMarks(position: .leading) { value in
+                    AxisGridLine()
+                    AxisTick()
+                    AxisValueLabel {
+                        if let rawValue = value.as(Double.self) {
+                            Text(ZabbixValueFormatting.format(rawValue, units: units, scale: scale))
+                        }
+                    }
+                }
             }
         }
     }
@@ -310,7 +326,7 @@ struct GaugeWidgetContentView: View {
                     .stroke(gaugeTint, style: StrokeStyle(lineWidth: 10, lineCap: .round))
                     .rotationEffect(.degrees(135))
 
-                Text(reading.units.isEmpty ? formatted(reading.value) : "\(formatted(reading.value)) \(reading.units)")
+                Text(ZabbixValueFormatting.format(reading.value, units: reading.units))
                     .font(.system(size: 20, weight: .bold, design: .rounded))
                     .foregroundStyle(DashboardTheme.primaryText)
                     .minimumScaleFactor(0.5)
@@ -328,15 +344,14 @@ struct GaugeWidgetContentView: View {
     }
 
     private var gaugeTint: Color {
-        let matchingThreshold = reading.thresholds.last { $0.value <= reading.value }
-        guard let hex = matchingThreshold?.colorHex, let color = Color(hex: hex) else {
-            return DashboardTheme.accent
+        if let matchingThreshold = reading.thresholds.last(where: { $0.value <= reading.value }),
+           let color = Color(hex: matchingThreshold.colorHex) {
+            return color
         }
-        return color
-    }
-
-    private func formatted(_ value: Double) -> String {
-        value.truncatingRemainder(dividingBy: 1) == 0 ? String(format: "%.0f", value) : String(format: "%.1f", value)
+        if let fixedArcColorHex = reading.fixedArcColorHex, let color = Color(hex: fixedArcColorHex) {
+            return color
+        }
+        return DashboardTheme.accent
     }
 }
 
