@@ -44,6 +44,14 @@ final class DashboardListViewModel: ObservableObject {
         }
     }
 
+    /// Clears cached dashboards so the next `loadDashboards()` call refetches — used when the
+    /// server configuration changes, since the previous list belonged to a different server.
+    func resetForNewConfiguration() {
+        hasLoaded = false
+        dashboards = []
+        errorMessage = nil
+    }
+
     /// Marks a dashboard as the default shown on launch, persisting the choice to the server
     /// configuration.
     func setDefaultDashboard(_ dashboard: Dashboard) async {

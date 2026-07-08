@@ -92,6 +92,16 @@ actor ZabbixSessionService {
         await sessionManager.activeSession()
     }
 
+    /// Discards any tracked session in memory without attempting a server-side logout.
+    ///
+    /// Used when the server configuration itself changes (a reconfiguration to a different
+    /// server): `disconnect()` isn't right for this, since it would send the *old* session's auth
+    /// token to whatever `serverBaseURL` is *currently* saved — which by that point is the *new*
+    /// server, not the one the token was issued by.
+    func clearSession() async {
+        await sessionManager.endSession()
+    }
+
     private func zabbixConfiguration() async throws -> ServerConfiguration {
         guard let configuration = try await settingsService.loadServerConfiguration(),
               configuration.providerKind == .zabbix else {

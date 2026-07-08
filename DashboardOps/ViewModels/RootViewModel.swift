@@ -70,10 +70,28 @@ final class RootViewModel: ObservableObject {
         path.append(route)
     }
 
-    /// Opens a specific dashboard in the full-screen viewer.
+    /// Opens a specific dashboard in the full-screen viewer, and remembers it as the default —
+    /// on an unattended kiosk display there's no real notion of "just peek at this one," so
+    /// picking a dashboard from the list is treated as the persistent choice, not a one-off.
     func openDashboard(_ dashboard: Dashboard) {
+        Task {
+            await dashboardListViewModel.setDefaultDashboard(dashboard)
+        }
         dashboardViewerViewModel.selectDashboard(dashboard)
         navigate(to: .dashboardViewer)
+    }
+
+    /// Called after server configuration is saved. Routes to the dashboard list rather than
+    /// straight into a dashboard, so the choice of which dashboard to show is an explicit one
+    /// (this app has no other moment where that decision gets made) instead of silently landing
+    /// on whichever dashboard Zabbix happens to return first.
+    func completeServerConfiguration() {
+        Task {
+            await environment.zabbixSessionService.clearSession()
+        }
+        dashboardListViewModel.resetForNewConfiguration()
+        dashboardViewerViewModel.resetConnectionAttempt()
+        path = [.dashboardList]
     }
 
     /// Replaces the current path with one route.

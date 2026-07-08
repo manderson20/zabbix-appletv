@@ -57,7 +57,7 @@ struct ContentView: View {
             ServerConfigurationScreen(
                 viewModel: viewModel.serverConfigurationViewModel,
                 onSaveComplete: {
-                    viewModel.replace(with: .dashboardViewer)
+                    viewModel.completeServerConfiguration()
                 }
             )
         case .dashboardList:
