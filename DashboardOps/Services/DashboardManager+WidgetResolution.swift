@@ -839,6 +839,7 @@ extension DashboardManager {
 
             let hosts = try await zabbixAPIClient.hostsByName(serverBaseURL: serverBaseURL, authToken: authToken, names: hostNames)
             let baseColorHex = dataset["color"] ?? "3DC9B0"
+            let fillOpacity = Self.fillOpacity(fromTransparencyField: dataset["transparency"])
 
             var matchIndex = 0
             for host in hosts {
@@ -859,6 +860,7 @@ extension DashboardManager {
                                 name: "\(host.name): \(item.name)",
                                 colorHex: Self.shadedColorHex(baseColorHex, index: matchIndex),
                                 units: item.units ?? "",
+                                fillOpacity: fillOpacity,
                                 points: points
                             )
                         )
@@ -890,6 +892,7 @@ extension DashboardManager {
                     name: "\(host.name): \(item.name)",
                     colorHex: override["color"] ?? "3DC9B0",
                     units: item.units ?? "",
+                    fillOpacity: Self.fillOpacity(fromTransparencyField: override["transparency"]),
                     points: points
                 )
             )
@@ -929,6 +932,16 @@ extension DashboardManager {
         return String(format: "%02X%02X%02X", lightened(r), lightened(g), lightened(b))
     }
 
+    /// Converts a dataset's "transparency" field (0-10, Zabbix's own scale where higher means
+    /// MORE fill, despite the name) into a 0...1 opacity for the area drawn under a chart line.
+    /// Most datasets never set this field explicitly, but Zabbix still renders its default
+    /// (5, a medium fill) rather than no fill at all, which is what made the real graphs look
+    /// like layered, shaded regions instead of bare lines.
+    private static func fillOpacity(fromTransparencyField value: String?) -> Double {
+        let transparency = value.flatMap(Int.init) ?? 5
+        return Double(min(max(transparency, 0), 10)) / 10.0
+    }
+
     // MARK: - Classic graph
 
     /// The "graphid" field name is Zabbix's standard convention for referencing a Graph object, not
@@ -957,7 +970,7 @@ extension DashboardManager {
 
             let points = try await recentPoints(for: item.itemid, valueType: item.value_type?.intValue ?? 0, serverBaseURL: serverBaseURL, authToken: authToken)
 
-            series.append(ChartSeries(id: "\(widget.widgetid).\(item.itemid)", name: item.name, colorHex: gitem.color, units: item.units ?? "", points: points))
+            series.append(ChartSeries(id: "\(widget.widgetid).\(item.itemid)", name: item.name, colorHex: gitem.color, units: item.units ?? "", fillOpacity: 0.5, points: points))
         }
 
         return series.isEmpty ? .unsupported(rawType: widget.type) : .lineChart(series)

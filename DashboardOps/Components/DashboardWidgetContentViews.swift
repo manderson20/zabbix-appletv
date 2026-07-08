@@ -247,6 +247,10 @@ struct LineChartWidgetContentView: View {
                         // distinct series — without it, points from different series interleave
                         // into one zigzagging path sorted by x-position instead of staying as
                         // separate connected lines.
+                        AreaMark(x: .value("Time", point.date), y: .value(line.name, point.value))
+                            .foregroundStyle(by: .value("Series", line.name))
+                            .opacity(line.fillOpacity)
+
                         LineMark(x: .value("Time", point.date), y: .value(line.name, point.value))
                             .foregroundStyle(by: .value("Series", line.name))
                     }

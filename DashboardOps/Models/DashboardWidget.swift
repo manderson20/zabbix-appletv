@@ -337,6 +337,11 @@ nonisolated struct ChartSeries: Identifiable, Sendable {
     /// way Zabbix's own graphs do (bps -> Kbps -> Mbps -> Gbps).
     let units: String
 
+    /// Fill opacity (0...1) for the area drawn beneath the line, matching Zabbix's own svggraph
+    /// datasets, which shade a translucent area under each line by default (its "transparency"
+    /// field, 0-10, unset on most datasets but still rendered at its default rather than 0/none).
+    let fillOpacity: Double
+
     /// Recent data points, oldest first.
     let points: [ChartPoint]
 }
