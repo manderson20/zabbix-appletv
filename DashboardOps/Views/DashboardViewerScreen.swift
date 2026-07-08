@@ -43,11 +43,8 @@ struct DashboardViewerScreen: View {
                     }
 
                     if viewModel.canRetry {
-                        Button("Retry") {
+                        Button("Retry Now") {
                             viewModel.retry()
-                            Task {
-                                await viewModel.prepareViewer()
-                            }
                         }
                         .buttonStyle(.bordered)
                         .font(.system(size: 26, weight: .semibold, design: .rounded))

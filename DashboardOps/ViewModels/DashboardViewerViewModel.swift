@@ -33,12 +33,18 @@ final class DashboardViewerViewModel: ObservableObject {
     /// widget's own interval — finer-grained than Zabbix's smallest widget refresh option (10s).
     private static let refreshTickNanoseconds: UInt64 = 5 * 1_000_000_000
 
+    /// Backoff delays between automatic startup retry attempts, in seconds. The last value
+    /// repeats for any further attempts.
+    private static let startupRetryDelaysSeconds = [5, 15, 30, 60]
+
     private let dashboardManager: DashboardManager
     private let zabbixSessionService: ZabbixSessionService
     private var hasPrepared = false
     private var explicitDashboard: Dashboard?
     private var lastRefreshedAt: [String: Date] = [:]
     private var refreshTask: Task<Void, Never>?
+    private var backoffSleepTask: Task<Void, Never>?
+    private var prepareTask: Task<Void, Never>?
 
     /// Creates a dashboard viewer view model.
     init(dashboardManager: DashboardManager, zabbixSessionService: ZabbixSessionService) {
@@ -47,10 +53,49 @@ final class DashboardViewerViewModel: ObservableObject {
     }
 
     /// Prepares the viewer by connecting to Zabbix and resolving a dashboard to display.
+    ///
+    /// On failure, keeps retrying automatically with backoff rather than stopping after one
+    /// attempt — a wall-mounted display that only recovers via someone walking up with the Siri
+    /// Remote defeats "no user interaction required during normal operation." The `Retry` button
+    /// remains available to skip the current wait rather than as the only way to recover.
+    ///
+    /// The retry loop runs in its own explicitly-owned `Task` (rather than directly in this
+    /// `async` function's body) so `resetState()` can reliably cancel an in-flight loop — e.g. if
+    /// the user picks a different dashboard while a prior connection attempt is still retrying —
+    /// without racing a fresh call to `prepareViewer()` against a stale one still running.
     func prepareViewer() async {
         guard !hasPrepared else { return }
         hasPrepared = true
 
+        let task = Task { [weak self] in
+            guard let self else { return }
+            await self.runPrepareLoop()
+        }
+        prepareTask = task
+        await task.value
+    }
+
+    private func runPrepareLoop() async {
+        var attempt = 0
+        while !Task.isCancelled {
+            let succeeded = await attemptLoad()
+            if succeeded || Task.isCancelled { return }
+
+            let delaySeconds = Self.startupRetryDelaysSeconds[min(attempt, Self.startupRetryDelaysSeconds.count - 1)]
+            attempt += 1
+            statusMessage += " Retrying in \(delaySeconds)s\u{2026}"
+
+            let sleepTask = Task {
+                try? await Task.sleep(nanoseconds: UInt64(delaySeconds) * 1_000_000_000)
+                return
+            }
+            backoffSleepTask = sleepTask
+            await sleepTask.value
+        }
+    }
+
+    /// Attempts one connect-and-load cycle. Returns whether it succeeded.
+    private func attemptLoad() async -> Bool {
         renderingState = .loading
         statusMessage = "Connecting to Zabbix"
         canRetry = false
@@ -64,7 +109,7 @@ final class DashboardViewerViewModel: ObservableObject {
                 renderingState = .unavailable
                 statusMessage = "No dashboards are available for this Zabbix server."
                 canRetry = true
-                return
+                return false
             }
 
             selectedDashboard = dashboard
@@ -78,20 +123,23 @@ final class DashboardViewerViewModel: ObservableObject {
                 renderingState = .unavailable
                 statusMessage = "This dashboard has no widgets to display."
                 canRetry = true
-            } else {
-                renderingState = .ready
-                statusMessage = ""
-
-                let now = Date()
-                for widget in resolvedWidgets {
-                    lastRefreshedAt[widget.id] = now
-                }
-                startRefreshLoop(dashboardID: dashboard.providerDashboardID)
+                return false
             }
+
+            renderingState = .ready
+            statusMessage = ""
+
+            let now = Date()
+            for widget in resolvedWidgets {
+                lastRefreshedAt[widget.id] = now
+            }
+            startRefreshLoop(dashboardID: dashboard.providerDashboardID)
+            return true
         } catch {
             renderingState = .unavailable
             statusMessage = error.localizedDescription
             canRetry = true
+            return false
         }
     }
 
@@ -119,12 +167,19 @@ final class DashboardViewerViewModel: ObservableObject {
         resetState()
     }
 
-    /// Retries the current connection attempt without changing the selected dashboard.
+    /// Skips the remaining automatic backoff wait and retries immediately, without changing the
+    /// selected dashboard. The `prepareViewer()` loop is already running and asleep whenever this
+    /// is reachable (the Retry button only shows during a failure, i.e. mid-backoff), so this just
+    /// wakes it — it does not start a second, competing attempt loop.
     func retry() {
-        resetState()
+        backoffSleepTask?.cancel()
     }
 
     private func resetState() {
+        prepareTask?.cancel()
+        prepareTask = nil
+        backoffSleepTask?.cancel()
+        backoffSleepTask = nil
         stopRefreshLoop()
         hasPrepared = false
         renderingState = .idle

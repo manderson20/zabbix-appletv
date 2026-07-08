@@ -21,11 +21,13 @@ final class DashboardListViewModel: ObservableObject {
     @Published private(set) var errorMessage: String?
 
     private let dashboardManager: DashboardManager
+    private let settingsService: SettingsService
     private var hasLoaded = false
 
     /// Creates a dashboard list view model.
-    init(dashboardManager: DashboardManager) {
+    init(dashboardManager: DashboardManager, settingsService: SettingsService) {
         self.dashboardManager = dashboardManager
+        self.settingsService = settingsService
     }
 
     /// Loads the dashboard list from the active provider.
@@ -39,6 +41,23 @@ final class DashboardListViewModel: ObservableObject {
             dashboards = try await dashboardManager.dashboards(for: .zabbix)
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Marks a dashboard as the default shown on launch, persisting the choice to the server
+    /// configuration.
+    func setDefaultDashboard(_ dashboard: Dashboard) async {
+        guard var configuration = try? await settingsService.loadServerConfiguration() else {
+            return
+        }
+
+        configuration.preferredDashboardID = dashboard.id
+        try? await settingsService.saveServerConfiguration(configuration)
+
+        dashboards = dashboards.map { existing in
+            var updated = existing
+            updated.isDefault = existing.id == dashboard.id
+            return updated
         }
     }
 }

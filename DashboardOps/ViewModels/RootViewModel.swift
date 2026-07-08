@@ -44,7 +44,10 @@ final class RootViewModel: ObservableObject {
             settingsService: environment.settingsService,
             keychainService: environment.keychainService
         )
-        dashboardListViewModel = DashboardListViewModel(dashboardManager: environment.dashboardManager)
+        dashboardListViewModel = DashboardListViewModel(
+            dashboardManager: environment.dashboardManager,
+            settingsService: environment.settingsService
+        )
         dashboardViewerViewModel = DashboardViewerViewModel(
             dashboardManager: environment.dashboardManager,
             zabbixSessionService: environment.zabbixSessionService

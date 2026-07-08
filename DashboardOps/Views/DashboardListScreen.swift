@@ -53,21 +53,45 @@ struct DashboardListScreen: View {
                     ScrollView {
                         VStack(spacing: 18) {
                             ForEach(viewModel.dashboards) { dashboard in
-                                Button(action: { onOpenDashboard(dashboard) }) {
-                                    DashboardCard {
-                                        VStack(alignment: .leading, spacing: 10) {
-                                            Text(dashboard.title)
-                                                .font(.system(size: 30, weight: .bold, design: .rounded))
+                                HStack(spacing: 16) {
+                                    Button(action: { onOpenDashboard(dashboard) }) {
+                                        DashboardCard {
+                                            VStack(alignment: .leading, spacing: 10) {
+                                                HStack(spacing: 10) {
+                                                    Text(dashboard.title)
+                                                        .font(.system(size: 30, weight: .bold, design: .rounded))
 
-                                            if let subtitle = dashboard.subtitle {
-                                                Text(subtitle)
-                                                    .font(.system(size: 22, weight: .regular, design: .rounded))
-                                                    .foregroundStyle(DashboardTheme.secondaryText)
+                                                    if dashboard.isDefault {
+                                                        Text("Default")
+                                                            .font(.system(size: 18, weight: .semibold, design: .rounded))
+                                                            .foregroundStyle(DashboardTheme.accent)
+                                                            .padding(.horizontal, 10)
+                                                            .padding(.vertical, 4)
+                                                            .background(DashboardTheme.accent.opacity(0.18))
+                                                            .clipShape(Capsule())
+                                                    }
+                                                }
+
+                                                if let subtitle = dashboard.subtitle {
+                                                    Text(subtitle)
+                                                        .font(.system(size: 22, weight: .regular, design: .rounded))
+                                                        .foregroundStyle(DashboardTheme.secondaryText)
+                                                }
                                             }
                                         }
                                     }
+                                    .buttonStyle(.plain)
+
+                                    if !dashboard.isDefault {
+                                        Button("Set Default") {
+                                            Task {
+                                                await viewModel.setDefaultDashboard(dashboard)
+                                            }
+                                        }
+                                        .buttonStyle(.bordered)
+                                        .font(.system(size: 20, weight: .semibold, design: .rounded))
+                                    }
                                 }
-                                .buttonStyle(.plain)
                             }
                         }
                     }

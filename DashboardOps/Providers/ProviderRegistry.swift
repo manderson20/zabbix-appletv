@@ -16,11 +16,7 @@ nonisolated struct ProviderRegistry: Sendable {
     static let standard = ProviderRegistry(
         providers: [
             ZabbixProvider(),
-            GrafanaProvider(),
-            WebDashboardProvider(),
-            PrintOpsProvider(),
-            BuslineProvider(),
-            UniFiProvider()
+            BuslineProvider()
         ]
     )
 }
