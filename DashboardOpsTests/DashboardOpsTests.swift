@@ -261,7 +261,7 @@ struct DashboardOpsTests {
             {
               "jsonrpc": "2.0",
               "result": [
-                { "triggerid": "58189", "hosts": [ { "name": "Bruno-1" } ] }
+                { "triggerid": "58189", "hosts": [ { "hostid": "11434", "name": "Bruno-1" } ] }
               ],
               "id": 1
             }
@@ -306,6 +306,77 @@ struct DashboardOpsTests {
         let count = try response.resolvedResult()
 
         #expect(Int(count) == 912)
+    }
+
+    @Test func widgetFieldHelpersParseScalarAndIndexedFields() throws {
+        let fields = [
+            ZabbixWidgetField(name: "min", value: "0"),
+            ZabbixWidgetField(name: "groupids.0", value: "10"),
+            ZabbixWidgetField(name: "groupids.1", value: "20"),
+            ZabbixWidgetField(name: "itemid.0", value: "155071")
+        ]
+
+        #expect(DashboardManager.fieldValue(fields, name: "min") == "0")
+        #expect(DashboardManager.indexedValues(fields, name: "groupids") == ["10", "20"])
+        #expect(DashboardManager.firstIndexedValue(fields, name: "itemid") == "155071")
+        #expect(DashboardManager.firstIndexedValue(fields, name: "hostid") == nil)
+    }
+
+    @Test func widgetFieldHelpersGroupIndexedFieldsByPrefix() throws {
+        let fields = [
+            ZabbixWidgetField(name: "thresholds.0.threshold", value: "50"),
+            ZabbixWidgetField(name: "thresholds.0.color", value: "FF0000"),
+            ZabbixWidgetField(name: "thresholds.1.threshold", value: "80"),
+            ZabbixWidgetField(name: "thresholds.1.color", value: "00FF00")
+        ]
+
+        let groups = DashboardManager.indexedFieldGroups(fields, prefix: "thresholds")
+
+        #expect(groups.count == 2)
+        #expect(groups[0]["threshold"] == "50")
+        #expect(groups[0]["color"] == "FF0000")
+        #expect(groups[1]["threshold"] == "80")
+    }
+
+    @Test func zabbixAPIResponseDecodesHostGroupLookupPluralKey() throws {
+        // host.get's selectHostGroups response key is "hostgroups" (verified against a live
+        // Zabbix 7.0 server), not "hostGroups" or "groups".
+        let responseData = try #require(
+            """
+            {
+              "jsonrpc": "2.0",
+              "result": [
+                { "hostid": "10461", "name": "BSD-USW102-3", "hostgroups": [ { "groupid": "9", "name": "Templates/Network devices" } ] }
+              ],
+              "id": 1
+            }
+            """.data(using: .utf8)
+        )
+
+        let response = try JSONDecoder().decode(ZabbixAPIResponse<[ZabbixHostGroupLookup]>.self, from: responseData)
+        let hosts = try response.resolvedResult()
+
+        #expect(hosts.first?.hostgroups.first?.name == "Templates/Network devices")
+    }
+
+    @Test func zabbixAPIResponseDecodesActiveTriggerSummary() throws {
+        let responseData = try #require(
+            """
+            {
+              "jsonrpc": "2.0",
+              "result": [
+                { "triggerid": "47242", "description": "Interface down", "priority": "3", "hosts": [ { "hostid": "10461", "name": "BSD-USW102-3" } ] }
+              ],
+              "id": 1
+            }
+            """.data(using: .utf8)
+        )
+
+        let response = try JSONDecoder().decode(ZabbixAPIResponse<[ZabbixTriggerSummary]>.self, from: responseData)
+        let triggers = try response.resolvedResult()
+
+        #expect(triggers.first?.priority.intValue == 3)
+        #expect(triggers.first?.hosts.first?.hostid == "10461")
     }
 
 }

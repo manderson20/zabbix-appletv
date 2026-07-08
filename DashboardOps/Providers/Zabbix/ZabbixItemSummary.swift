@@ -20,4 +20,8 @@ nonisolated struct ZabbixItemSummary: Decodable, Sendable {
 
     /// Unit label configured on the item, e.g. "°C" or "%".
     let units: String?
+
+    /// Zabbix value type: 0 = float, 1 = character, 2 = log, 3 = unsigned, 4 = text. Used to query
+    /// the matching `history.get` table, which is keyed by value type rather than a single table.
+    let value_type: ZabbixNumericString?
 }

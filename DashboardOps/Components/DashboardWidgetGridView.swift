@@ -80,6 +80,28 @@ private struct DashboardWidgetCardView: View {
             HostAvailabilityWidgetContentView(breakdown: breakdown)
         case let .systemOverview(hostCount, itemCount, problemCount):
             SystemOverviewWidgetContentView(hostCount: hostCount, itemCount: itemCount, problemCount: problemCount)
+        case let .gauge(reading):
+            GaugeWidgetContentView(reading: reading)
+        case let .honeycomb(cells):
+            HoneycombWidgetContentView(cells: cells)
+        case let .topHosts(columns, rows):
+            TopHostsWidgetContentView(columns: columns, rows: rows)
+        case let .topTriggers(problems):
+            ProblemsWidgetContentView(problems: problems)
+        case let .triggerOverview(rows):
+            TriggerOverviewWidgetContentView(rows: rows)
+        case let .problemsByHostGroup(summaries):
+            ProblemHostsWidgetContentView(summaries: summaries)
+        case let .actionLog(entries):
+            ActionLogWidgetContentView(entries: entries)
+        case let .discoveryStatus(rules):
+            DiscoveryStatusWidgetContentView(rules: rules)
+        case let .webMonitoring(scenarios):
+            WebMonitoringWidgetContentView(scenarios: scenarios)
+        case let .itemHistory(series):
+            ItemHistoryWidgetContentView(series: series)
+        case let .dataOverview(entries):
+            DataOverviewWidgetContentView(entries: entries)
         case let .unsupported(rawType):
             Text("The \"\(rawType)\" widget isn't supported yet.")
                 .font(.system(size: 18, weight: .regular, design: .rounded))
@@ -236,7 +258,7 @@ private struct SystemOverviewWidgetContentView: View {
 }
 
 /// Maps a Zabbix problem severity (0 = not classified, 5 = disaster) to an indicator color.
-private func severityIndicatorColor(for severity: Int) -> Color {
+func severityIndicatorColor(for severity: Int) -> Color {
     switch severity {
     case 0: .gray
     case 1: .teal

@@ -10,9 +10,9 @@ import Foundation
 /// Coordinates dashboard discovery and selection for the active provider.
 actor DashboardManager {
     private let providerRegistry: ProviderRegistry
-    private let settingsService: SettingsService
-    private let zabbixAPIClient: ZabbixAPIClient
-    private let zabbixSessionService: ZabbixSessionService
+    let settingsService: SettingsService
+    let zabbixAPIClient: ZabbixAPIClient
+    let zabbixSessionService: ZabbixSessionService
 
     /// Creates a dashboard manager backed by a provider registry and the Zabbix stack.
     init(
@@ -124,123 +124,5 @@ actor DashboardManager {
         }
 
         return renderableWidgets
-    }
-
-    private func resolveWidgetKind(
-        _ widget: ZabbixWidget,
-        serverBaseURL: URL,
-        authToken: String
-    ) async throws -> DashboardWidgetKind {
-        switch widget.type {
-        case "clock":
-            return .clock
-
-        case "problems":
-            let severities = widget.fields
-                .filter { $0.name == "severities" || $0.name.hasPrefix("severities.") }
-                .compactMap { Int($0.value) }
-
-            let problems = try await zabbixAPIClient.problems(
-                serverBaseURL: serverBaseURL,
-                authToken: authToken,
-                severities: severities.isEmpty ? nil : severities
-            )
-
-            let triggerIDs = Array(Set(problems.map(\.objectid)))
-            let triggerHosts = try await zabbixAPIClient.triggerHosts(
-                serverBaseURL: serverBaseURL,
-                authToken: authToken,
-                triggerIDs: triggerIDs
-            )
-            let hostByTriggerID = Dictionary(uniqueKeysWithValues: triggerHosts.map { ($0.triggerid, $0.hosts.first?.name) })
-
-            return .problems(
-                problems.map { problem in
-                    DashboardProblem(
-                        id: problem.eventid,
-                        name: problem.name,
-                        severity: problem.severity.intValue,
-                        host: hostByTriggerID[problem.objectid] ?? nil,
-                        since: Date(timeIntervalSince1970: TimeInterval(problem.clock) ?? 0)
-                    )
-                }
-            )
-
-        case "item":
-            guard let itemID = widget.fields.first(where: { $0.name == "itemid" || $0.name.hasPrefix("itemid.") })?.value else {
-                return .unsupported(rawType: widget.type)
-            }
-
-            let items = try await zabbixAPIClient.items(serverBaseURL: serverBaseURL, authToken: authToken, itemIDs: [itemID])
-            guard let item = items.first else {
-                return .unsupported(rawType: widget.type)
-            }
-
-            return .itemValue(name: item.name, value: item.lastvalue ?? "\u{2014}", units: item.units ?? "")
-
-        case "problemsbysv":
-            let problems = try await zabbixAPIClient.problems(serverBaseURL: serverBaseURL, authToken: authToken)
-            var countsBySeverity = [Int: Int](uniqueKeysWithValues: (0...5).map { ($0, 0) })
-            for problem in problems {
-                countsBySeverity[problem.severity.intValue, default: 0] += 1
-            }
-
-            return .problemsBySeverity(
-                (0...5).reversed().map { severity in
-                    SeverityCount(severity: severity, count: countsBySeverity[severity] ?? 0)
-                }
-            )
-
-        case "hostavail":
-            let interfaceTypes = widget.fields
-                .filter { $0.name == "interface_type" || $0.name.hasPrefix("interface_type.") }
-                .compactMap { Int($0.value) }
-            let requestedTypes = interfaceTypes.isEmpty ? [1] : interfaceTypes
-
-            let hosts = try await zabbixAPIClient.hostsWithInterfaces(serverBaseURL: serverBaseURL, authToken: authToken)
-
-            return .hostAvailability(
-                requestedTypes.sorted().map { type in
-                    var available = 0
-                    var unavailable = 0
-                    var unknown = 0
-
-                    for interface in hosts.flatMap(\.interfaces) where interface.type.intValue == type {
-                        switch interface.available.intValue {
-                        case 1: available += 1
-                        case 2: unavailable += 1
-                        default: unknown += 1
-                        }
-                    }
-
-                    return HostInterfaceAvailability(
-                        interfaceTypeName: Self.interfaceTypeName(type),
-                        available: available,
-                        unavailable: unavailable,
-                        unknown: unknown
-                    )
-                }
-            )
-
-        case "systeminfo":
-            async let hostCount = zabbixAPIClient.hostCount(serverBaseURL: serverBaseURL, authToken: authToken)
-            async let itemCount = zabbixAPIClient.itemCount(serverBaseURL: serverBaseURL, authToken: authToken)
-            async let problemCount = zabbixAPIClient.problemCount(serverBaseURL: serverBaseURL, authToken: authToken)
-
-            return try await .systemOverview(hostCount: hostCount, itemCount: itemCount, problemCount: problemCount)
-
-        default:
-            return .unsupported(rawType: widget.type)
-        }
-    }
-
-    private static func interfaceTypeName(_ type: Int) -> String {
-        switch type {
-        case 1: "Zabbix Agent"
-        case 2: "SNMP"
-        case 3: "IPMI"
-        case 4: "JMX"
-        default: "Interface Type \(type)"
-        }
     }
 }

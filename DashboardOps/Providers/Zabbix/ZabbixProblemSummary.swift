@@ -39,7 +39,13 @@ nonisolated struct ZabbixTriggerHosts: Decodable, Sendable {
 }
 
 /// A minimal host reference embedded in related object responses.
+///
+/// `hostid` is included even when not explicitly requested in `selectHosts` — verified against a
+/// live Zabbix 7.0 server, consistent with Zabbix always returning an object's primary key.
 nonisolated struct ZabbixHostReference: Decodable, Sendable {
+    /// Zabbix host identifier.
+    let hostid: String
+
     /// Host display name.
     let name: String
 }

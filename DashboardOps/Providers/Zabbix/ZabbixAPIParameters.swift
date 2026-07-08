@@ -51,7 +51,7 @@ nonisolated struct ZabbixItemGetParameters: Encodable, Sendable {
     /// Item fields to return.
     let output: [String]
 
-    init(itemIDs: [String], output: [String] = ["itemid", "name", "lastvalue", "units"]) {
+    init(itemIDs: [String], output: [String] = ["itemid", "name", "lastvalue", "units", "value_type"]) {
         self.itemids = itemIDs
         self.output = output
     }
@@ -150,4 +150,240 @@ nonisolated struct ZabbixItemCountParameters: Encodable, Sendable {
 /// Parameters for a `problem.get` call that returns only a count of active problems.
 nonisolated struct ZabbixProblemCountParameters: Encodable, Sendable {
     let countOutput = true
+}
+
+/// Parameters for `trigger.get` when fetching currently active (problem-state) triggers.
+nonisolated struct ZabbixActiveTriggerGetParameters: Encodable, Sendable {
+    /// Trigger fields to return.
+    let output: [String]
+
+    /// Requests each trigger's host.
+    let selectHosts: [String]
+
+    /// Restricts to hosts in these groups, when the widget filters by host group.
+    let groupids: [String]?
+
+    /// Restricts to these hosts, when the widget filters by specific hosts.
+    let hostids: [String]?
+
+    /// 1 = only triggers currently in the PROBLEM state.
+    let filter: ZabbixTriggerValueFilter
+
+    /// Maximum number of triggers to return.
+    let limit: Int
+
+    init(
+        output: [String] = ["triggerid", "description", "priority"],
+        selectHosts: [String] = ["name"],
+        groupids: [String]? = nil,
+        hostids: [String]? = nil,
+        limit: Int = 100
+    ) {
+        self.output = output
+        self.selectHosts = selectHosts
+        self.groupids = groupids
+        self.hostids = hostids
+        self.filter = ZabbixTriggerValueFilter()
+        self.limit = limit
+    }
+}
+
+/// Restricts `trigger.get` to triggers currently in the PROBLEM state.
+nonisolated struct ZabbixTriggerValueFilter: Encodable, Sendable {
+    let value = 1
+}
+
+/// Parameters for `host.get` when resolving the host groups a set of hosts belong to.
+nonisolated struct ZabbixHostGroupLookupParameters: Encodable, Sendable {
+    /// Host identifiers to resolve.
+    let hostids: [String]
+
+    /// Host fields to return.
+    let output: [String]
+
+    /// Requests each host's groups.
+    let selectHostGroups: [String]
+
+    init(hostIDs: [String], output: [String] = ["hostid", "name"], selectHostGroups: [String] = ["groupid", "name"]) {
+        self.hostids = hostIDs
+        self.output = output
+        self.selectHostGroups = selectHostGroups
+    }
+}
+
+/// Parameters for `item.get` when resolving items by name pattern for a set of hosts, as used by
+/// widgets that display item values keyed by host (top hosts, honeycomb, data overview).
+nonisolated struct ZabbixItemSearchParameters: Encodable, Sendable {
+    /// Restricts the search to these host groups, when specified.
+    let groupids: [String]?
+
+    /// Restricts the search to these hosts, when specified.
+    let hostids: [String]?
+
+    /// Item fields to return.
+    let output: [String]
+
+    /// Requests each item's host.
+    let selectHosts: [String]
+
+    /// Wildcard name search, e.g. "CPU load" or "CPU*".
+    let search: ZabbixItemNameSearch?
+
+    /// Enables "*" wildcard matching in `search` rather than plain substring matching.
+    let searchWildcardsEnabled: Bool?
+
+    init(
+        groupIDs: [String]? = nil,
+        hostIDs: [String]? = nil,
+        namePattern: String? = nil,
+        output: [String] = ["itemid", "name", "lastvalue", "units"],
+        selectHosts: [String] = ["hostid", "name"]
+    ) {
+        self.groupids = groupIDs
+        self.hostids = hostIDs
+        self.output = output
+        self.selectHosts = selectHosts
+        self.search = namePattern.map(ZabbixItemNameSearch.init)
+        self.searchWildcardsEnabled = namePattern != nil ? true : nil
+    }
+}
+
+/// Wildcard name filter for `item.get`.
+nonisolated struct ZabbixItemNameSearch: Encodable, Sendable {
+    let name: String
+}
+
+/// Parameters for `history.get`/`trend.get` when fetching an item's recent values.
+nonisolated struct ZabbixHistoryGetParameters: Encodable, Sendable {
+    /// Zabbix value type: 0 = float, 1 = character, 2 = log, 3 = unsigned, 4 = text.
+    let history: Int
+
+    /// Item identifiers to fetch history for.
+    let itemids: [String]
+
+    /// Field to sort by.
+    let sortfield: String
+
+    /// Sort order.
+    let sortorder: String
+
+    /// Maximum number of values to return per item.
+    let limit: Int
+
+    init(historyValueType: Int, itemIDs: [String], sortfield: String = "clock", sortorder: String = "DESC", limit: Int = 10) {
+        self.history = historyValueType
+        self.itemids = itemIDs
+        self.sortfield = sortfield
+        self.sortorder = sortorder
+        self.limit = limit
+    }
+}
+
+/// Parameters for `alert.get` when fetching recent notifications/remote commands for the action log widget.
+///
+/// Always time-bounded: an unbounded `alert.get` call timed out against a live server with years
+/// of history, so a `time_from` is required rather than optional.
+nonisolated struct ZabbixAlertGetParameters: Encodable, Sendable {
+    /// Alert fields to return.
+    let output: [String]
+
+    /// Unix timestamp; only alerts at or after this time are returned.
+    let time_from: Int
+
+    /// Field to sort by.
+    let sortfield: String
+
+    /// Sort order.
+    let sortorder: String
+
+    /// Maximum number of alerts to return.
+    let limit: Int
+
+    init(
+        sinceUnixTime: Int,
+        output: [String] = ["alertid", "clock", "subject", "message", "status", "sendto", "alerttype"],
+        sortfield: String = "clock",
+        sortorder: String = "DESC",
+        limit: Int = 50
+    ) {
+        self.output = output
+        self.time_from = sinceUnixTime
+        self.sortfield = sortfield
+        self.sortorder = sortorder
+        self.limit = limit
+    }
+}
+
+/// Parameters for `drule.get` when listing network discovery rules.
+nonisolated struct ZabbixDiscoveryRuleGetParameters: Encodable, Sendable {
+    /// Discovery rule fields to return.
+    let output: [String]
+
+    init(output: [String] = ["druleid", "name", "status"]) {
+        self.output = output
+    }
+}
+
+/// Parameters for `dhost.get` when counting discovered hosts per rule.
+nonisolated struct ZabbixDiscoveredHostGetParameters: Encodable, Sendable {
+    /// Discovery rule identifiers to fetch discovered hosts for.
+    let druleids: [String]
+
+    /// Discovered host fields to return.
+    let output: [String]
+
+    init(druleIDs: [String], output: [String] = ["dhostid", "druleid", "status"]) {
+        self.druleids = druleIDs
+        self.output = output
+    }
+}
+
+/// Parameters for `httptest.get` when listing web monitoring scenarios.
+nonisolated struct ZabbixWebScenarioGetParameters: Encodable, Sendable {
+    /// Restricts to these host groups, when specified.
+    let groupids: [String]?
+
+    /// Restricts to these hosts, when specified.
+    let hostids: [String]?
+
+    /// Web scenario fields to return.
+    let output: [String]
+
+    /// Requests each scenario's host.
+    let selectHosts: [String]
+
+    init(
+        groupIDs: [String]? = nil,
+        hostIDs: [String]? = nil,
+        output: [String] = ["httptestid", "name"],
+        selectHosts: [String] = ["name"]
+    ) {
+        self.groupids = groupIDs
+        self.hostids = hostIDs
+        self.output = output
+        self.selectHosts = selectHosts
+    }
+}
+
+/// Parameters for `host.get` when listing enabled hosts by name, as used by widgets that scope
+/// their own item queries to a host list (top hosts, data overview).
+nonisolated struct ZabbixHostListParameters: Encodable, Sendable {
+    /// Restricts to these host groups, when specified.
+    let groupids: [String]?
+
+    /// Restricts to these hosts, when specified.
+    let hostids: [String]?
+
+    /// Host fields to return.
+    let output: [String]
+
+    /// Restricts results to enabled hosts.
+    let filter: ZabbixEnabledFilter
+
+    init(groupIDs: [String]? = nil, hostIDs: [String]? = nil, output: [String] = ["hostid", "name"]) {
+        self.groupids = groupIDs
+        self.hostids = hostIDs
+        self.output = output
+        self.filter = ZabbixEnabledFilter()
+    }
 }

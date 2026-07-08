@@ -199,6 +199,141 @@ actor ZabbixAPIClient {
         return Int(count) ?? 0
     }
 
+    /// Fetches triggers currently in the PROBLEM state, with their hosts.
+    func activeTriggers(
+        serverBaseURL: URL,
+        authToken: String,
+        groupIDs: [String]? = nil,
+        hostIDs: [String]? = nil,
+        limit: Int = 100
+    ) async throws -> [ZabbixTriggerSummary] {
+        try await send(
+            method: "trigger.get",
+            params: ZabbixActiveTriggerGetParameters(groupids: groupIDs, hostids: hostIDs, limit: limit),
+            serverBaseURL: serverBaseURL,
+            authToken: authToken,
+            resultType: [ZabbixTriggerSummary].self
+        )
+    }
+
+    /// Resolves the host groups a set of hosts belong to.
+    func hostGroups(serverBaseURL: URL, authToken: String, hostIDs: [String]) async throws -> [ZabbixHostGroupLookup] {
+        guard !hostIDs.isEmpty else {
+            return []
+        }
+
+        return try await send(
+            method: "host.get",
+            params: ZabbixHostGroupLookupParameters(hostIDs: hostIDs),
+            serverBaseURL: serverBaseURL,
+            authToken: authToken,
+            resultType: [ZabbixHostGroupLookup].self
+        )
+    }
+
+    /// Searches items by name pattern, with their owning host, for host/group-scoped item widgets.
+    func itemsMatching(
+        serverBaseURL: URL,
+        authToken: String,
+        groupIDs: [String]? = nil,
+        hostIDs: [String]? = nil,
+        namePattern: String? = nil
+    ) async throws -> [ZabbixItemWithHost] {
+        try await send(
+            method: "item.get",
+            params: ZabbixItemSearchParameters(groupIDs: groupIDs, hostIDs: hostIDs, namePattern: namePattern),
+            serverBaseURL: serverBaseURL,
+            authToken: authToken,
+            resultType: [ZabbixItemWithHost].self
+        )
+    }
+
+    /// Fetches an item's most recent historical values.
+    func history(
+        serverBaseURL: URL,
+        authToken: String,
+        itemID: String,
+        historyValueType: Int,
+        limit: Int = 10
+    ) async throws -> [ZabbixHistoryValue] {
+        try await send(
+            method: "history.get",
+            params: ZabbixHistoryGetParameters(historyValueType: historyValueType, itemIDs: [itemID], limit: limit),
+            serverBaseURL: serverBaseURL,
+            authToken: authToken,
+            resultType: [ZabbixHistoryValue].self
+        )
+    }
+
+    /// Fetches recent notifications and remote commands since a given time.
+    func alerts(serverBaseURL: URL, authToken: String, sinceUnixTime: Int) async throws -> [ZabbixAlert] {
+        try await send(
+            method: "alert.get",
+            params: ZabbixAlertGetParameters(sinceUnixTime: sinceUnixTime),
+            serverBaseURL: serverBaseURL,
+            authToken: authToken,
+            resultType: [ZabbixAlert].self
+        )
+    }
+
+    /// Fetches network discovery rules.
+    func discoveryRules(serverBaseURL: URL, authToken: String) async throws -> [ZabbixDiscoveryRule] {
+        try await send(
+            method: "drule.get",
+            params: ZabbixDiscoveryRuleGetParameters(),
+            serverBaseURL: serverBaseURL,
+            authToken: authToken,
+            resultType: [ZabbixDiscoveryRule].self
+        )
+    }
+
+    /// Fetches hosts discovered by a set of discovery rules, for status tallying.
+    func discoveredHosts(serverBaseURL: URL, authToken: String, ruleIDs: [String]) async throws -> [ZabbixDiscoveredHost] {
+        guard !ruleIDs.isEmpty else {
+            return []
+        }
+
+        return try await send(
+            method: "dhost.get",
+            params: ZabbixDiscoveredHostGetParameters(druleIDs: ruleIDs),
+            serverBaseURL: serverBaseURL,
+            authToken: authToken,
+            resultType: [ZabbixDiscoveredHost].self
+        )
+    }
+
+    /// Fetches web monitoring scenarios with their hosts.
+    func webScenarios(
+        serverBaseURL: URL,
+        authToken: String,
+        groupIDs: [String]? = nil,
+        hostIDs: [String]? = nil
+    ) async throws -> [ZabbixWebScenario] {
+        try await send(
+            method: "httptest.get",
+            params: ZabbixWebScenarioGetParameters(groupIDs: groupIDs, hostIDs: hostIDs),
+            serverBaseURL: serverBaseURL,
+            authToken: authToken,
+            resultType: [ZabbixWebScenario].self
+        )
+    }
+
+    /// Lists enabled hosts by group and/or host filter.
+    func hosts(
+        serverBaseURL: URL,
+        authToken: String,
+        groupIDs: [String]? = nil,
+        hostIDs: [String]? = nil
+    ) async throws -> [ZabbixHostListEntry] {
+        try await send(
+            method: "host.get",
+            params: ZabbixHostListParameters(groupIDs: groupIDs, hostIDs: hostIDs),
+            serverBaseURL: serverBaseURL,
+            authToken: authToken,
+            resultType: [ZabbixHostListEntry].self
+        )
+    }
+
     private func send<Parameters, Result>(
         method: String,
         params: Parameters,
