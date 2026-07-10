@@ -217,6 +217,7 @@ struct DashboardOpsTests {
                 title: "Clock",
                 frame: DashboardWidgetFrame(x: 0, y: 0, width: 4, height: 2),
                 refreshIntervalSeconds: nil,
+                hasHiddenHeader: false,
                 kind: .clock
             ),
             RenderableDashboardWidget(
@@ -224,7 +225,8 @@ struct DashboardOpsTests {
                 title: "CPU Load",
                 frame: DashboardWidgetFrame(x: 4, y: 0, width: 8, height: 4),
                 refreshIntervalSeconds: 30,
-                kind: .itemValue(name: "CPU Load", value: "0.42", units: "")
+                hasHiddenHeader: false,
+                kind: .itemValue(name: "CPU Load", value: "0.42", units: "", backgroundColorHex: nil)
             )
         ]
 

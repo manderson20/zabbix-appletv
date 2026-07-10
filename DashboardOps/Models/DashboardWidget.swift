@@ -22,6 +22,11 @@ nonisolated struct RenderableDashboardWidget: Identifiable, Sendable {
     /// isn't periodically refreshed (matches Zabbix's own "No refresh" option).
     let refreshIntervalSeconds: Int?
 
+    /// True when Zabbix's own widget config hides the header — the generic card title bar is
+    /// suppressed for these, matching real Zabbix (typically compact colored value widgets that
+    /// show their own description inline instead).
+    let hasHiddenHeader: Bool
+
     /// Native rendering for this widget.
     let kind: DashboardWidgetKind
 }
@@ -49,7 +54,7 @@ nonisolated struct DashboardWidgetFrame: Sendable, Equatable {
 /// native rendering here — see the widget build-out plan for the reasoning behind each.
 nonisolated enum DashboardWidgetKind: Sendable {
     case clock
-    case itemValue(name: String, value: String, units: String)
+    case itemValue(name: String, value: String, units: String, backgroundColorHex: String?)
     case problems([DashboardProblem])
     case problemsBySeverity([SeverityCount])
     case hostAvailability([HostInterfaceAvailability])

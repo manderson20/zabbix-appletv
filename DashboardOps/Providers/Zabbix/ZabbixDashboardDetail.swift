@@ -51,6 +51,11 @@ nonisolated struct ZabbixWidget: Decodable, Sendable {
     /// Widget height in grid rows.
     let height: ZabbixNumericString
 
+    /// Header display mode: 0 = header shown (default), 1 = header hidden. Widgets with a hidden
+    /// header (typically compact "item value" widgets with their own background color) render
+    /// their own description inline rather than showing the generic card title bar.
+    let view_mode: ZabbixNumericString?
+
     /// Widget-specific configuration fields.
     let fields: [ZabbixWidgetField]
 }

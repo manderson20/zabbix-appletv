@@ -239,43 +239,80 @@ struct LineChartWidgetContentView: View {
                 .font(.system(size: 16, weight: .regular, design: .rounded))
                 .foregroundStyle(DashboardTheme.secondaryText)
         } else {
-            Chart {
-                ForEach(series) { line in
-                    ForEach(line.points) { point in
-                        // `foregroundStyle(by:)` (a plottable grouping value), not a bare
-                        // `Color` modifier, is what tells Swift Charts these points belong to
-                        // distinct series — without it, points from different series interleave
-                        // into one zigzagging path sorted by x-position instead of staying as
-                        // separate connected lines.
-                        AreaMark(x: .value("Time", point.date), y: .value(line.name, point.value))
-                            .foregroundStyle(by: .value("Series", line.name))
-                            .opacity(line.fillOpacity)
+            VStack(alignment: .leading, spacing: 6) {
+                Chart {
+                    ForEach(series) { line in
+                        ForEach(line.points) { point in
+                            // `foregroundStyle(by:)` (a plottable grouping value), not a bare
+                            // `Color` modifier, is what tells Swift Charts these points belong to
+                            // distinct series — without it, points from different series
+                            // interleave into one zigzagging path sorted by x-position instead of
+                            // staying as separate connected lines.
+                            AreaMark(x: .value("Time", point.date), y: .value(line.name, point.value))
+                                .foregroundStyle(by: .value("Series", line.name))
+                                .opacity(line.fillOpacity)
 
-                        LineMark(x: .value("Time", point.date), y: .value(line.name, point.value))
-                            .foregroundStyle(by: .value("Series", line.name))
-                    }
-                }
-            }
-            .chartForegroundStyleScale(
-                domain: series.map(\.name),
-                range: series.map { Color(hex: $0.colorHex) ?? DashboardTheme.accent }
-            )
-            .chartLegend(series.count > 1 ? .visible : .hidden)
-            .chartXAxis {
-                AxisMarks(values: .automatic(desiredCount: 3)) {
-                    AxisValueLabel(format: .dateTime.hour().minute())
-                }
-            }
-            .chartYAxis {
-                let scale = yAxisScale
-                AxisMarks(position: .leading) { value in
-                    AxisGridLine()
-                    AxisTick()
-                    AxisValueLabel {
-                        if let rawValue = value.as(Double.self) {
-                            Text(ZabbixValueFormatting.format(rawValue, units: units, scale: scale))
+                            LineMark(x: .value("Time", point.date), y: .value(line.name, point.value))
+                                .foregroundStyle(by: .value("Series", line.name))
                         }
                     }
+                }
+                .chartForegroundStyleScale(
+                    domain: series.map(\.name),
+                    range: series.map { Color(hex: $0.colorHex) ?? DashboardTheme.accent }
+                )
+                // Swift Charts' built-in legend doesn't wrap long labels within the card's actual
+                // width — it can run entries off the edge instead — so it's hidden in favor of
+                // the wrapping `ChartLegendView` below, which we fully control.
+                .chartLegend(.hidden)
+                .chartXAxis {
+                    AxisMarks(values: .automatic(desiredCount: 3)) {
+                        AxisValueLabel(format: .dateTime.hour().minute())
+                            .font(.system(size: 13, weight: .regular, design: .rounded))
+                    }
+                }
+                .chartYAxis {
+                    let scale = yAxisScale
+                    AxisMarks(position: .leading) { value in
+                        AxisGridLine()
+                        AxisTick()
+                        AxisValueLabel {
+                            if let rawValue = value.as(Double.self) {
+                                Text(ZabbixValueFormatting.format(rawValue, units: units, scale: scale))
+                                    .font(.system(size: 13, weight: .regular, design: .rounded))
+                            }
+                        }
+                    }
+                }
+
+                if series.count > 1 {
+                    ChartLegendView(series: series)
+                }
+            }
+        }
+    }
+}
+
+/// A wrapping legend for `LineChartWidgetContentView`, since Swift Charts' built-in legend can
+/// run long labels (full Zabbix item names) off the edge of the card instead of wrapping them.
+private struct ChartLegendView: View {
+    let series: [ChartSeries]
+
+    private let columns = [GridItem(.adaptive(minimum: 170, maximum: 320), spacing: 12, alignment: .leading)]
+
+    var body: some View {
+        LazyVGrid(columns: columns, alignment: .leading, spacing: 4) {
+            ForEach(series) { line in
+                HStack(spacing: 5) {
+                    Circle()
+                        .fill(Color(hex: line.colorHex) ?? DashboardTheme.accent)
+                        .frame(width: 8, height: 8)
+
+                    Text(line.name)
+                        .font(.system(size: 11, weight: .regular, design: .rounded))
+                        .foregroundStyle(DashboardTheme.secondaryText)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                 }
             }
         }
@@ -685,21 +722,3 @@ private extension Comparable {
     }
 }
 
-private extension Color {
-    /// Creates a color from a "RRGGBB" hex string, as used by Zabbix widget threshold fields.
-    init?(hex: String) {
-        var sanitized = hex.trimmingCharacters(in: .whitespacesAndNewlines)
-        if sanitized.hasPrefix("#") {
-            sanitized.removeFirst()
-        }
-
-        guard sanitized.count == 6, let value = UInt32(sanitized, radix: 16) else {
-            return nil
-        }
-
-        let red = Double((value >> 16) & 0xFF) / 255
-        let green = Double((value >> 8) & 0xFF) / 255
-        let blue = Double(value & 0xFF) / 255
-        self = Color(red: red, green: green, blue: blue)
-    }
-}

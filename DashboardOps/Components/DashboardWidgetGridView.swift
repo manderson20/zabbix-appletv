@@ -52,13 +52,24 @@ struct DashboardWidgetGridView: View {
 private struct DashboardWidgetCardView: View {
     let widget: RenderableDashboardWidget
 
+    /// Zabbix's own per-widget background color, when the widget type supports one (currently
+    /// just "item value" widgets, via their "bg_color" field).
+    private var backgroundColorHex: String? {
+        if case let .itemValue(_, _, _, backgroundColorHex) = widget.kind {
+            return backgroundColorHex
+        }
+        return nil
+    }
+
     var body: some View {
-        DashboardCard {
+        DashboardCard(backgroundColor: backgroundColorHex.flatMap(Color.init(hex:))) {
             VStack(alignment: .leading, spacing: 10) {
-                Text(widget.title)
-                    .font(.system(size: 22, weight: .bold, design: .rounded))
-                    .foregroundStyle(DashboardTheme.primaryText)
-                    .lineLimit(1)
+                if !widget.hasHiddenHeader {
+                    Text(widget.title)
+                        .font(.system(size: 22, weight: .bold, design: .rounded))
+                        .foregroundStyle(DashboardTheme.primaryText)
+                        .lineLimit(1)
+                }
 
                 content
             }
@@ -72,7 +83,7 @@ private struct DashboardWidgetCardView: View {
         switch widget.kind {
         case .clock:
             ClockWidgetContentView()
-        case let .itemValue(name, value, units):
+        case let .itemValue(name, value, units, _):
             ItemValueWidgetContentView(name: name, value: value, units: units)
         case let .problems(problems):
             ProblemsWidgetContentView(problems: problems)
@@ -213,15 +224,23 @@ private struct ProblemsBySeverityWidgetContentView: View {
     var body: some View {
         HStack(spacing: 4) {
             ForEach(counts) { count in
-                ZStack {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(severityIndicatorColor(for: count.severity))
+                VStack(spacing: 4) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(severityIndicatorColor(for: count.severity))
 
-                    Text("\(count.count)")
-                        .font(.system(size: 26, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
+                        Text("\(count.count)")
+                            .font(.system(size: 26, weight: .bold, design: .rounded))
+                            .foregroundStyle(.white)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                    Text(SeverityPalette.name(for: count.severity))
+                        .font(.system(size: 11, weight: .regular, design: .rounded))
+                        .foregroundStyle(DashboardTheme.secondaryText)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
     }
@@ -312,14 +331,9 @@ private struct SystemInformationWidgetContentView: View {
     }
 }
 
-/// Maps a Zabbix problem severity (0 = not classified, 5 = disaster) to an indicator color.
+/// Maps a Zabbix problem severity (0 = not classified, 5 = disaster) to this server's own
+/// configured indicator color (see `SeverityPalette`), rather than a fixed guess.
+@MainActor
 func severityIndicatorColor(for severity: Int) -> Color {
-    switch severity {
-    case 0: .gray
-    case 1: .teal
-    case 2: .yellow
-    case 3: .orange
-    case 4: Color(red: 0.95, green: 0.35, blue: 0.2)
-    default: .red
-    }
+    SeverityPalette.color(for: severity)
 }

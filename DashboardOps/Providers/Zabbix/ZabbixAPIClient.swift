@@ -65,6 +65,20 @@ actor ZabbixAPIClient {
         )
     }
 
+    /// Fetches the server's configured trigger severity colors and names ("Administration ->
+    /// General -> Trigger displaying options"), so severity-based coloring in the app matches
+    /// what this specific Zabbix instance is actually configured to show rather than Zabbix's
+    /// stock defaults.
+    func severityPalette(serverBaseURL: URL, authToken: String) async throws -> ZabbixSeverityPalette {
+        try await send(
+            method: "settings.get",
+            params: ZabbixSeverityPaletteParameters(),
+            serverBaseURL: serverBaseURL,
+            authToken: authToken,
+            resultType: ZabbixSeverityPalette.self
+        )
+    }
+
     /// Logs into Zabbix and returns an authentication token.
     func login(serverBaseURL: URL, username: String, password: String) async throws -> String {
         try await send(

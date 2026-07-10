@@ -42,6 +42,8 @@ extension DashboardManager {
         serverBaseURL: URL,
         authToken: String
     ) async throws -> [RenderableDashboardWidget] {
+        await refreshSeverityPaletteIfNeeded(serverBaseURL: serverBaseURL, authToken: authToken)
+
         var result: [RenderableDashboardWidget] = []
         result.reserveCapacity(widgets.count)
 
@@ -58,12 +60,28 @@ extension DashboardManager {
                         height: widget.height.intValue
                     ),
                     refreshIntervalSeconds: Self.refreshIntervalSeconds(from: widget.fields),
+                    hasHiddenHeader: widget.view_mode?.intValue == 1,
                     kind: kind
                 )
             )
         }
 
         return result
+    }
+
+    /// Fetches this server's configured severity colors/names once per session and caches them
+    /// in `SeverityPalette` for the view layer to read. Best-effort: some accounts may lack
+    /// permission for `settings.get`, in which case severity coloring just falls back to
+    /// Zabbix's stock palette rather than failing the whole dashboard load.
+    private func refreshSeverityPaletteIfNeeded(serverBaseURL: URL, authToken: String) async {
+        guard !hasFetchedSeverityPalette else { return }
+        hasFetchedSeverityPalette = true
+
+        guard let palette = try? await zabbixAPIClient.severityPalette(serverBaseURL: serverBaseURL, authToken: authToken) else {
+            return
+        }
+
+        await SeverityPalette.update(hex: palette.colorsBySeverity, names: palette.namesBySeverity)
     }
 
     func resolveWidgetKind(
@@ -112,7 +130,12 @@ extension DashboardManager {
                 return .unsupported(rawType: widget.type)
             }
 
-            return .itemValue(name: item.name, value: item.lastvalue ?? "\u{2014}", units: item.units ?? "")
+            return .itemValue(
+                name: item.name,
+                value: item.lastvalue ?? "\u{2014}",
+                units: item.units ?? "",
+                backgroundColorHex: Self.fieldValue(widget.fields, name: "bg_color")
+            )
 
         case "problemsbysv":
             let problems = try await zabbixAPIClient.problems(serverBaseURL: serverBaseURL, authToken: authToken)

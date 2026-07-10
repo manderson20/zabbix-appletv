@@ -10,6 +10,16 @@ import Foundation
 /// Empty object parameters for Zabbix methods that accept no object fields.
 nonisolated struct ZabbixEmptyObjectParameters: Encodable, Sendable {}
 
+/// Parameters for `settings.get` requesting only the trigger severity color/name fields.
+nonisolated struct ZabbixSeverityPaletteParameters: Encodable, Sendable {
+    let output: [String] = [
+        "severity_color_0", "severity_color_1", "severity_color_2",
+        "severity_color_3", "severity_color_4", "severity_color_5",
+        "severity_name_0", "severity_name_1", "severity_name_2",
+        "severity_name_3", "severity_name_4", "severity_name_5",
+    ]
+}
+
 /// Login parameters for `user.login`.
 nonisolated struct ZabbixLoginParameters: Encodable, Sendable {
     /// Zabbix username.

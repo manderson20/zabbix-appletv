@@ -14,6 +14,10 @@ actor DashboardManager {
     let zabbixAPIClient: ZabbixAPIClient
     let zabbixSessionService: ZabbixSessionService
 
+    /// Tracks whether `SeverityPalette` has already been populated for this session, so it's
+    /// fetched once rather than on every dashboard/refresh load.
+    var hasFetchedSeverityPalette = false
+
     /// Creates a dashboard manager backed by a provider registry and the Zabbix stack.
     init(
         providerRegistry: ProviderRegistry,

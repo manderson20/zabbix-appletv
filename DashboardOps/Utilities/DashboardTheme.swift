@@ -36,3 +36,23 @@ enum DashboardTheme {
     /// Standard vertical screen padding for 16:9 layouts.
     static let verticalScreenPadding: CGFloat = 58
 }
+
+extension Color {
+    /// Creates a color from a "RRGGBB" hex string, as used throughout Zabbix's widget fields
+    /// (series colors, thresholds, background colors).
+    init?(hex: String) {
+        var sanitized = hex.trimmingCharacters(in: .whitespacesAndNewlines)
+        if sanitized.hasPrefix("#") {
+            sanitized.removeFirst()
+        }
+
+        guard sanitized.count == 6, let value = UInt32(sanitized, radix: 16) else {
+            return nil
+        }
+
+        let red = Double((value >> 16) & 0xFF) / 255
+        let green = Double((value >> 8) & 0xFF) / 255
+        let blue = Double(value & 0xFF) / 255
+        self = Color(red: red, green: green, blue: blue)
+    }
+}
