@@ -16,6 +16,21 @@ struct DashboardWidgetGridView: View {
     /// Widgets to lay out.
     let widgets: [RenderableDashboardWidget]
 
+    /// Below this, a widget stops being legible — a graph needs room for its title, axes, and
+    /// legend. Some Zabbix dashboard pages configure far more total grid rows than fit in one
+    /// screen (verified live: one page stacks 13 full-width graphs across 63 rows), and dividing
+    /// the screen height by the row count for a page like that shrinks every widget to a few
+    /// points tall with everything overlapping. Rather than keep shrinking past this floor, the
+    /// page's content grows taller than the screen and auto-scrolls instead (see below).
+    private static let minimumRowHeight: CGFloat = 60
+
+    /// How fast an overflowing page scrolls, in points per second — an unattended kiosk display
+    /// has no remote to scroll manually, so this is the only way every widget on a page like that
+    /// actually gets seen during its time on screen rather than just the first screenful.
+    private static let autoScrollPointsPerSecond: CGFloat = 40
+
+    @State private var scrollOffset: CGFloat = 0
+
     /// Computes the grid's column and row count as the furthest extent any widget reaches.
     static func gridExtent(for widgets: [RenderableDashboardWidget]) -> (columns: Int, rows: Int) {
         let columns = max(widgets.map { $0.frame.x + $0.frame.width }.max() ?? 1, 1)
@@ -28,7 +43,10 @@ struct DashboardWidgetGridView: View {
 
         GeometryReader { geometry in
             let columnWidth = geometry.size.width / CGFloat(columnCount)
-            let rowHeight = geometry.size.height / CGFloat(rowCount)
+            let naturalRowHeight = geometry.size.height / CGFloat(rowCount)
+            let rowHeight = max(naturalRowHeight, Self.minimumRowHeight)
+            let contentHeight = rowHeight * CGFloat(rowCount)
+            let overflow = (contentHeight - geometry.size.height).rounded()
 
             ZStack(alignment: .topLeading) {
                 ForEach(widgets) { widget in
@@ -40,8 +58,22 @@ struct DashboardWidgetGridView: View {
                         )
                         .offset(
                             x: columnWidth * CGFloat(widget.frame.x),
-                            y: rowHeight * CGFloat(widget.frame.y)
+                            y: rowHeight * CGFloat(widget.frame.y) - scrollOffset
                         )
+                }
+            }
+            .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
+            .clipped()
+            .task(id: overflow) {
+                guard overflow > 0 else { return }
+
+                // A short pause so the first widgets are readable before scrolling starts, then a
+                // slow, steady scroll to the bottom, where it holds until the page itself rotates.
+                try? await Task.sleep(nanoseconds: 3 * 1_000_000_000)
+                guard !Task.isCancelled else { return }
+
+                withAnimation(.linear(duration: Double(overflow / Self.autoScrollPointsPerSecond))) {
+                    scrollOffset = overflow
                 }
             }
         }
