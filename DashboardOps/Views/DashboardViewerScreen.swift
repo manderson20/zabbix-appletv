@@ -25,9 +25,16 @@ struct DashboardViewerScreen: View {
                 // it, the system's own default tvOS safe-area inset was stacking on top of the
                 // padding below, leaving a noticeably bigger edge margin than system screens like
                 // the Home Screen or Settings use.
+                //
+                // Keying on the page id (rather than always reusing the same view identity) and
+                // animating on that id crossfades between pages during auto-rotation, matching
+                // Zabbix's own kiosk slideshow transition instead of cutting instantly.
                 DashboardWidgetGridView(widgets: viewModel.widgets)
+                    .id(viewModel.currentPageID)
+                    .transition(.opacity)
                     .padding(8)
                     .ignoresSafeArea()
+                    .animation(.easeInOut(duration: 0.6), value: viewModel.currentPageID)
             }
 
             if viewModel.renderingState != .ready {

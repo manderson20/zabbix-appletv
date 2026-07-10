@@ -31,6 +31,31 @@ nonisolated struct RenderableDashboardWidget: Identifiable, Sendable {
     let kind: DashboardWidgetKind
 }
 
+/// One page of a Zabbix dashboard, resolved for display, with its own widgets and rotation
+/// duration — Zabbix dashboards can have several pages that a kiosk/wall display auto-rotates
+/// through (its own "Display period" per page), the same concept this mirrors.
+nonisolated struct RenderableDashboardPage: Identifiable, Sendable {
+    /// Stable page identifier.
+    let id: String
+
+    /// Page display name, if the user set one.
+    let name: String?
+
+    /// Widgets placed on this page.
+    let widgets: [RenderableDashboardWidget]
+
+    /// Seconds this page stays on screen before rotating to the next, mirroring Zabbix's own
+    /// per-page (or dashboard-default) "Display period".
+    let displaySeconds: Int
+}
+
+/// A dashboard's full page layout plus whether it should auto-rotate, matching Zabbix's own
+/// "Start slideshow automatically" dashboard setting.
+nonisolated struct RenderableDashboard: Sendable {
+    let pages: [RenderableDashboardPage]
+    let autoRotatesPages: Bool
+}
+
 /// Grid position and size for a dashboard widget, in the provider's native grid units.
 nonisolated struct DashboardWidgetFrame: Sendable, Equatable {
     /// Grid column of the widget's top-left corner.

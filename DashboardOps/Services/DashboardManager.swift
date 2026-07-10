@@ -65,11 +65,10 @@ actor DashboardManager {
         }
     }
 
-    /// Loads a dashboard's widget layout, resolved with the data needed for native rendering.
-    ///
-    /// Only the dashboard's first page is rendered; multi-page (tabbed) dashboards are a future
-    /// enhancement.
-    func widgets(forDashboard dashboardID: String) async throws -> [RenderableDashboardWidget] {
+    /// Loads a dashboard's full page layout, resolved with the data needed for native rendering.
+    /// Every page is resolved (not just the first) so a viewer can rotate through them the same
+    /// way Zabbix's own kiosk/slideshow mode does, using each page's own configured duration.
+    func renderableDashboard(forDashboardID dashboardID: String) async throws -> RenderableDashboard {
         let (serverBaseURL, authToken) = try await connection()
         let detail = try await zabbixAPIClient.dashboardDetail(
             serverBaseURL: serverBaseURL,
@@ -77,17 +76,30 @@ actor DashboardManager {
             dashboardID: dashboardID
         )
 
-        guard let widgets = detail.pages.first?.widgets else {
-            return []
+        let defaultDisplaySeconds = max(detail.display_period?.intValue ?? 30, 1)
+
+        var pages: [RenderableDashboardPage] = []
+        for (index, page) in detail.pages.enumerated() {
+            let widgets = try await renderableWidgets(for: page.widgets, serverBaseURL: serverBaseURL, authToken: authToken)
+            let ownDisplaySeconds = page.display_period?.intValue ?? 0
+            pages.append(
+                RenderableDashboardPage(
+                    id: page.dashboard_pageid ?? "\(index)",
+                    name: page.name,
+                    widgets: widgets,
+                    displaySeconds: ownDisplaySeconds > 0 ? ownDisplaySeconds : defaultDisplaySeconds
+                )
+            )
         }
 
-        return try await renderableWidgets(for: widgets, serverBaseURL: serverBaseURL, authToken: authToken)
+        return RenderableDashboard(pages: pages, autoRotatesPages: detail.auto_start?.intValue == 1)
     }
 
     /// Re-resolves data for a subset of a dashboard's widgets, identified by widget ID, without
     /// touching the rest. Used for per-widget periodic refresh driven by each widget's own
-    /// Zabbix-configured refresh interval — callers merge the returned widgets back into their
-    /// own full widget list.
+    /// Zabbix-configured refresh interval — searches every page since the due widgets may not be
+    /// on whichever page happens to be visible right now; callers merge the returned widgets back
+    /// into their own page/widget list.
     func refreshWidgets(_ widgetIDs: Set<String>, forDashboard dashboardID: String) async throws -> [RenderableDashboardWidget] {
         guard !widgetIDs.isEmpty else {
             return []
@@ -100,7 +112,7 @@ actor DashboardManager {
             dashboardID: dashboardID
         )
 
-        let matchingWidgets = (detail.pages.first?.widgets ?? []).filter { widgetIDs.contains($0.widgetid) }
+        let matchingWidgets = detail.pages.flatMap(\.widgets).filter { widgetIDs.contains($0.widgetid) }
         return try await renderableWidgets(for: matchingWidgets, serverBaseURL: serverBaseURL, authToken: authToken)
     }
 }

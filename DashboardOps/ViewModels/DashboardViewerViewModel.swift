@@ -26,8 +26,22 @@ final class DashboardViewerViewModel: ObservableObject {
     /// Dashboard resolved for display.
     @Published private(set) var selectedDashboard: Dashboard?
 
-    /// Widgets resolved for the selected dashboard's first page.
-    @Published private(set) var widgets: [RenderableDashboardWidget] = []
+    /// All of the selected dashboard's pages, each with its own widgets and rotation duration.
+    @Published private(set) var pages: [RenderableDashboardPage] = []
+
+    /// Index into `pages` of the page currently on screen.
+    @Published private(set) var currentPageIndex = 0
+
+    /// Widgets for the page currently on screen.
+    var widgets: [RenderableDashboardWidget] {
+        pages.indices.contains(currentPageIndex) ? pages[currentPageIndex].widgets : []
+    }
+
+    /// Identifier of the page currently on screen, stable across refresh ticks — used to key a
+    /// transition so rotating to a new page crossfades rather than cutting instantly.
+    var currentPageID: String {
+        pages.indices.contains(currentPageIndex) ? pages[currentPageIndex].id : "none"
+    }
 
     /// How often the refresh loop checks which widgets are due, independent of any single
     /// widget's own interval — finer-grained than Zabbix's smallest widget refresh option (10s).
@@ -53,6 +67,11 @@ final class DashboardViewerViewModel: ObservableObject {
     private var refreshTask: Task<Void, Never>?
     private var backoffSleepTask: Task<Void, Never>?
     private var prepareTask: Task<Void, Never>?
+    private var pageRotationTask: Task<Void, Never>?
+
+    /// Whether the dashboard itself is configured to auto-rotate its pages, matching Zabbix's own
+    /// "Start slideshow automatically" setting.
+    private var autoRotatesPages = false
 
     /// Creates a dashboard viewer view model.
     init(dashboardManager: DashboardManager, zabbixSessionService: ZabbixSessionService) {
@@ -142,10 +161,13 @@ final class DashboardViewerViewModel: ObservableObject {
             dashboardTitle = dashboard.title
             statusMessage = "Loading widgets"
 
-            let resolvedWidgets = try await dashboardManager.widgets(forDashboard: dashboard.providerDashboardID)
-            widgets = resolvedWidgets
+            let resolvedDashboard = try await dashboardManager.renderableDashboard(forDashboardID: dashboard.providerDashboardID)
+            pages = resolvedDashboard.pages
+            currentPageIndex = 0
+            autoRotatesPages = resolvedDashboard.autoRotatesPages
 
-            if resolvedWidgets.isEmpty {
+            let allWidgets = resolvedDashboard.pages.flatMap(\.widgets)
+            if allWidgets.isEmpty {
                 renderingState = .unavailable
                 statusMessage = "This dashboard has no widgets to display."
                 canRetry = true
@@ -156,10 +178,11 @@ final class DashboardViewerViewModel: ObservableObject {
             statusMessage = ""
 
             let now = Date()
-            for widget in resolvedWidgets {
+            for widget in allWidgets {
                 lastRefreshedAt[widget.id] = now
             }
             startRefreshLoop(dashboardID: dashboard.providerDashboardID)
+            startPageRotationLoopIfNeeded()
             return nil
         } catch {
             renderingState = .unavailable
@@ -172,6 +195,7 @@ final class DashboardViewerViewModel: ObservableObject {
     /// Ends the active Zabbix session.
     func disconnect() async {
         stopRefreshLoop()
+        stopPageRotationLoop()
 
         do {
             try await zabbixSessionService.disconnect()
@@ -207,11 +231,14 @@ final class DashboardViewerViewModel: ObservableObject {
         backoffSleepTask?.cancel()
         backoffSleepTask = nil
         stopRefreshLoop()
+        stopPageRotationLoop()
         hasPrepared = false
         renderingState = .idle
         statusMessage = "Preparing dashboard"
         selectedDashboard = nil
-        widgets = []
+        pages = []
+        currentPageIndex = 0
+        autoRotatesPages = false
         lastRefreshedAt.removeAll()
         lastCredentialFailureAt = nil
         canRetry = false
@@ -249,8 +276,12 @@ final class DashboardViewerViewModel: ObservableObject {
 
     private func performRefreshTick(dashboardID: String) async {
         let now = Date()
+        // Checked across every page, not just the one currently on screen, so a page's data is
+        // already fresh by the time rotation brings it into view instead of refreshing on a
+        // delay after becoming visible.
+        let allWidgets = pages.flatMap(\.widgets)
         let dueWidgetIDs = Set(
-            widgets.compactMap { widget -> String? in
+            allWidgets.compactMap { widget -> String? in
                 guard let interval = widget.refreshIntervalSeconds else { return nil }
                 let lastRefresh = lastRefreshedAt[widget.id] ?? .distantPast
                 return now.timeIntervalSince(lastRefresh) >= TimeInterval(interval) ? widget.id : nil
@@ -269,7 +300,14 @@ final class DashboardViewerViewModel: ObservableObject {
             }
 
             let updatedByID = Dictionary(uniqueKeysWithValues: updatedWidgets.map { ($0.id, $0) })
-            widgets = widgets.map { updatedByID[$0.id] ?? $0 }
+            pages = pages.map { page in
+                RenderableDashboardPage(
+                    id: page.id,
+                    name: page.name,
+                    widgets: page.widgets.map { updatedByID[$0.id] ?? $0 },
+                    displaySeconds: page.displaySeconds
+                )
+            }
         } catch {
             // A dashboard that's already on screen shouldn't flash an error over a transient
             // network blip or an expired session — reconnect quietly and let the next tick retry.
@@ -289,5 +327,41 @@ final class DashboardViewerViewModel: ObservableObject {
 
             _ = try? await zabbixSessionService.connect()
         }
+    }
+
+    // MARK: - Page rotation
+
+    /// Starts auto-rotating through the dashboard's pages, mirroring Zabbix's own kiosk/slideshow
+    /// mode: each page stays on screen for its own configured duration (or the dashboard's
+    /// default) before advancing, looping back to the first page after the last. Only runs when
+    /// the dashboard itself has more than one page and is configured to auto-rotate — a single
+    /// page, or "auto_start" off, just stays put, matching what Zabbix's own frontend would show.
+    private func startPageRotationLoopIfNeeded() {
+        pageRotationTask?.cancel()
+        pageRotationTask = nil
+
+        guard autoRotatesPages, pages.count > 1 else { return }
+
+        pageRotationTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self else { return }
+                let displaySeconds = self.pages.indices.contains(self.currentPageIndex)
+                    ? self.pages[self.currentPageIndex].displaySeconds
+                    : 30
+                try? await Task.sleep(nanoseconds: UInt64(displaySeconds) * 1_000_000_000)
+                guard !Task.isCancelled else { return }
+                self.advanceToNextPage()
+            }
+        }
+    }
+
+    private func stopPageRotationLoop() {
+        pageRotationTask?.cancel()
+        pageRotationTask = nil
+    }
+
+    private func advanceToNextPage() {
+        guard !pages.isEmpty else { return }
+        currentPageIndex = (currentPageIndex + 1) % pages.count
     }
 }

@@ -15,14 +15,29 @@ nonisolated struct ZabbixDashboardDetail: Decodable, Sendable {
     /// Dashboard display name.
     let name: String
 
-    /// Pages that make up the dashboard. DashboardOps renders only the first page.
+    /// Default seconds each page is shown during the dashboard's own kiosk/slideshow rotation,
+    /// used by a page whose own `display_period` is 0 ("inherit").
+    let display_period: ZabbixNumericString?
+
+    /// Whether Zabbix's own frontend auto-starts page rotation for this dashboard (1) or leaves
+    /// it on the first page until a viewer manually starts the slideshow (0).
+    let auto_start: ZabbixNumericString?
+
+    /// Pages that make up the dashboard, each rendered and rotated through in turn.
     let pages: [ZabbixDashboardPage]
 }
 
 /// A single page (tab) within a Zabbix dashboard.
 nonisolated struct ZabbixDashboardPage: Decodable, Sendable {
+    /// Zabbix page identifier, stable across fetches.
+    let dashboard_pageid: String?
+
     /// Page display name.
     let name: String?
+
+    /// Seconds this page is shown before rotating to the next, or 0 to inherit the dashboard's
+    /// own `display_period`.
+    let display_period: ZabbixNumericString?
 
     /// Widgets placed on this page.
     let widgets: [ZabbixWidget]
