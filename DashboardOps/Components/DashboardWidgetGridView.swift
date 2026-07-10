@@ -75,7 +75,7 @@ private struct DashboardWidgetCardView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .padding(6)
+        .padding(4)
     }
 
     @ViewBuilder

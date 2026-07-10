@@ -22,7 +22,7 @@ struct DashboardViewerScreen: View {
 
             if viewModel.renderingState == .ready {
                 DashboardWidgetGridView(widgets: viewModel.widgets)
-                    .padding(16)
+                    .padding(8)
             }
 
             if viewModel.renderingState != .ready {
