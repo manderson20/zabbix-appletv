@@ -21,8 +21,13 @@ struct DashboardViewerScreen: View {
             DashboardTheme.background.ignoresSafeArea()
 
             if viewModel.renderingState == .ready {
+                // Ignoring the safe area here too (not just on the background) matters: without
+                // it, the system's own default tvOS safe-area inset was stacking on top of the
+                // padding below, leaving a noticeably bigger edge margin than system screens like
+                // the Home Screen or Settings use.
                 DashboardWidgetGridView(widgets: viewModel.widgets)
                     .padding(8)
+                    .ignoresSafeArea()
             }
 
             if viewModel.renderingState != .ready {
