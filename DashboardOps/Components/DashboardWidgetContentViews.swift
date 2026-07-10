@@ -266,6 +266,32 @@ struct LineChartWidgetContentView: View {
         return ZabbixValueFormatting.scale(forMaxMagnitude: maxValue, units: units)
     }
 
+    /// Builds one point's marks in their own function (rather than inline in the `Chart` closure)
+    /// so the type checker has a small, isolated expression to solve instead of the whole nested
+    /// `Chart { ForEach { ForEach { ... } } }` tree at once — the inline form timed out entirely.
+    ///
+    /// `foregroundStyle(by:)` (a plottable grouping value, not a bare `Color`) is what tells Swift
+    /// Charts these points belong to distinct series — without it, points from different series
+    /// interleave into one zigzagging path sorted by x-position instead of staying separate.
+    /// Swift Charts also stacks `AreaMark`s by default whenever they're grouped this way (as if
+    /// plotting composition, like a stacked area chart); `.position(.overlay)` is what makes each
+    /// series' fill independently start from 0 instead of piling on top of the others, which was
+    /// inflating the visible peak to the sum of every series rather than each one's own value.
+    @ChartContentBuilder
+    private func marks(for point: ChartPoint, in line: ChartSeries) -> some ChartContent {
+        // Explicit yStart/yEnd (rather than the single-`y` initializer) bypasses Swift Charts'
+        // automatic stacking baseline — with a plain `y:` value, grouping by `foregroundStyle(by:)`
+        // makes each series' baseline the sum of the ones before it (as if plotting composition),
+        // which was inflating the visible peak to the sum of every series rather than each one's
+        // own value. Pinning yStart to 0 draws each series' fill independently from the bottom.
+        AreaMark(x: .value("Time", point.date), yStart: .value("Baseline", 0), yEnd: .value(line.name, point.value))
+            .foregroundStyle(by: .value("Series", line.name))
+            .opacity(line.fillOpacity)
+
+        LineMark(x: .value("Time", point.date), y: .value(line.name, point.value))
+            .foregroundStyle(by: .value("Series", line.name))
+    }
+
     var body: some View {
         if series.allSatisfy({ $0.points.isEmpty }) {
             Text("No data in the last 24 hours")
@@ -276,17 +302,7 @@ struct LineChartWidgetContentView: View {
                 Chart {
                     ForEach(series) { line in
                         ForEach(line.points) { point in
-                            // `foregroundStyle(by:)` (a plottable grouping value), not a bare
-                            // `Color` modifier, is what tells Swift Charts these points belong to
-                            // distinct series — without it, points from different series
-                            // interleave into one zigzagging path sorted by x-position instead of
-                            // staying as separate connected lines.
-                            AreaMark(x: .value("Time", point.date), y: .value(line.name, point.value))
-                                .foregroundStyle(by: .value("Series", line.name))
-                                .opacity(line.fillOpacity)
-
-                            LineMark(x: .value("Time", point.date), y: .value(line.name, point.value))
-                                .foregroundStyle(by: .value("Series", line.name))
+                            marks(for: point, in: line)
                         }
                     }
                 }
