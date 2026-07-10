@@ -410,6 +410,19 @@ actor ZabbixAPIClient {
         return images.first
     }
 
+    /// Fetches several uploaded images' base64-encoded content in one call, e.g. the distinct
+    /// device icons (switch, router, cloud, ...) referenced by a network map's elements.
+    func images(serverBaseURL: URL, authToken: String, imageIDs: [String]) async throws -> [ZabbixImage] {
+        guard !imageIDs.isEmpty else { return [] }
+        return try await send(
+            method: "image.get",
+            params: ZabbixImageGetParameters(imageIDs: imageIDs),
+            serverBaseURL: serverBaseURL,
+            authToken: authToken,
+            resultType: [ZabbixImage].self
+        )
+    }
+
     private func send<Parameters, Result>(
         method: String,
         params: Parameters,

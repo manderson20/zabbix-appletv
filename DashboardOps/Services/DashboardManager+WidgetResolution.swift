@@ -541,6 +541,15 @@ extension DashboardManager {
 
         let activeTriggerIDs = Set(try await zabbixAPIClient.problems(serverBaseURL: serverBaseURL, authToken: authToken).map(\.objectid))
 
+        // Elements typically reuse a small set of icons (e.g. every switch shares one "Switch"
+        // icon), so the unique set is fetched once rather than once per element.
+        let uniqueIconIDs = Set(map.selements.map(\.iconid_off).filter { $0 != "0" && !$0.isEmpty })
+        let icons = try await zabbixAPIClient.images(serverBaseURL: serverBaseURL, authToken: authToken, imageIDs: Array(uniqueIconIDs))
+        let iconDataByID = Dictionary(uniqueKeysWithValues: icons.compactMap { icon -> (String, Data)? in
+            guard let data = Data(base64Encoded: icon.image) else { return nil }
+            return (icon.imageid, data)
+        })
+
         var severityByElementID: [String: Int] = [:]
         let elements = map.selements.map { selement -> NetworkMapElement in
             let hostID = selement.elementtype.intValue == 0 ? selement.elements.first?.hostid : nil
@@ -548,7 +557,14 @@ extension DashboardManager {
             let severity = hostID.flatMap { severityByHostID[$0] } ?? 0
             severityByElementID[selement.selementid] = severity
 
-            return NetworkMapElement(id: selement.selementid, label: label, x: selement.x.intValue, y: selement.y.intValue, severity: severity)
+            return NetworkMapElement(
+                id: selement.selementid,
+                label: label,
+                x: selement.x.intValue,
+                y: selement.y.intValue,
+                severity: severity,
+                iconImageData: iconDataByID[selement.iconid_off]
+            )
         }
 
         let elementsByID = Dictionary(uniqueKeysWithValues: elements.map { ($0.id, $0) })

@@ -85,9 +85,7 @@ struct NetworkMapWidgetContentView: View {
 
                     ForEach(diagram.elements) { element in
                         VStack(spacing: 2) {
-                            Circle()
-                                .fill(element.severity == 0 ? Color.green : severityIndicatorColor(for: element.severity))
-                                .frame(width: 14, height: 14)
+                            NetworkMapElementIconView(element: element)
                             Text(element.label)
                                 .font(.system(size: 12, weight: .medium, design: .rounded))
                                 .foregroundStyle(DashboardTheme.primaryText)
@@ -99,6 +97,41 @@ struct NetworkMapWidgetContentView: View {
                 }
             }
         }
+    }
+}
+
+/// Renders a map element's actual device-type icon (switch, router, cloud, ...) when one was
+/// resolved, with a small severity-colored status badge — falling back to a plain colored dot
+/// (the old behavior) if no icon image is available.
+private struct NetworkMapElementIconView: View {
+    let element: NetworkMapElement
+
+    /// Severity 0 means "no active problem", shown as green — distinct from Zabbix's "Not
+    /// classified" severity level, which is an uncategorized problem, not a healthy state.
+    private var statusColor: Color {
+        element.severity == 0 ? .green : severityIndicatorColor(for: element.severity)
+    }
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            if let iconImageData = element.iconImageData, let uiImage = UIImage(data: iconImageData) {
+                Image(uiImage: uiImage)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 28, height: 28)
+
+                Circle()
+                    .fill(statusColor)
+                    .frame(width: 9, height: 9)
+                    .overlay(Circle().stroke(DashboardTheme.background, lineWidth: 1.5))
+                    .offset(x: 3, y: -3)
+            } else {
+                Circle()
+                    .fill(statusColor)
+                    .frame(width: 14, height: 14)
+            }
+        }
+        .frame(width: 28, height: 28)
     }
 }
 

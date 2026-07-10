@@ -58,6 +58,11 @@ nonisolated struct ZabbixMapElement: Decodable, Sendable {
     /// Y position in the map's pixel coordinate space.
     let y: ZabbixNumericString
 
+    /// The default-state icon shown for this element (e.g. "Switch_(64)", "Cloud_(128)") —
+    /// verified live to reference a real device-type icon image, not just a status indicator.
+    /// "0" means no icon is configured.
+    let iconid_off: String
+
     /// The underlying object(s) this element represents, e.g. `[{"hostid": "10084"}]` for a host
     /// element. Empty for image elements.
     let elements: [ZabbixMapElementReference]

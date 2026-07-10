@@ -455,6 +455,11 @@ nonisolated struct NetworkMapElement: Identifiable, Sendable {
 
     /// This element's highest active problem severity, 0 if none or not a host element.
     let severity: Int
+
+    /// Decoded device-type icon image (e.g. switch, router, cloud), matching what Zabbix's own
+    /// map editor shows for this element. `nil` when the element has no icon configured or its
+    /// image failed to decode.
+    let iconImageData: Data?
 }
 
 /// A single connecting line between two network map elements.

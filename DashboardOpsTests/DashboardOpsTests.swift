@@ -458,8 +458,8 @@ struct DashboardOpsTests {
                   "height": "850",
                   "backgroundid": "191",
                   "selements": [
-                    { "selementid": "6", "elementtype": "0", "label": "{HOST.NAME}", "x": "100", "y": "50", "elements": [ { "hostid": "10084" } ] },
-                    { "selementid": "5", "elementtype": "4", "label": "Core Switch", "x": "300", "y": "50", "elements": [] }
+                    { "selementid": "6", "elementtype": "0", "label": "{HOST.NAME}", "x": "100", "y": "50", "iconid_off": "155", "elements": [ { "hostid": "10084" } ] },
+                    { "selementid": "5", "elementtype": "4", "label": "Core Switch", "x": "300", "y": "50", "iconid_off": "1", "elements": [] }
                   ],
                   "links": [
                     {

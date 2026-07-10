@@ -517,7 +517,7 @@ nonisolated struct ZabbixSLAGetParameters: Encodable, Sendable {
 
 /// Parameters for `image.get` when fetching a single image's base64-encoded content.
 nonisolated struct ZabbixImageGetParameters: Encodable, Sendable {
-    /// Image identifier to fetch.
+    /// Image identifiers to fetch.
     let imageids: [String]
 
     /// Requests the base64-encoded image content, not just its metadata.
@@ -525,6 +525,11 @@ nonisolated struct ZabbixImageGetParameters: Encodable, Sendable {
 
     init(imageID: String) {
         self.imageids = [imageID]
+        self.select_image = true
+    }
+
+    init(imageIDs: [String]) {
+        self.imageids = imageIDs
         self.select_image = true
     }
 }
