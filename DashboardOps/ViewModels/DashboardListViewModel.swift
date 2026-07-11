@@ -31,16 +31,27 @@ final class DashboardListViewModel: ObservableObject {
     }
 
     /// Loads the dashboard list from the active provider.
+    ///
+    /// `hasLoaded` is only set once the attempt actually finishes — not before, and not when it's
+    /// cancelled. This screen becomes the app's root right as server configuration completes (the
+    /// root swaps from Server Configuration to Dashboard List in the same instant), and SwiftUI can
+    /// recreate the view — restarting its `.task` — as part of that transition. A cancelled attempt
+    /// isn't a real failure; surfacing it as one while also marking `hasLoaded` would permanently
+    /// block any retry, since nothing else ever calls this again. Confirmed live: saving a valid
+    /// server configuration landed on a permanent "cancelled" error that only a full app relaunch
+    /// cleared, even though the exact same credentials connected fine on that relaunch.
     func loadDashboards() async {
         guard !hasLoaded else { return }
-        hasLoaded = true
         isLoading = true
         defer { isLoading = false }
 
         do {
             dashboards = try await dashboardManager.dashboards(for: .zabbix)
+            hasLoaded = true
         } catch {
+            guard !Task.isCancelled else { return }
             errorMessage = error.localizedDescription
+            hasLoaded = true
         }
     }
 

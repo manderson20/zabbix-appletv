@@ -53,12 +53,17 @@ final class ServerConfigurationViewModel: ObservableObject {
     }
 
     /// Loads any saved configuration into editable fields.
+    ///
+    /// `hasLoaded` is only set once the attempt actually finishes, not before — the same
+    /// cancel-during-a-view-transition risk `DashboardListViewModel.loadDashboards()` hit applies
+    /// here too (this runs from a `.task` that can be recreated mid-flight), and marking it done
+    /// before it truly is would leave the form permanently blank instead of retrying.
     func load() async {
         guard !hasLoaded else { return }
-        hasLoaded = true
 
         do {
             guard let configuration = try await settingsService.loadServerConfiguration() else {
+                hasLoaded = true
                 return
             }
 
@@ -68,9 +73,12 @@ final class ServerConfigurationViewModel: ObservableObject {
             username = configuration.username
             credentialIdentifier = configuration.credentialIdentifier
             allowsSelfSignedCertificates = configuration.allowsSelfSignedCertificates
+            hasLoaded = true
         } catch {
+            guard !Task.isCancelled else { return }
             validationState = .invalid
             statusMessage = "Saved configuration could not be loaded."
+            hasLoaded = true
         }
     }
 
