@@ -271,27 +271,30 @@ private struct ProblemsWidgetContentView: View {
                 .font(.system(size: 18, weight: .regular, design: .rounded))
                 .foregroundStyle(DashboardTheme.secondaryText)
         } else {
-            AutoScrollingContent {
-                VStack(alignment: .leading, spacing: 8) {
-                    ForEach(problems) { problem in
-                        HStack(alignment: .top, spacing: 10) {
-                            Circle()
-                                .fill(severityIndicatorColor(for: problem.severity))
-                                .frame(width: 14, height: 14)
-                                .padding(.top, 4)
+            // Deliberately static, not auto-scrolling: problems are sorted newest-first, so the
+            // top of the list is the most urgent thing to see. Auto-scrolling would carry
+            // attention away from that toward older, already-acknowledged-by-nobody problems
+            // instead — the opposite of what matters on a wall display. Whatever doesn't fit in
+            // the card's height is the oldest of the batch, which is the right thing to clip.
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(problems) { problem in
+                    HStack(alignment: .top, spacing: 10) {
+                        Circle()
+                            .fill(severityIndicatorColor(for: problem.severity))
+                            .frame(width: 14, height: 14)
+                            .padding(.top, 4)
 
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(problem.name)
-                                    .font(.system(size: 18, weight: .semibold, design: .rounded))
-                                    .foregroundStyle(DashboardTheme.primaryText)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(problem.name)
+                                .font(.system(size: 18, weight: .semibold, design: .rounded))
+                                .foregroundStyle(DashboardTheme.primaryText)
+                                .lineLimit(1)
+
+                            if let host = problem.host {
+                                Text(host)
+                                    .font(.system(size: 15, weight: .regular, design: .rounded))
+                                    .foregroundStyle(DashboardTheme.secondaryText)
                                     .lineLimit(1)
-
-                                if let host = problem.host {
-                                    Text(host)
-                                        .font(.system(size: 15, weight: .regular, design: .rounded))
-                                        .foregroundStyle(DashboardTheme.secondaryText)
-                                        .lineLimit(1)
-                                }
                             }
                         }
                     }
