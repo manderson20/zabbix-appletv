@@ -291,10 +291,10 @@ private struct ProblemsWidgetContentView: View {
     }
 }
 
-/// A single row in the Problems list, blinking its severity indicator while the problem is newer
-/// than the server's configured "blink period" — matching Zabbix's own attention-drawing effect
-/// for freshly-started problems on a wall display, where a new alert would otherwise be as quiet
-/// as one that's been sitting for hours.
+/// A single row in the Problems list, with its whole background tinted by severity — matching
+/// real Zabbix (a colored band behind the problem text, not just a small side indicator) — and
+/// blinking that background while the problem is newer than the server's configured "blink
+/// period", drawing attention to a freshly-started problem the way a quiet dot never could.
 private struct ProblemRow: View {
     let problem: DashboardProblem
     let now: Date
@@ -305,28 +305,31 @@ private struct ProblemRow: View {
         now.timeIntervalSince(problem.since) < Double(SeverityPalette.blinkPeriodSeconds)
     }
 
+    private var severityColor: Color {
+        severityIndicatorColor(for: problem.severity)
+    }
+
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Circle()
-                .fill(severityIndicatorColor(for: problem.severity))
-                .frame(width: 14, height: 14)
-                .padding(.top, 4)
-                .opacity(isNew && isBlinkPhaseOn ? 0.3 : 1)
+        VStack(alignment: .leading, spacing: 2) {
+            Text(problem.name)
+                .font(.system(size: 18, weight: .semibold, design: .rounded))
+                .foregroundStyle(.black.opacity(0.87))
+                .lineLimit(1)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(problem.name)
-                    .font(.system(size: 18, weight: .semibold, design: .rounded))
-                    .foregroundStyle(DashboardTheme.primaryText)
+            if let host = problem.host {
+                Text(host)
+                    .font(.system(size: 15, weight: .regular, design: .rounded))
+                    .foregroundStyle(.black.opacity(0.65))
                     .lineLimit(1)
-
-                if let host = problem.host {
-                    Text(host)
-                        .font(.system(size: 15, weight: .regular, design: .rounded))
-                        .foregroundStyle(DashboardTheme.secondaryText)
-                        .lineLimit(1)
-                }
             }
         }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(severityColor.opacity(isNew && isBlinkPhaseOn ? 0.35 : 1))
+        )
         .onAppear {
             guard isNew else { return }
             withAnimation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true)) {
