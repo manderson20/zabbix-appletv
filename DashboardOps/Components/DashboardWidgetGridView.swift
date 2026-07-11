@@ -201,10 +201,7 @@ private struct DigitalClockView: View {
     }
 }
 
-/// A hand-drawn analog face, since SwiftUI has no built-in clock control — ticks and hands are
-/// each rotated around the face's own center rather than the widget's, using the standard SwiftUI
-/// technique of sizing every rotated element to the full diameter and anchoring its rotation to
-/// where it naturally sits within that full-size frame.
+/// A hand-drawn analog face, since SwiftUI has no built-in clock control.
 private struct AnalogClockView: View {
     var body: some View {
         GeometryReader { geometry in
@@ -225,14 +222,14 @@ private struct AnalogClockView: View {
                             .rotationEffect(.degrees(Double(tick) * 30))
                     }
 
-                    clockHand(length: diameter * 0.26, width: diameter * 0.05, color: DashboardTheme.primaryText, diameter: diameter)
-                        .rotationEffect(.degrees((hour.truncatingRemainder(dividingBy: 12) + minute / 60) / 12 * 360))
+                    ClockHandShape(angleDegrees: (hour.truncatingRemainder(dividingBy: 12) + minute / 60) / 12 * 360, length: diameter * 0.26)
+                        .stroke(DashboardTheme.primaryText, style: StrokeStyle(lineWidth: diameter * 0.05, lineCap: .round))
 
-                    clockHand(length: diameter * 0.38, width: diameter * 0.032, color: DashboardTheme.primaryText, diameter: diameter)
-                        .rotationEffect(.degrees((minute + second / 60) / 60 * 360))
+                    ClockHandShape(angleDegrees: (minute + second / 60) / 60 * 360, length: diameter * 0.38)
+                        .stroke(DashboardTheme.primaryText, style: StrokeStyle(lineWidth: diameter * 0.032, lineCap: .round))
 
-                    clockHand(length: diameter * 0.42, width: diameter * 0.012, color: DashboardTheme.accent, diameter: diameter)
-                        .rotationEffect(.degrees(second / 60 * 360))
+                    ClockHandShape(angleDegrees: second / 60 * 360, length: diameter * 0.42)
+                        .stroke(DashboardTheme.accent, style: StrokeStyle(lineWidth: diameter * 0.012, lineCap: .round))
 
                     Circle()
                         .fill(DashboardTheme.accent)
@@ -256,18 +253,28 @@ private struct AnalogClockView: View {
         }
         .frame(height: diameter)
     }
+}
 
-    /// A clock hand as the top segment of a full-diameter column, rotated around the column's own
-    /// center (the face's center) the same way `tickMark` is — its visible length is just the top
-    /// portion, with a `Spacer` filling the rest down to the center.
-    private func clockHand(length: CGFloat, width: CGFloat, color: Color, diameter: CGFloat) -> some View {
-        VStack(spacing: 0) {
-            RoundedRectangle(cornerRadius: width / 2)
-                .fill(color)
-                .frame(width: width, height: length)
-            Spacer(minLength: 0)
-        }
-        .frame(height: diameter)
+/// A straight line from the center of its own bounding square out to a point `length` away at
+/// `angleDegrees` (0° = 12 o'clock, increasing clockwise) — computed directly with trigonometry.
+/// An earlier version composed this from `.offset` + `.rotationEffect(anchor:)`, but that anchor
+/// is resolved against the shape's pre-offset bounds rather than its rendered position, so the
+/// hands swept around a point well off the actual center instead of pivoting at it — verified live
+/// by screenshot, where the two hour/minute hands floated free of the pivot dot entirely. Drawing
+/// the line explicitly sidesteps that anchor ambiguity rather than fighting it.
+private struct ClockHandShape: Shape {
+    let angleDegrees: Double
+    let length: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        let radians = (angleDegrees - 90) * .pi / 180
+        let tip = CGPoint(x: center.x + length * cos(radians), y: center.y + length * sin(radians))
+
+        var path = Path()
+        path.move(to: center)
+        path.addLine(to: tip)
+        return path
     }
 }
 
