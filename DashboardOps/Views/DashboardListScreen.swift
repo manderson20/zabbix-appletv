@@ -75,6 +75,7 @@ struct DashboardListScreen: View {
                                             HStack(spacing: 10) {
                                                 Text(dashboard.title)
                                                     .font(.system(size: 30, weight: .bold, design: .rounded))
+                                                    .foregroundStyle(DashboardTheme.primaryText)
 
                                                 if dashboard.isDefault {
                                                     Text("Default")
