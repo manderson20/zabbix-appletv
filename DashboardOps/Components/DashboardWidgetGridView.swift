@@ -118,8 +118,8 @@ private struct DashboardWidgetCardView: View {
     @ViewBuilder
     private var content: some View {
         switch widget.kind {
-        case .clock:
-            ClockWidgetContentView()
+        case let .clock(style):
+            ClockWidgetContentView(style: style)
         case let .itemValue(name, value, units, _, trend, lastUpdated):
             ItemValueWidgetContentView(name: name, value: value, units: units, trend: trend, lastUpdated: lastUpdated)
         case let .problems(problems):
@@ -177,13 +177,97 @@ private struct DashboardWidgetCardView: View {
 }
 
 private struct ClockWidgetContentView: View {
+    let style: ClockStyle
+
+    var body: some View {
+        switch style {
+        case .analog:
+            AnalogClockView()
+        case .digital:
+            DigitalClockView()
+        }
+    }
+}
+
+private struct DigitalClockView: View {
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
-            Text(context.date, style: .time)
+            Text(context.date, format: .dateTime.hour().minute().second())
                 .font(.system(size: 40, weight: .semibold, design: .rounded))
                 .foregroundStyle(DashboardTheme.primaryText)
+                .monospacedDigit()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+    }
+}
+
+/// A hand-drawn analog face, since SwiftUI has no built-in clock control — ticks and hands are
+/// each rotated around the face's own center rather than the widget's, using the standard SwiftUI
+/// technique of sizing every rotated element to the full diameter and anchoring its rotation to
+/// where it naturally sits within that full-size frame.
+private struct AnalogClockView: View {
+    var body: some View {
+        GeometryReader { geometry in
+            let diameter = min(geometry.size.width, geometry.size.height)
+
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                let components = Calendar.current.dateComponents([.hour, .minute, .second], from: context.date)
+                let hour = Double(components.hour ?? 0)
+                let minute = Double(components.minute ?? 0)
+                let second = Double(components.second ?? 0)
+
+                ZStack {
+                    Circle()
+                        .fill(DashboardTheme.secondaryCardBackground)
+
+                    ForEach(0..<12, id: \.self) { tick in
+                        tickMark(isMajor: tick % 3 == 0, diameter: diameter)
+                            .rotationEffect(.degrees(Double(tick) * 30))
+                    }
+
+                    clockHand(length: diameter * 0.26, width: diameter * 0.05, color: DashboardTheme.primaryText, diameter: diameter)
+                        .rotationEffect(.degrees((hour.truncatingRemainder(dividingBy: 12) + minute / 60) / 12 * 360))
+
+                    clockHand(length: diameter * 0.38, width: diameter * 0.032, color: DashboardTheme.primaryText, diameter: diameter)
+                        .rotationEffect(.degrees((minute + second / 60) / 60 * 360))
+
+                    clockHand(length: diameter * 0.42, width: diameter * 0.012, color: DashboardTheme.accent, diameter: diameter)
+                        .rotationEffect(.degrees(second / 60 * 360))
+
+                    Circle()
+                        .fill(DashboardTheme.accent)
+                        .frame(width: diameter * 0.06, height: diameter * 0.06)
+                }
+                .frame(width: diameter, height: diameter)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+            }
+        }
+    }
+
+    /// A tick mark placed at the top of a full-diameter column so rotating the whole column around
+    /// its own (default) center — which coincides with the face's center — orbits the tick to any
+    /// hour position without the anchor math a bare offset-then-rotate would otherwise need.
+    private func tickMark(isMajor: Bool, diameter: CGFloat) -> some View {
+        VStack(spacing: 0) {
+            Rectangle()
+                .fill(DashboardTheme.secondaryText.opacity(isMajor ? 0.9 : 0.5))
+                .frame(width: isMajor ? diameter * 0.016 : diameter * 0.01, height: diameter * 0.055)
+            Spacer(minLength: 0)
+        }
+        .frame(height: diameter)
+    }
+
+    /// A clock hand as the top segment of a full-diameter column, rotated around the column's own
+    /// center (the face's center) the same way `tickMark` is — its visible length is just the top
+    /// portion, with a `Spacer` filling the rest down to the center.
+    private func clockHand(length: CGFloat, width: CGFloat, color: Color, diameter: CGFloat) -> some View {
+        VStack(spacing: 0) {
+            RoundedRectangle(cornerRadius: width / 2)
+                .fill(color)
+                .frame(width: width, height: length)
+            Spacer(minLength: 0)
+        }
+        .frame(height: diameter)
     }
 }
 

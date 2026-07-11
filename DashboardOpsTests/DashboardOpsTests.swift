@@ -218,7 +218,7 @@ struct DashboardOpsTests {
                 frame: DashboardWidgetFrame(x: 0, y: 0, width: 4, height: 2),
                 refreshIntervalSeconds: nil,
                 hasHiddenHeader: false,
-                kind: .clock
+                kind: .clock(.analog)
             ),
             RenderableDashboardWidget(
                 id: "2",

@@ -91,7 +91,11 @@ extension DashboardManager {
     ) async throws -> DashboardWidgetKind {
         switch widget.type {
         case "clock":
-            return .clock
+            // "clock_type": 0 = analog, 1 = digital. Absent means analog — verified live against a
+            // clock widget with no fields configured at all that still renders as an analog face,
+            // matching Zabbix's own stock default for this widget.
+            let isDigital = Self.fieldValue(widget.fields, name: "clock_type") == "1"
+            return .clock(isDigital ? .digital : .analog)
 
         case "problems":
             let severities = Self.indexedValues(widget.fields, name: "severities").compactMap(Int.init)

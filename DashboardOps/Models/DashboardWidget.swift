@@ -71,6 +71,14 @@ nonisolated struct DashboardWidgetFrame: Sendable, Equatable {
     let height: Int
 }
 
+/// Which face the "Clock" widget renders — Zabbix's own "Clock type" field ("clock_type": 0 =
+/// analog, 1 = digital; absent means analog, Zabbix's own stock default, verified live against a
+/// clock widget with no fields set at all that still renders as an analog face).
+nonisolated enum ClockStyle: Sendable {
+    case analog
+    case digital
+}
+
 /// Native renderings supported for a dashboard widget.
 ///
 /// The graph prototype widget (tied to low-level discovery, a distinct and deeper feature),
@@ -78,7 +86,7 @@ nonisolated struct DashboardWidgetFrame: Sendable, Equatable {
 /// and the URL widget (tvOS has no in-app browser) are the only Zabbix 7.0 widget types without a
 /// native rendering here — see the widget build-out plan for the reasoning behind each.
 nonisolated enum DashboardWidgetKind: Sendable {
-    case clock
+    case clock(ClockStyle)
     case itemValue(name: String, value: String, units: String, backgroundColorHex: String?, trend: ItemValueTrend?, lastUpdated: Date?)
     case problems([DashboardProblem])
     case problemsBySeverity([SeverityCount])
