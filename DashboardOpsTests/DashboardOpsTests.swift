@@ -517,4 +517,25 @@ struct DashboardOpsTests {
         #expect(DashboardManager.refreshIntervalSeconds(from: absent) == nil)
     }
 
+    @Test func historyWindowSecondsRespectsEachWidgetsOwnTimePeriod() throws {
+        // Every combination below was verified live: two graphs on the same "Internet Bandwidth
+        // Usage" dashboard are independently configured "now-6h" and "now-1h", and a graph with no
+        // time_period fields at all ("Data Center Temperature") falls back to Zabbix's own global
+        // default of 1 hour, not an arbitrary window — this must hold for any dashboard a Zabbix
+        // admin creates in the future, not just the ones checked by hand.
+        let sixHours = [ZabbixWidgetField(name: "time_period.from", value: "now-6h"), ZabbixWidgetField(name: "time_period.to", value: "now")]
+        let oneHour = [ZabbixWidgetField(name: "time_period.from", value: "now-1h"), ZabbixWidgetField(name: "time_period.to", value: "now")]
+        let twentyFourHours = [ZabbixWidgetField(name: "time_period.from", value: "now-24h"), ZabbixWidgetField(name: "time_period.to", value: "now")]
+        let sevenDays = [ZabbixWidgetField(name: "time_period.from", value: "now-7d")]
+        let noTimePeriod: [ZabbixWidgetField] = []
+        let unparseable = [ZabbixWidgetField(name: "time_period.from", value: "now/d")]
+
+        #expect(DashboardManager.historyWindowSeconds(from: sixHours) == 6 * 3600)
+        #expect(DashboardManager.historyWindowSeconds(from: oneHour) == 3600)
+        #expect(DashboardManager.historyWindowSeconds(from: twentyFourHours) == 24 * 3600)
+        #expect(DashboardManager.historyWindowSeconds(from: sevenDays) == 7 * 86400)
+        #expect(DashboardManager.historyWindowSeconds(from: noTimePeriod) == 3600)
+        #expect(DashboardManager.historyWindowSeconds(from: unparseable) == 3600)
+    }
+
 }
