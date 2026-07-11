@@ -18,9 +18,6 @@ struct DashboardListScreen: View {
     /// Opens server configuration, for reconfiguring the connection later.
     let onOpenServerConfiguration: () -> Void
 
-    /// Opens the About screen.
-    let onOpenAbout: () -> Void
-
     var body: some View {
         ScreenScaffold(
             title: "Dashboards",
@@ -29,14 +26,9 @@ struct DashboardListScreen: View {
             VStack(alignment: .leading, spacing: 24) {
                 dashboardList
 
-                HStack(spacing: 18) {
-                    Button("Server Configuration", action: onOpenServerConfiguration)
-                        .buttonStyle(.bordered)
-
-                    Button("About", action: onOpenAbout)
-                        .buttonStyle(.bordered)
-                }
-                .font(.system(size: 22, weight: .semibold, design: .rounded))
+                Button("Server Configuration", action: onOpenServerConfiguration)
+                    .buttonStyle(.bordered)
+                    .font(.system(size: 22, weight: .semibold, design: .rounded))
             }
         }
     }

@@ -9,13 +9,20 @@ import Combine
 import Foundation
 
 /// Coordinates top-level navigation and screen view models.
+///
+/// The app has exactly two things that can act as its root screen — Server Configuration (nothing
+/// saved yet) or Dashboard List (already configured) — selected by `hasConfiguration` rather than
+/// pushed onto `path`. `path` only ever holds what's stacked on top of whichever root is current:
+/// Dashboard Viewer (picked a dashboard) or Server Configuration again (editing it later from the
+/// list). There's deliberately no loading/splash screen in between: `hasConfiguration` is known
+/// synchronously at init, so the very first frame already shows the right root.
 @MainActor
 final class RootViewModel: ObservableObject {
-    /// Active navigation path.
-    @Published var path: [AppRoute] = []
+    /// Whether a server is already configured — decides the root screen.
+    @Published private(set) var hasConfiguration: Bool
 
-    /// Splash screen view model.
-    let splashViewModel: SplashViewModel
+    /// Destinations pushed on top of the current root screen.
+    @Published var path: [AppRoute] = []
 
     /// Server configuration screen view model.
     let serverConfigurationViewModel: ServerConfigurationViewModel
@@ -26,15 +33,12 @@ final class RootViewModel: ObservableObject {
     /// Dashboard viewer screen view model.
     let dashboardViewerViewModel: DashboardViewerViewModel
 
-    /// About screen view model.
-    let aboutViewModel: AboutViewModel
-
     private let environment: AppEnvironment
 
     /// Creates the root view model with app dependencies.
     init(environment: AppEnvironment) {
         self.environment = environment
-        splashViewModel = SplashViewModel()
+        hasConfiguration = environment.settingsService.hasServerConfiguration()
         serverConfigurationViewModel = ServerConfigurationViewModel(
             settingsService: environment.settingsService,
             keychainService: environment.keychainService
@@ -47,30 +51,6 @@ final class RootViewModel: ObservableObject {
             dashboardManager: environment.dashboardManager,
             zabbixSessionService: environment.zabbixSessionService
         )
-        aboutViewModel = AboutViewModel()
-    }
-
-    /// Performs startup routing.
-    ///
-    /// Guards on `path.isEmpty` rather than a separate "already ran" flag — a flag set before the
-    /// routing decision completes can permanently wedge the app on the splash screen if this task
-    /// gets interrupted partway through (e.g. tvOS suspending or killing the app mid-launch, which
-    /// it does aggressively) and then re-fires without a truly fresh `RootViewModel`: the flag
-    /// would already read "done" while `path` was never actually set, and nothing would ever retry
-    /// it again. Checking `path` itself instead means any re-fire is self-healing — it only skips
-    /// the check when there's genuinely somewhere already navigated to.
-    func prepareLaunch() async {
-        guard path.isEmpty else { return }
-
-        await splashViewModel.prepareLaunch()
-        let configuration = try? await environment.settingsService.loadServerConfiguration()
-
-        guard path.isEmpty else { return }
-        // Dashboard List sits underneath Viewer in the path (rather than jumping straight to
-        // Viewer alone) so Menu/Back on the remote lands somewhere useful — the list of
-        // dashboards to pick a different one from — instead of the splash screen, which has
-        // nothing to do once startup's own configuration check has passed.
-        path = configuration == nil ? [.serverConfiguration] : [.dashboardList, .dashboardViewer]
     }
 
     /// Appends a route to the current navigation path.
@@ -89,16 +69,17 @@ final class RootViewModel: ObservableObject {
         navigate(to: .dashboardViewer)
     }
 
-    /// Called after server configuration is saved. Routes to the dashboard list rather than
-    /// straight into a dashboard, so the choice of which dashboard to show is an explicit one
-    /// (this app has no other moment where that decision gets made) instead of silently landing
-    /// on whichever dashboard Zabbix happens to return first.
+    /// Called after server configuration is saved, whether for the first time (root was Server
+    /// Configuration) or edited later (root already Dashboard List, this was pushed on top of it)
+    /// — either way, clearing `path` lands on the Dashboard List root, freshly reloaded for
+    /// whatever server is now configured, rather than silently reusing the previous server's list.
     func completeServerConfiguration() {
         Task {
             await environment.zabbixSessionService.clearSession()
         }
         dashboardListViewModel.resetForNewConfiguration()
         dashboardViewerViewModel.resetConnectionAttempt()
-        path = [.dashboardList]
+        hasConfiguration = true
+        path = []
     }
 }

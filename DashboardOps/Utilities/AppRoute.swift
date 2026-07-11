@@ -7,10 +7,9 @@
 
 import Foundation
 
-/// Navigation destinations in the DashboardOps app shell.
+/// Destinations pushed on top of the app's root screen (Server Configuration or Dashboard List,
+/// whichever `RootViewModel.hasConfiguration` selects — neither is a pushable route itself).
 enum AppRoute: Hashable {
     case serverConfiguration
-    case dashboardList
     case dashboardViewer
-    case about
 }

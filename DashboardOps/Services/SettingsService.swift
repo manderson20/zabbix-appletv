@@ -16,13 +16,22 @@ actor SettingsService {
 
     private let decoder: JSONDecoder
     private let encoder: JSONEncoder
-    private let userDefaults: UserDefaults
+    // `UserDefaults` is itself thread-safe, so reading through it doesn't need actor isolation —
+    // this lets `hasServerConfiguration()` answer synchronously, with no `await` gap at all, for
+    // the app's very first frame to decide which screen to show with no loading screen in between.
+    nonisolated(unsafe) private let userDefaults: UserDefaults
 
     /// Creates a settings service backed by a user defaults store.
     init(userDefaults: UserDefaults = .standard) {
         self.userDefaults = userDefaults
         decoder = JSONDecoder()
         encoder = JSONEncoder()
+    }
+
+    /// Whether a server configuration is already saved — checked synchronously so the app's root
+    /// view can be decided before the very first frame renders.
+    nonisolated func hasServerConfiguration() -> Bool {
+        userDefaults.data(forKey: SettingsKey.serverConfiguration) != nil
     }
 
     /// Loads the saved server configuration.
