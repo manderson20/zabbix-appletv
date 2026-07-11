@@ -252,7 +252,8 @@ nonisolated struct HostGroupProblemSummary: Identifiable, Sendable {
     /// Host group display name.
     let groupName: String
 
-    /// Number of active problems across hosts in this group.
+    /// Number of distinct hosts in this group with at least one active problem (not the total
+    /// number of problems — a host with several open problems still counts once).
     let count: Int
 
     /// Highest severity among this group's active problems.

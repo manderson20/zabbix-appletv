@@ -95,6 +95,12 @@ extension DashboardManager {
 
         case "problems":
             let severities = Self.indexedValues(widget.fields, name: "severities").compactMap(Int.init)
+            // Verified live: a real "Problems" widget here is configured with "show_lines": 40 and
+            // two "exclude_groupids" (host groups the admin deliberately hid from this list) —
+            // neither was being read, so the widget always showed a hardcoded 6 rows regardless of
+            // its own configuration, and could show problems from groups meant to be excluded.
+            let showLines = Self.fieldValue(widget.fields, name: "show_lines").flatMap(Int.init) ?? 20
+            let excludedGroupIDs = Set(Self.indexedValues(widget.fields, name: "exclude_groupids"))
 
             let problems = try await zabbixAPIClient.problems(
                 serverBaseURL: serverBaseURL,
@@ -102,19 +108,34 @@ extension DashboardManager {
                 severities: severities.isEmpty ? nil : severities
             )
 
-            let hostByTriggerID = try await hostNamesByTriggerID(
-                problems.map(\.objectid),
+            let triggerHosts = try await zabbixAPIClient.triggerHosts(
                 serverBaseURL: serverBaseURL,
-                authToken: authToken
+                authToken: authToken,
+                triggerIDs: Array(Set(problems.map(\.objectid)))
             )
+            let hostByTriggerID = Dictionary(uniqueKeysWithValues: triggerHosts.compactMap { entry in
+                entry.hosts.first.map { (entry.triggerid, $0) }
+            })
+
+            var visibleProblems = problems
+            if !excludedGroupIDs.isEmpty {
+                let hostIDs = Array(Set(hostByTriggerID.values.map(\.hostid)))
+                let hostGroups = try await zabbixAPIClient.hostGroups(serverBaseURL: serverBaseURL, authToken: authToken, hostIDs: hostIDs)
+                let groupIDsByHostID = Dictionary(uniqueKeysWithValues: hostGroups.map { ($0.hostid, Set($0.hostgroups.map(\.groupid))) })
+
+                visibleProblems = problems.filter { problem in
+                    guard let hostID = hostByTriggerID[problem.objectid]?.hostid else { return true }
+                    return groupIDsByHostID[hostID, default: []].isDisjoint(with: excludedGroupIDs)
+                }
+            }
 
             return .problems(
-                problems.map { problem in
+                visibleProblems.prefix(showLines).map { problem in
                     DashboardProblem(
                         id: problem.eventid,
                         name: problem.name,
                         severity: problem.severity.intValue,
-                        host: hostByTriggerID[problem.objectid],
+                        host: hostByTriggerID[problem.objectid]?.name,
                         since: Date(timeIntervalSince1970: TimeInterval(problem.clock) ?? 0)
                     )
                 }
@@ -461,22 +482,25 @@ extension DashboardManager {
         let hostGroups = try await zabbixAPIClient.hostGroups(serverBaseURL: serverBaseURL, authToken: authToken, hostIDs: hostIDs)
         let groupsByHostID = Dictionary(uniqueKeysWithValues: hostGroups.map { ($0.hostid, $0.hostgroups) })
 
-        var summaryByGroup: [String: (name: String, count: Int, maxSeverity: Int)] = [:]
+        // "Problem hosts" counts distinct HOSTS with an active problem per group, matching
+        // Zabbix's own widget (not the total number of problems — a single host with 5 open
+        // problems is still 1 problem host, not 5).
+        var hostIDsByGroup: [String: (name: String, hostIDs: Set<String>, maxSeverity: Int)] = [:]
 
         for entry in resolved {
             guard let groups = groupsByHostID[entry.hostID] else { continue }
 
             for group in groups {
-                var summary = summaryByGroup[group.groupid] ?? (name: group.name, count: 0, maxSeverity: 0)
-                summary.count += 1
+                var summary = hostIDsByGroup[group.groupid] ?? (name: group.name, hostIDs: [], maxSeverity: 0)
+                summary.hostIDs.insert(entry.hostID)
                 summary.maxSeverity = max(summary.maxSeverity, entry.problem.severity.intValue)
-                summaryByGroup[group.groupid] = summary
+                hostIDsByGroup[group.groupid] = summary
             }
         }
 
         return .problemsByHostGroup(
-            summaryByGroup.map { groupID, summary in
-                HostGroupProblemSummary(id: groupID, groupName: summary.name, count: summary.count, maxSeverity: summary.maxSeverity)
+            hostIDsByGroup.map { groupID, summary in
+                HostGroupProblemSummary(id: groupID, groupName: summary.name, count: summary.hostIDs.count, maxSeverity: summary.maxSeverity)
             }.sorted { $0.maxSeverity == $1.maxSeverity ? $0.count > $1.count : $0.maxSeverity > $1.maxSeverity }
         )
     }

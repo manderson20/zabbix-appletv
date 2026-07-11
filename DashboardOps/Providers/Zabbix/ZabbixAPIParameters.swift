@@ -85,7 +85,14 @@ nonisolated struct ZabbixProblemGetParameters: Encodable, Sendable {
     /// Sort order for `sortfield`.
     let sortorder: String
 
-    /// Maximum number of problems to return.
+    /// Maximum number of problems to return. Most callers use this to compute a current-state
+    /// summary (severity tallies, per-host-group counts, map/marker coloring) rather than a
+    /// capped display list, so it needs to comfortably cover a genuinely bad day, not just a
+    /// small sample — verified live against this server during a busy period: 1,036 concurrent
+    /// active problems, which a small default (originally 20, matching Zabbix's own API default)
+    /// silently truncated to under 2% of the real count, with no error or indication anything was
+    /// missing. Callers that do want a short, admin-configured list (e.g. the "Problems" widget's
+    /// own "show_lines" field) pass their own explicit `limit`.
     let limit: Int
 
     init(
@@ -93,7 +100,7 @@ nonisolated struct ZabbixProblemGetParameters: Encodable, Sendable {
         severities: [Int]? = nil,
         sortfield: [String] = ["eventid"],
         sortorder: String = "DESC",
-        limit: Int = 20
+        limit: Int = 5000
     ) {
         self.output = output
         self.severities = severities

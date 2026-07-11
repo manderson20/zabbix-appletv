@@ -220,25 +220,27 @@ private struct ProblemsWidgetContentView: View {
                 .font(.system(size: 18, weight: .regular, design: .rounded))
                 .foregroundStyle(DashboardTheme.secondaryText)
         } else {
-            VStack(alignment: .leading, spacing: 8) {
-                ForEach(problems.prefix(6)) { problem in
-                    HStack(alignment: .top, spacing: 10) {
-                        Circle()
-                            .fill(severityIndicatorColor(for: problem.severity))
-                            .frame(width: 14, height: 14)
-                            .padding(.top, 4)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(problems) { problem in
+                        HStack(alignment: .top, spacing: 10) {
+                            Circle()
+                                .fill(severityIndicatorColor(for: problem.severity))
+                                .frame(width: 14, height: 14)
+                                .padding(.top, 4)
 
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(problem.name)
-                                .font(.system(size: 18, weight: .semibold, design: .rounded))
-                                .foregroundStyle(DashboardTheme.primaryText)
-                                .lineLimit(1)
-
-                            if let host = problem.host {
-                                Text(host)
-                                    .font(.system(size: 15, weight: .regular, design: .rounded))
-                                    .foregroundStyle(DashboardTheme.secondaryText)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(problem.name)
+                                    .font(.system(size: 18, weight: .semibold, design: .rounded))
+                                    .foregroundStyle(DashboardTheme.primaryText)
                                     .lineLimit(1)
+
+                                if let host = problem.host {
+                                    Text(host)
+                                        .font(.system(size: 15, weight: .regular, design: .rounded))
+                                        .foregroundStyle(DashboardTheme.secondaryText)
+                                        .lineLimit(1)
+                                }
                             }
                         }
                     }

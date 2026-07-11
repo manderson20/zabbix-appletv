@@ -569,23 +569,25 @@ struct ProblemHostsWidgetContentView: View {
                 .font(.system(size: 16, weight: .regular, design: .rounded))
                 .foregroundStyle(DashboardTheme.secondaryText)
         } else {
-            VStack(alignment: .leading, spacing: 8) {
-                ForEach(summaries.prefix(6)) { summary in
-                    HStack(spacing: 10) {
-                        Circle()
-                            .fill(severityIndicatorColor(for: summary.maxSeverity))
-                            .frame(width: 12, height: 12)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(summaries) { summary in
+                        HStack(spacing: 10) {
+                            Circle()
+                                .fill(severityIndicatorColor(for: summary.maxSeverity))
+                                .frame(width: 12, height: 12)
 
-                        Text(summary.groupName)
-                            .font(.system(size: 17, weight: .medium, design: .rounded))
-                            .foregroundStyle(DashboardTheme.primaryText)
-                            .lineLimit(1)
+                            Text(summary.groupName)
+                                .font(.system(size: 17, weight: .medium, design: .rounded))
+                                .foregroundStyle(DashboardTheme.primaryText)
+                                .lineLimit(1)
 
-                        Spacer()
+                            Spacer()
 
-                        Text("\(summary.count)")
-                            .font(.system(size: 17, weight: .bold, design: .rounded))
-                            .foregroundStyle(DashboardTheme.secondaryText)
+                            Text("\(summary.count)")
+                                .font(.system(size: 17, weight: .bold, design: .rounded))
+                                .foregroundStyle(DashboardTheme.secondaryText)
+                        }
                     }
                 }
             }
