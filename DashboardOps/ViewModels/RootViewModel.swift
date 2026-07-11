@@ -30,7 +30,6 @@ final class RootViewModel: ObservableObject {
     let aboutViewModel: AboutViewModel
 
     private let environment: AppEnvironment
-    private var hasPreparedLaunch = false
 
     /// Creates the root view model with app dependencies.
     init(environment: AppEnvironment) {
@@ -52,12 +51,21 @@ final class RootViewModel: ObservableObject {
     }
 
     /// Performs startup routing.
+    ///
+    /// Guards on `path.isEmpty` rather than a separate "already ran" flag — a flag set before the
+    /// routing decision completes can permanently wedge the app on the splash screen if this task
+    /// gets interrupted partway through (e.g. tvOS suspending or killing the app mid-launch, which
+    /// it does aggressively) and then re-fires without a truly fresh `RootViewModel`: the flag
+    /// would already read "done" while `path` was never actually set, and nothing would ever retry
+    /// it again. Checking `path` itself instead means any re-fire is self-healing — it only skips
+    /// the check when there's genuinely somewhere already navigated to.
     func prepareLaunch() async {
-        guard !hasPreparedLaunch else { return }
-        hasPreparedLaunch = true
+        guard path.isEmpty else { return }
 
         await splashViewModel.prepareLaunch()
         let configuration = try? await environment.settingsService.loadServerConfiguration()
+
+        guard path.isEmpty else { return }
         // Dashboard List sits underneath Viewer in the path (rather than jumping straight to
         // Viewer alone) so Menu/Back on the remote lands somewhere useful — the list of
         // dashboards to pick a different one from — instead of the splash screen, which has

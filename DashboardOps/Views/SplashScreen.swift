@@ -30,11 +30,9 @@ struct SplashScreen: View {
                         .font(.system(size: 36, weight: .semibold, design: .rounded))
                         .foregroundStyle(DashboardTheme.primaryText)
 
-                    if viewModel.isPreparing {
-                        ProgressView()
-                            .controlSize(.large)
-                            .tint(DashboardTheme.accent)
-                    }
+                    ProgressView()
+                        .controlSize(.large)
+                        .tint(DashboardTheme.accent)
                 }
                 .frame(minHeight: 250, alignment: .topLeading)
             }

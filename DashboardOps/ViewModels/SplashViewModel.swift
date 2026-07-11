@@ -8,22 +8,16 @@
 import Combine
 import Foundation
 
-/// View model for the launch splash screen.
+/// View model for the launch splash screen — shown only for the moment it takes to check for a
+/// saved server configuration, so there's no "ready" state to report: by the time that check
+/// finishes, `RootViewModel` has already navigated away.
 @MainActor
 final class SplashViewModel: ObservableObject {
     /// Current startup status message.
     @Published private(set) var statusMessage = "Starting DashboardOps"
 
-    /// Indicates whether startup preparation is active.
-    @Published private(set) var isPreparing = false
-
     /// Prepares the app shell for navigation.
     func prepareLaunch() async {
-        guard !isPreparing else { return }
-        isPreparing = true
         statusMessage = "Checking saved configuration"
-        try? await Task.sleep(nanoseconds: 350_000_000)
-        statusMessage = "Ready"
-        isPreparing = false
     }
 }
