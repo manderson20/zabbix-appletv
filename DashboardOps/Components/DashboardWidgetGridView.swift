@@ -195,27 +195,39 @@ private struct ItemValueWidgetContentView: View {
         return ZabbixValueFormatting.format(numericValue, units: units)
     }
 
+    /// Matches Zabbix's own item-value widget: when a trend is showing, the value text itself
+    /// takes the trend's color (not just the arrow beside it) — falls back to the theme accent
+    /// when there's no trend to show (unchanged value, or no up_color/down_color configured).
+    private var valueColor: Color {
+        switch trend {
+        case .up(let colorHex), .down(let colorHex):
+            return Color(hex: colorHex) ?? DashboardTheme.accent
+        case nil:
+            return DashboardTheme.accent
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Text(displayValue)
                     .font(.system(size: 40, weight: .bold, design: .rounded))
-                    .foregroundStyle(DashboardTheme.accent)
+                    .foregroundStyle(valueColor)
                     .lineLimit(1)
                     .minimumScaleFactor(0.5)
 
-                // Matches Zabbix's own item-value widget: a small colored arrow showing whether
-                // the value increased or decreased since its previous poll.
+                // A small colored arrow alongside the (now equally colored) value, showing
+                // whether it increased or decreased since its previous poll.
                 if let trend {
                     switch trend {
-                    case .up(let colorHex):
+                    case .up:
                         Image(systemName: "arrow.up")
                             .font(.system(size: 22, weight: .bold))
-                            .foregroundStyle(Color(hex: colorHex) ?? DashboardTheme.accent)
-                    case .down(let colorHex):
+                            .foregroundStyle(valueColor)
+                    case .down:
                         Image(systemName: "arrow.down")
                             .font(.system(size: 22, weight: .bold))
-                            .foregroundStyle(Color(hex: colorHex) ?? DashboardTheme.accent)
+                            .foregroundStyle(valueColor)
                     }
                 }
             }
