@@ -1124,16 +1124,23 @@ extension DashboardManager {
         }
     }
 
-    private static let defaultHistoryWindowSeconds = 24 * 3600
+    /// A graph widget with no "time_period.*" fields at all is configured to use "Dashboard" as
+    /// its time-period source — Zabbix's own frontend then falls back to its global default of
+    /// "Last 1 hour" (the same default used across the product, e.g. the item history page) when
+    /// the dashboard has no separate time-filter widget setting it to something else. Verified
+    /// live: 5 widgets across 2 dashboards ("FreePBX Call Graph", "Data Center Temperature", etc.)
+    /// have no time_period fields and neither dashboard has a time-filter widget, so this is what
+    /// Zabbix itself would show for them, not an arbitrary placeholder.
+    private static let defaultHistoryWindowSeconds = 3600
     private static let maxHistoryPointsFetched = 6000
 
     /// The widget's own configured graph time range ("time_period.from"), matching what a Zabbix
     /// graph widget's name usually spells out (e.g. "Internet Usage Last Hour" is itself configured
     /// with `time_period.from = now-1h`, verified live) — every graph on a dashboard is otherwise
     /// free to set its own window independent of its neighbors, so a single hardcoded fetch window
-    /// silently ignored that and showed every graph the same 24 hours regardless of its own label.
-    /// Falls back to the 24-hour default when the widget doesn't set one, or uses a relative-time
-    /// expression more complex than the plain "now-<N><unit>" offset seen on every live example.
+    /// silently ignored that and showed every graph the same window regardless of its own label.
+    /// Falls back to Zabbix's own 1-hour default when the widget doesn't set one, or uses a
+    /// relative-time expression more complex than the plain "now-<N><unit>" offset seen live.
     static func historyWindowSeconds(from fields: [ZabbixWidgetField]) -> Int {
         guard let fromRaw = fieldValue(fields, name: "time_period.from"),
               let seconds = secondsBeforeNow(fromRelativeTime: fromRaw), seconds > 0 else {
