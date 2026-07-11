@@ -18,21 +18,10 @@ struct ContentView: View {
 
     var body: some View {
         NavigationStack(path: $viewModel.path) {
-            SplashScreen(
-                viewModel: viewModel.splashViewModel,
-                onOpenServerConfiguration: {
-                    viewModel.navigate(to: .serverConfiguration)
-                },
-                onOpenDashboardList: {
-                    viewModel.navigate(to: .dashboardList)
-                },
-                onOpenAbout: {
-                    viewModel.navigate(to: .about)
+            SplashScreen(viewModel: viewModel.splashViewModel)
+                .navigationDestination(for: AppRoute.self) { route in
+                    destination(for: route)
                 }
-            )
-            .navigationDestination(for: AppRoute.self) { route in
-                destination(for: route)
-            }
         }
         .tint(DashboardTheme.accent)
         .task {
@@ -55,6 +44,12 @@ struct ContentView: View {
                 viewModel: viewModel.dashboardListViewModel,
                 onOpenDashboard: { dashboard in
                     viewModel.openDashboard(dashboard)
+                },
+                onOpenServerConfiguration: {
+                    viewModel.navigate(to: .serverConfiguration)
+                },
+                onOpenAbout: {
+                    viewModel.navigate(to: .about)
                 }
             )
         case .dashboardViewer:

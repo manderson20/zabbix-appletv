@@ -7,57 +7,36 @@
 
 import SwiftUI
 
-/// Launch screen for DashboardOps.
+/// Launch screen for DashboardOps — shown only for the brief moment it takes to check for a saved
+/// server configuration, never a destination the user navigates back to. `RootViewModel` replaces
+/// this with the actual destination (server configuration, or the dashboard list plus viewer)
+/// as soon as that check completes, so there are no buttons here to navigate anywhere.
 struct SplashScreen: View {
     /// Screen view model.
     @ObservedObject var viewModel: SplashViewModel
-
-    /// Opens server configuration.
-    let onOpenServerConfiguration: () -> Void
-
-    /// Opens the dashboard list.
-    let onOpenDashboardList: () -> Void
-
-    /// Opens the About screen.
-    let onOpenAbout: () -> Void
 
     var body: some View {
         ScreenScaffold(
             title: "DashboardOps",
             subtitle: "Managed Apple TV dashboard display"
         ) {
-            HStack(alignment: .top, spacing: 32) {
-                DashboardCard {
-                    VStack(alignment: .leading, spacing: 24) {
-                        Image(systemName: "rectangle.on.rectangle")
-                            .font(.system(size: 72, weight: .semibold))
-                            .foregroundStyle(DashboardTheme.accent)
+            DashboardCard {
+                VStack(alignment: .leading, spacing: 24) {
+                    Image(systemName: "rectangle.on.rectangle")
+                        .font(.system(size: 72, weight: .semibold))
+                        .foregroundStyle(DashboardTheme.accent)
 
-                        Text(viewModel.statusMessage)
-                            .font(.system(size: 36, weight: .semibold, design: .rounded))
-                            .foregroundStyle(DashboardTheme.primaryText)
+                    Text(viewModel.statusMessage)
+                        .font(.system(size: 36, weight: .semibold, design: .rounded))
+                        .foregroundStyle(DashboardTheme.primaryText)
 
-                        if viewModel.isPreparing {
-                            ProgressView()
-                                .controlSize(.large)
-                                .tint(DashboardTheme.accent)
-                        }
+                    if viewModel.isPreparing {
+                        ProgressView()
+                            .controlSize(.large)
+                            .tint(DashboardTheme.accent)
                     }
-                    .frame(minHeight: 250, alignment: .topLeading)
                 }
-
-                VStack(alignment: .leading, spacing: 18) {
-                    Button("Server Configuration", action: onOpenServerConfiguration)
-                        .buttonStyle(.borderedProminent)
-
-                    Button("Dashboard List", action: onOpenDashboardList)
-                        .buttonStyle(.bordered)
-
-                    Button("About", action: onOpenAbout)
-                        .buttonStyle(.bordered)
-                }
-                .font(.system(size: 28, weight: .semibold, design: .rounded))
-                .focusSection()
+                .frame(minHeight: 250, alignment: .topLeading)
             }
         }
     }

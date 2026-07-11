@@ -58,7 +58,11 @@ final class RootViewModel: ObservableObject {
 
         await splashViewModel.prepareLaunch()
         let configuration = try? await environment.settingsService.loadServerConfiguration()
-        path = configuration == nil ? [.serverConfiguration] : [.dashboardViewer]
+        // Dashboard List sits underneath Viewer in the path (rather than jumping straight to
+        // Viewer alone) so Menu/Back on the remote lands somewhere useful — the list of
+        // dashboards to pick a different one from — instead of the splash screen, which has
+        // nothing to do once startup's own configuration check has passed.
+        path = configuration == nil ? [.serverConfiguration] : [.dashboardList, .dashboardViewer]
     }
 
     /// Appends a route to the current navigation path.
