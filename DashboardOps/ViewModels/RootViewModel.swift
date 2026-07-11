@@ -17,9 +17,6 @@ final class RootViewModel: ObservableObject {
     /// Splash screen view model.
     let splashViewModel: SplashViewModel
 
-    /// Settings screen view model.
-    let settingsViewModel: SettingsViewModel
-
     /// Server configuration screen view model.
     let serverConfigurationViewModel: ServerConfigurationViewModel
 
@@ -39,7 +36,6 @@ final class RootViewModel: ObservableObject {
     init(environment: AppEnvironment) {
         self.environment = environment
         splashViewModel = SplashViewModel()
-        settingsViewModel = SettingsViewModel(providerRegistry: environment.providerRegistry)
         serverConfigurationViewModel = ServerConfigurationViewModel(
             settingsService: environment.settingsService,
             keychainService: environment.keychainService
@@ -62,7 +58,7 @@ final class RootViewModel: ObservableObject {
 
         await splashViewModel.prepareLaunch()
         let configuration = try? await environment.settingsService.loadServerConfiguration()
-        path = configuration == nil ? [.settings] : [.dashboardViewer]
+        path = configuration == nil ? [.serverConfiguration] : [.dashboardViewer]
     }
 
     /// Appends a route to the current navigation path.
@@ -92,14 +88,5 @@ final class RootViewModel: ObservableObject {
         dashboardListViewModel.resetForNewConfiguration()
         dashboardViewerViewModel.resetConnectionAttempt()
         path = [.dashboardList]
-    }
-
-    /// Replaces the current path with one route.
-    func replace(with route: AppRoute) {
-        if route == .dashboardViewer {
-            dashboardViewerViewModel.resetConnectionAttempt()
-        }
-
-        path = [route]
     }
 }

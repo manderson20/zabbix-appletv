@@ -11,14 +11,6 @@ import Foundation
 
 struct DashboardOpsTests {
 
-    @Test @MainActor func providerRegistryMarksOnlyZabbixSupported() async throws {
-        let providers = ProviderRegistry.standard.providers
-
-        #expect(providers.count == 2)
-        #expect(providers.contains { $0.kind == .zabbix && $0.supportStatus == .supported })
-        #expect(providers.filter { $0.supportStatus == .supported }.count == 1)
-    }
-
     @Test func settingsServicePersistsServerConfiguration() async throws {
         let suiteName = "DashboardOpsTests.\(UUID().uuidString)"
         let userDefaults = try #require(UserDefaults(suiteName: suiteName))

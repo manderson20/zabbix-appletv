@@ -12,8 +12,11 @@ struct SplashScreen: View {
     /// Screen view model.
     @ObservedObject var viewModel: SplashViewModel
 
-    /// Opens the settings flow.
-    let onOpenSettings: () -> Void
+    /// Opens server configuration.
+    let onOpenServerConfiguration: () -> Void
+
+    /// Opens the dashboard list.
+    let onOpenDashboardList: () -> Void
 
     /// Opens the About screen.
     let onOpenAbout: () -> Void
@@ -44,8 +47,11 @@ struct SplashScreen: View {
                 }
 
                 VStack(alignment: .leading, spacing: 18) {
-                    Button("Settings", action: onOpenSettings)
+                    Button("Server Configuration", action: onOpenServerConfiguration)
                         .buttonStyle(.borderedProminent)
+
+                    Button("Dashboard List", action: onOpenDashboardList)
+                        .buttonStyle(.bordered)
 
                     Button("About", action: onOpenAbout)
                         .buttonStyle(.bordered)

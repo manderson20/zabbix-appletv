@@ -20,8 +20,11 @@ struct ContentView: View {
         NavigationStack(path: $viewModel.path) {
             SplashScreen(
                 viewModel: viewModel.splashViewModel,
-                onOpenSettings: {
-                    viewModel.replace(with: .settings)
+                onOpenServerConfiguration: {
+                    viewModel.navigate(to: .serverConfiguration)
+                },
+                onOpenDashboardList: {
+                    viewModel.navigate(to: .dashboardList)
                 },
                 onOpenAbout: {
                     viewModel.navigate(to: .about)
@@ -40,19 +43,6 @@ struct ContentView: View {
     @ViewBuilder
     private func destination(for route: AppRoute) -> some View {
         switch route {
-        case .settings:
-            SettingsScreen(
-                viewModel: viewModel.settingsViewModel,
-                onOpenServerConfiguration: {
-                    viewModel.navigate(to: .serverConfiguration)
-                },
-                onOpenDashboardList: {
-                    viewModel.navigate(to: .dashboardList)
-                },
-                onOpenAbout: {
-                    viewModel.navigate(to: .about)
-                }
-            )
         case .serverConfiguration:
             ServerConfigurationScreen(
                 viewModel: viewModel.serverConfigurationViewModel,

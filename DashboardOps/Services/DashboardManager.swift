@@ -9,7 +9,6 @@ import Foundation
 
 /// Coordinates dashboard discovery and selection for the active provider.
 actor DashboardManager {
-    private let providerRegistry: ProviderRegistry
     let settingsService: SettingsService
     let zabbixAPIClient: ZabbixAPIClient
     let zabbixSessionService: ZabbixSessionService
@@ -18,22 +17,15 @@ actor DashboardManager {
     /// fetched once rather than on every dashboard/refresh load.
     var hasFetchedSeverityPalette = false
 
-    /// Creates a dashboard manager backed by a provider registry and the Zabbix stack.
+    /// Creates a dashboard manager backed by the Zabbix stack.
     init(
-        providerRegistry: ProviderRegistry,
         settingsService: SettingsService,
         zabbixAPIClient: ZabbixAPIClient,
         zabbixSessionService: ZabbixSessionService
     ) {
-        self.providerRegistry = providerRegistry
         self.settingsService = settingsService
         self.zabbixAPIClient = zabbixAPIClient
         self.zabbixSessionService = zabbixSessionService
-    }
-
-    /// Returns providers known to the app shell.
-    func availableProviders() async -> [any DashboardProvider] {
-        providerRegistry.providers
     }
 
     /// Loads dashboards for a provider, connecting to Zabbix first if needed.

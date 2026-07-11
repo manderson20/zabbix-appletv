@@ -9,9 +9,6 @@ import Foundation
 
 /// Dependency container for app-level services.
 struct AppEnvironment: Sendable {
-    /// Provider catalog available to managers and settings.
-    let providerRegistry: ProviderRegistry
-
     /// Secure credential storage service.
     let keychainService: KeychainService
 
@@ -34,9 +31,7 @@ struct AppEnvironment: Sendable {
     let zabbixSessionService: ZabbixSessionService
 
     /// Creates the default application environment.
-    init(providerRegistry: ProviderRegistry = .standard) {
-        self.providerRegistry = providerRegistry
-
+    init() {
         let keychainService = KeychainService()
         let settingsService = SettingsService()
         let networkService = NetworkService()
@@ -56,7 +51,6 @@ struct AppEnvironment: Sendable {
             sessionManager: sessionManager
         )
         dashboardManager = DashboardManager(
-            providerRegistry: providerRegistry,
             settingsService: settingsService,
             zabbixAPIClient: zabbixAPIClient,
             zabbixSessionService: zabbixSessionService

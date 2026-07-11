@@ -9,7 +9,6 @@ import Foundation
 
 /// Navigation destinations in the DashboardOps app shell.
 enum AppRoute: Hashable {
-    case settings
     case serverConfiguration
     case dashboardList
     case dashboardViewer
