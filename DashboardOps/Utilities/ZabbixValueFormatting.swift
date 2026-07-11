@@ -52,6 +52,16 @@ enum ZabbixValueFormatting {
         format(value, units: units, scale: scale(forMaxMagnitude: value, units: units))
     }
 
+    /// Formats a value the way Zabbix's own "Item value" widget does: always two decimal places
+    /// (verified live — a plain integer reading like "1" is shown as "1.00", not just "1"),
+    /// unlike the variable-precision `format(_:units:)` used for graph axis labels.
+    static func formatItemValue(_ value: Double, units: String) -> String {
+        let scale = scale(forMaxMagnitude: value, units: units)
+        let suffix = "\(scale.prefix)\(units)"
+        let formattedNumber = String(format: "%.2f", value / scale.divisor)
+        return suffix.isEmpty ? formattedNumber : "\(formattedNumber) \(suffix)"
+    }
+
     private static func formattedNumber(_ value: Double) -> String {
         let rounded = value.rounded()
         if abs(value - rounded) < 0.05 {

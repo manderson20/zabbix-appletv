@@ -79,7 +79,7 @@ nonisolated struct DashboardWidgetFrame: Sendable, Equatable {
 /// native rendering here — see the widget build-out plan for the reasoning behind each.
 nonisolated enum DashboardWidgetKind: Sendable {
     case clock
-    case itemValue(name: String, value: String, units: String, backgroundColorHex: String?, trend: ItemValueTrend?)
+    case itemValue(name: String, value: String, units: String, backgroundColorHex: String?, trend: ItemValueTrend?, lastUpdated: Date?)
     case problems([DashboardProblem])
     case problemsBySeverity([SeverityCount])
     case hostAvailability([HostInterfaceAvailability])

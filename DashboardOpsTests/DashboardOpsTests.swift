@@ -226,7 +226,7 @@ struct DashboardOpsTests {
                 frame: DashboardWidgetFrame(x: 4, y: 0, width: 8, height: 4),
                 refreshIntervalSeconds: 30,
                 hasHiddenHeader: false,
-                kind: .itemValue(name: "CPU Load", value: "0.42", units: "", backgroundColorHex: nil, trend: nil)
+                kind: .itemValue(name: "CPU Load", value: "0.42", units: "", backgroundColorHex: nil, trend: nil, lastUpdated: nil)
             )
         ]
 

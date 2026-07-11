@@ -23,6 +23,10 @@ nonisolated struct ZabbixItemSummary: Decodable, Sendable {
     /// Zabbix's own item-value widget.
     let prevvalue: String?
 
+    /// Unix timestamp of when `lastvalue` was recorded, shown as a "last updated" time on
+    /// Zabbix's own item-value widget.
+    let lastclock: String?
+
     /// Unit label configured on the item, e.g. "°C" or "%".
     let units: String?
 

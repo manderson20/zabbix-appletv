@@ -165,7 +165,8 @@ extension DashboardManager {
                 value: item.lastvalue ?? "\u{2014}",
                 units: item.units ?? "",
                 backgroundColorHex: Self.fieldValue(widget.fields, name: "bg_color"),
-                trend: trend
+                trend: trend,
+                lastUpdated: item.lastclock.flatMap(TimeInterval.init).map { Date(timeIntervalSince1970: $0) }
             )
 
         case "problemsbysv":

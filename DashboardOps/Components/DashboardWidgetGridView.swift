@@ -87,7 +87,7 @@ private struct DashboardWidgetCardView: View {
     /// Zabbix's own per-widget background color, when the widget type supports one (currently
     /// just "item value" widgets, via their "bg_color" field).
     private var backgroundColorHex: String? {
-        if case let .itemValue(_, _, _, backgroundColorHex, _) = widget.kind {
+        if case let .itemValue(_, _, _, backgroundColorHex, _, _) = widget.kind {
             return backgroundColorHex
         }
         return nil
@@ -115,8 +115,8 @@ private struct DashboardWidgetCardView: View {
         switch widget.kind {
         case .clock:
             ClockWidgetContentView()
-        case let .itemValue(name, value, units, _, trend):
-            ItemValueWidgetContentView(name: name, value: value, units: units, trend: trend)
+        case let .itemValue(name, value, units, _, trend, lastUpdated):
+            ItemValueWidgetContentView(name: name, value: value, units: units, trend: trend, lastUpdated: lastUpdated)
         case let .problems(problems):
             ProblemsWidgetContentView(problems: problems)
         case let .problemsBySeverity(counts):
@@ -187,57 +187,78 @@ private struct ItemValueWidgetContentView: View {
     let value: String
     let units: String
     let trend: ItemValueTrend?
+    let lastUpdated: Date?
 
+    /// Matches Zabbix's own item-value widget: always two decimal places (a plain "1" reading is
+    /// shown as "1.00"), not the variable-precision formatting used for graph axis labels.
     private var displayValue: String {
         guard let numericValue = Double(value) else {
             return units.isEmpty ? value : "\(value) \(units)"
         }
-        return ZabbixValueFormatting.format(numericValue, units: units)
+        return ZabbixValueFormatting.formatItemValue(numericValue, units: units)
     }
 
-    /// Matches Zabbix's own item-value widget: when a trend is showing, the value text itself
-    /// takes the trend's color (not just the arrow beside it) — falls back to the theme accent
-    /// when there's no trend to show (unchanged value, or no up_color/down_color configured).
-    private var valueColor: Color {
+    /// Only the trend arrow is colored — verified against a live Zabbix screenshot that the
+    /// value text itself stays the default white/primary color regardless of trend.
+    private var trendColor: Color? {
         switch trend {
         case .up(let colorHex), .down(let colorHex):
-            return Color(hex: colorHex) ?? DashboardTheme.accent
+            return Color(hex: colorHex)
         case nil:
-            return DashboardTheme.accent
+            return nil
         }
     }
 
+    /// A fixed "yyyy-MM-dd h:mm:ss a" pattern, matching Zabbix's own item-value widget exactly
+    /// (not the device locale's date order) — verified against a live Zabbix screenshot.
+    private var formattedTimestamp: String? {
+        guard let lastUpdated else { return nil }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd h:mm:ss a"
+        return formatter.string(from: lastUpdated)
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 4) {
+            if let formattedTimestamp {
+                Text(formattedTimestamp)
+                    .font(.system(size: 11, weight: .regular, design: .rounded))
+                    .foregroundStyle(DashboardTheme.secondaryText)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+
+            Spacer(minLength: 0)
+
             HStack(spacing: 6) {
                 Text(displayValue)
                     .font(.system(size: 40, weight: .bold, design: .rounded))
-                    .foregroundStyle(valueColor)
+                    .foregroundStyle(DashboardTheme.primaryText)
                     .lineLimit(1)
                     .minimumScaleFactor(0.5)
 
-                // A small colored arrow alongside the (now equally colored) value, showing
-                // whether it increased or decreased since its previous poll.
-                if let trend {
+                if let trend, let trendColor {
                     switch trend {
                     case .up:
                         Image(systemName: "arrow.up")
                             .font(.system(size: 22, weight: .bold))
-                            .foregroundStyle(valueColor)
+                            .foregroundStyle(trendColor)
                     case .down:
                         Image(systemName: "arrow.down")
                             .font(.system(size: 22, weight: .bold))
-                            .foregroundStyle(valueColor)
+                            .foregroundStyle(trendColor)
                     }
                 }
             }
+
+            Spacer(minLength: 0)
 
             Text(name)
                 .font(.system(size: 18, weight: .regular, design: .rounded))
                 .foregroundStyle(DashboardTheme.secondaryText)
                 .lineLimit(1)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
     }
 }
 
