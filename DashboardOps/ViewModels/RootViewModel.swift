@@ -16,6 +16,12 @@ import Foundation
 /// Dashboard Viewer (picked a dashboard) or Server Configuration again (editing it later from the
 /// list). There's deliberately no loading/splash screen in between: `hasConfiguration` is known
 /// synchronously at init, so the very first frame already shows the right root.
+///
+/// A cold launch that's already configured pushes straight into Dashboard Viewer on top of the
+/// Dashboard List root — this is a kiosk display, so opening the app should show the dashboard
+/// immediately (whichever was set as default), not a menu to pick from. Dashboard List is still
+/// right there as the root underneath, reachable with Menu/Back on the remote, for picking a
+/// different dashboard or reconfiguring later.
 @MainActor
 final class RootViewModel: ObservableObject {
     /// Whether a server is already configured — decides the root screen.
@@ -51,6 +57,10 @@ final class RootViewModel: ObservableObject {
             dashboardManager: environment.dashboardManager,
             zabbixSessionService: environment.zabbixSessionService
         )
+
+        if hasConfiguration {
+            path = [.dashboardViewer]
+        }
     }
 
     /// Appends a route to the current navigation path.
