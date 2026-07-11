@@ -18,6 +18,11 @@ nonisolated struct ZabbixItemSummary: Decodable, Sendable {
     /// Most recent recorded value, if any.
     let lastvalue: String?
 
+    /// The value recorded before `lastvalue`, if any — Zabbix returns this directly rather than
+    /// requiring a separate history lookup, used to show an up/down trend indicator matching
+    /// Zabbix's own item-value widget.
+    let prevvalue: String?
+
     /// Unit label configured on the item, e.g. "°C" or "%".
     let units: String?
 

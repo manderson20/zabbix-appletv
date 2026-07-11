@@ -87,7 +87,7 @@ private struct DashboardWidgetCardView: View {
     /// Zabbix's own per-widget background color, when the widget type supports one (currently
     /// just "item value" widgets, via their "bg_color" field).
     private var backgroundColorHex: String? {
-        if case let .itemValue(_, _, _, backgroundColorHex) = widget.kind {
+        if case let .itemValue(_, _, _, backgroundColorHex, _) = widget.kind {
             return backgroundColorHex
         }
         return nil
@@ -115,8 +115,8 @@ private struct DashboardWidgetCardView: View {
         switch widget.kind {
         case .clock:
             ClockWidgetContentView()
-        case let .itemValue(name, value, units, _):
-            ItemValueWidgetContentView(name: name, value: value, units: units)
+        case let .itemValue(name, value, units, _, trend):
+            ItemValueWidgetContentView(name: name, value: value, units: units, trend: trend)
         case let .problems(problems):
             ProblemsWidgetContentView(problems: problems)
         case let .problemsBySeverity(counts):
@@ -186,6 +186,7 @@ private struct ItemValueWidgetContentView: View {
     let name: String
     let value: String
     let units: String
+    let trend: ItemValueTrend?
 
     private var displayValue: String {
         guard let numericValue = Double(value) else {
@@ -196,11 +197,28 @@ private struct ItemValueWidgetContentView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(displayValue)
-                .font(.system(size: 40, weight: .bold, design: .rounded))
-                .foregroundStyle(DashboardTheme.accent)
-                .lineLimit(1)
-                .minimumScaleFactor(0.5)
+            HStack(spacing: 6) {
+                Text(displayValue)
+                    .font(.system(size: 40, weight: .bold, design: .rounded))
+                    .foregroundStyle(DashboardTheme.accent)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
+
+                // Matches Zabbix's own item-value widget: a small colored arrow showing whether
+                // the value increased or decreased since its previous poll.
+                if let trend {
+                    switch trend {
+                    case .up(let colorHex):
+                        Image(systemName: "arrow.up")
+                            .font(.system(size: 22, weight: .bold))
+                            .foregroundStyle(Color(hex: colorHex) ?? DashboardTheme.accent)
+                    case .down(let colorHex):
+                        Image(systemName: "arrow.down")
+                            .font(.system(size: 22, weight: .bold))
+                            .foregroundStyle(Color(hex: colorHex) ?? DashboardTheme.accent)
+                    }
+                }
+            }
 
             Text(name)
                 .font(.system(size: 18, weight: .regular, design: .rounded))
@@ -220,7 +238,7 @@ private struct ProblemsWidgetContentView: View {
                 .font(.system(size: 18, weight: .regular, design: .rounded))
                 .foregroundStyle(DashboardTheme.secondaryText)
         } else {
-            ScrollView {
+            AutoScrollingContent {
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(problems) { problem in
                         HStack(alignment: .top, spacing: 10) {

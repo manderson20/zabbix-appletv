@@ -79,7 +79,7 @@ nonisolated struct DashboardWidgetFrame: Sendable, Equatable {
 /// native rendering here — see the widget build-out plan for the reasoning behind each.
 nonisolated enum DashboardWidgetKind: Sendable {
     case clock
-    case itemValue(name: String, value: String, units: String, backgroundColorHex: String?)
+    case itemValue(name: String, value: String, units: String, backgroundColorHex: String?, trend: ItemValueTrend?)
     case problems([DashboardProblem])
     case problemsBySeverity([SeverityCount])
     case hostAvailability([HostInterfaceAvailability])
@@ -104,6 +104,13 @@ nonisolated enum DashboardWidgetKind: Sendable {
     case itemList([ItemListEntry])
     case slaReport([SLAReportEntry])
     case unsupported(rawType: String)
+}
+
+/// Whether an item value's widget increased or decreased since its previous poll, with the
+/// server-configured color for that direction — matching Zabbix's own up/down trend indicator.
+nonisolated enum ItemValueTrend: Sendable {
+    case up(colorHex: String)
+    case down(colorHex: String)
 }
 
 /// A single active problem shown in a problems widget.

@@ -61,7 +61,7 @@ nonisolated struct ZabbixItemGetParameters: Encodable, Sendable {
     /// Item fields to return.
     let output: [String]
 
-    init(itemIDs: [String], output: [String] = ["itemid", "name", "lastvalue", "units", "value_type"]) {
+    init(itemIDs: [String], output: [String] = ["itemid", "name", "lastvalue", "prevvalue", "units", "value_type"]) {
         self.itemids = itemIDs
         self.output = output
     }

@@ -144,7 +144,7 @@ struct MapListWidgetContentView: View {
                 .font(.system(size: 16, weight: .regular, design: .rounded))
                 .foregroundStyle(DashboardTheme.secondaryText)
         } else {
-            ScrollView {
+            AutoScrollingContent {
                 VStack(alignment: .leading, spacing: 6) {
                     ForEach(maps) { map in
                         Text(map.name)
@@ -167,7 +167,7 @@ struct HostListWidgetContentView: View {
                 .font(.system(size: 16, weight: .regular, design: .rounded))
                 .foregroundStyle(DashboardTheme.secondaryText)
         } else {
-            ScrollView {
+            AutoScrollingContent {
                 VStack(alignment: .leading, spacing: 6) {
                     ForEach(hosts) { host in
                         HStack(spacing: 8) {
@@ -203,7 +203,7 @@ struct ItemListWidgetContentView: View {
                 .font(.system(size: 16, weight: .regular, design: .rounded))
                 .foregroundStyle(DashboardTheme.secondaryText)
         } else {
-            ScrollView {
+            AutoScrollingContent {
                 VStack(alignment: .leading, spacing: 6) {
                     ForEach(items) { item in
                         HStack {
@@ -464,7 +464,7 @@ struct HoneycombWidgetContentView: View {
     private let columns = [GridItem(.adaptive(minimum: 90), spacing: 6)]
 
     var body: some View {
-        ScrollView {
+        AutoScrollingContent {
             LazyVGrid(columns: columns, spacing: 6) {
                 ForEach(cells) { cell in
                     VStack(spacing: 2) {
@@ -498,7 +498,7 @@ struct TopHostsWidgetContentView: View {
                 .font(.system(size: 16, weight: .regular, design: .rounded))
                 .foregroundStyle(DashboardTheme.secondaryText)
         } else {
-            ScrollView {
+            AutoScrollingContent {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
                         ForEach(Array(columns.enumerated()), id: \.offset) { _, title in
@@ -535,7 +535,7 @@ struct TriggerOverviewWidgetContentView: View {
                 .font(.system(size: 16, weight: .regular, design: .rounded))
                 .foregroundStyle(DashboardTheme.secondaryText)
         } else {
-            ScrollView {
+            AutoScrollingContent {
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(rows) { row in
                         HStack(alignment: .top, spacing: 10) {
@@ -569,7 +569,7 @@ struct ProblemHostsWidgetContentView: View {
                 .font(.system(size: 16, weight: .regular, design: .rounded))
                 .foregroundStyle(DashboardTheme.secondaryText)
         } else {
-            ScrollView {
+            AutoScrollingContent {
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(summaries) { summary in
                         HStack(spacing: 10) {
@@ -604,7 +604,7 @@ struct ActionLogWidgetContentView: View {
                 .font(.system(size: 16, weight: .regular, design: .rounded))
                 .foregroundStyle(DashboardTheme.secondaryText)
         } else {
-            ScrollView {
+            AutoScrollingContent {
                 VStack(alignment: .leading, spacing: 6) {
                     ForEach(entries.prefix(15)) { entry in
                         HStack(spacing: 8) {
@@ -678,7 +678,7 @@ struct WebMonitoringWidgetContentView: View {
                 .font(.system(size: 16, weight: .regular, design: .rounded))
                 .foregroundStyle(DashboardTheme.secondaryText)
         } else {
-            ScrollView {
+            AutoScrollingContent {
                 VStack(alignment: .leading, spacing: 6) {
                     ForEach(scenarios.prefix(15)) { scenario in
                         HStack(spacing: 8) {
@@ -705,7 +705,7 @@ struct ItemHistoryWidgetContentView: View {
     let series: [ItemHistorySeries]
 
     var body: some View {
-        ScrollView {
+        AutoScrollingContent {
             VStack(alignment: .leading, spacing: 10) {
                 ForEach(series) { item in
                     VStack(alignment: .leading, spacing: 4) {
@@ -741,7 +741,7 @@ struct DataOverviewWidgetContentView: View {
                 .font(.system(size: 16, weight: .regular, design: .rounded))
                 .foregroundStyle(DashboardTheme.secondaryText)
         } else {
-            ScrollView {
+            AutoScrollingContent {
                 VStack(alignment: .leading, spacing: 6) {
                     ForEach(entries.prefix(30)) { entry in
                         HStack {

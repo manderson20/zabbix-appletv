@@ -151,11 +151,21 @@ extension DashboardManager {
                 return .unsupported(rawType: widget.type)
             }
 
+            var trend: ItemValueTrend?
+            if let lastvalue = item.lastvalue.flatMap(Double.init), let prevvalue = item.prevvalue.flatMap(Double.init) {
+                if lastvalue > prevvalue, let upColor = Self.fieldValue(widget.fields, name: "up_color") {
+                    trend = .up(colorHex: upColor)
+                } else if lastvalue < prevvalue, let downColor = Self.fieldValue(widget.fields, name: "down_color") {
+                    trend = .down(colorHex: downColor)
+                }
+            }
+
             return .itemValue(
                 name: item.name,
                 value: item.lastvalue ?? "\u{2014}",
                 units: item.units ?? "",
-                backgroundColorHex: Self.fieldValue(widget.fields, name: "bg_color")
+                backgroundColorHex: Self.fieldValue(widget.fields, name: "bg_color"),
+                trend: trend
             )
 
         case "problemsbysv":
