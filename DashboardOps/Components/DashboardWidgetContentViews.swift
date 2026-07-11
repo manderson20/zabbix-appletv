@@ -414,34 +414,40 @@ struct GaugeWidgetContentView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let diameter = max(min(geometry.size.width, geometry.size.height - 26), 40)
+            // The arc only sweeps 270° (a `trim` to 0.75), leaving a 90° gap at the bottom of the
+            // circle's own bounding square that's otherwise just blank — the item name fits there
+            // instead of needing a separate row underneath, so the ring itself can claim nearly
+            // the widget's full available height rather than sharing it with a second line.
+            let diameter = max(min(geometry.size.width, geometry.size.height), 40)
 
-            VStack(spacing: 6) {
-                ZStack {
-                    Circle()
-                        .trim(from: 0, to: 0.75)
-                        .stroke(DashboardTheme.secondaryCardBackground, style: StrokeStyle(lineWidth: max(diameter * 0.09, 6), lineCap: .round))
-                        .rotationEffect(.degrees(135))
+            ZStack {
+                Circle()
+                    .trim(from: 0, to: 0.75)
+                    .stroke(DashboardTheme.secondaryCardBackground, style: StrokeStyle(lineWidth: max(diameter * 0.09, 6), lineCap: .round))
+                    .rotationEffect(.degrees(135))
 
-                    Circle()
-                        .trim(from: 0, to: 0.75 * fraction)
-                        .stroke(gaugeTint, style: StrokeStyle(lineWidth: max(diameter * 0.09, 6), lineCap: .round))
-                        .rotationEffect(.degrees(135))
+                Circle()
+                    .trim(from: 0, to: 0.75 * fraction)
+                    .stroke(gaugeTint, style: StrokeStyle(lineWidth: max(diameter * 0.09, 6), lineCap: .round))
+                    .rotationEffect(.degrees(135))
 
-                    Text(ZabbixValueFormatting.format(reading.value, units: reading.units))
-                        .font(.system(size: diameter * 0.2, weight: .bold, design: .rounded))
-                        .foregroundStyle(DashboardTheme.primaryText)
-                        .minimumScaleFactor(0.5)
-                        .lineLimit(1)
-                        .padding(.horizontal, 8)
-                }
-                .frame(width: diameter, height: diameter)
+                Text(ZabbixValueFormatting.format(reading.value, units: reading.units))
+                    .font(.system(size: diameter * 0.22, weight: .bold, design: .rounded))
+                    .foregroundStyle(DashboardTheme.primaryText)
+                    .minimumScaleFactor(0.5)
+                    .lineLimit(1)
+                    .padding(.horizontal, 8)
+                    .offset(y: -diameter * 0.08)
 
                 Text(reading.name)
-                    .font(.system(size: 15, weight: .regular, design: .rounded))
+                    .font(.system(size: max(diameter * 0.08, 10), weight: .regular, design: .rounded))
                     .foregroundStyle(DashboardTheme.secondaryText)
                     .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+                    .frame(width: diameter * 0.56)
+                    .offset(y: diameter * 0.42)
             }
+            .frame(width: diameter, height: diameter)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         }
     }

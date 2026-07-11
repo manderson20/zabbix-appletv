@@ -56,6 +56,11 @@ struct DashboardWidgetGridView: View {
                             height: rowHeight * CGFloat(widget.frame.height),
                             alignment: .top
                         )
+                        // Each card is clipped to its own cell — a widget whose content (e.g. a
+                        // long Problems list) is taller than its allotted row height should have
+                        // that overflow cut off at its own bottom edge, not bleed into whatever
+                        // widget happens to sit below it in the grid.
+                        .clipped()
                         .offset(
                             x: columnWidth * CGFloat(widget.frame.x),
                             y: rowHeight * CGFloat(widget.frame.y) - scrollOffset
@@ -375,7 +380,7 @@ private struct ProblemsBySeverityWidgetContentView: View {
 private struct HostAvailabilityWidgetContentView: View {
     let breakdown: [HostInterfaceAvailability]
 
-    private static let nameColumnWidth: CGFloat = 130
+    private static let nameColumnWidth: CGFloat = 160
 
     private struct Column {
         let title: String
@@ -391,10 +396,10 @@ private struct HostAvailabilityWidgetContentView: View {
     ]
 
     var body: some View {
-        // Deliberately compact: this is an unattended kiosk display, so a scrollable table isn't
-        // an option the way it would be on an interactive screen — everything has to fit within
-        // whatever grid height the dashboard's own layout allotted the widget.
-        Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 3) {
+        // Sized to fill whatever grid height the dashboard's own layout allotted the widget,
+        // rather than sitting compact at the top with dead space below — this is an unattended
+        // kiosk display, so that space is otherwise wasted rather than reclaimable by scrolling.
+        Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 0) {
             GridRow {
                 Text("")
                     .frame(width: Self.nameColumnWidth, alignment: .leading)
@@ -405,28 +410,31 @@ private struct HostAvailabilityWidgetContentView: View {
                 Text("Total")
                     .foregroundStyle(DashboardTheme.secondaryText)
             }
-            .font(.system(size: 11, weight: .semibold, design: .rounded))
+            .font(.system(size: 16, weight: .semibold, design: .rounded))
+            .padding(.bottom, 8)
 
             ForEach(breakdown) { row in
                 GridRow {
                     Text(row.interfaceTypeName)
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .font(.system(size: 20, weight: .semibold, design: .rounded))
                         .foregroundStyle(DashboardTheme.secondaryText)
                         .frame(width: Self.nameColumnWidth, alignment: .leading)
                         .lineLimit(1)
 
                     ForEach(Self.columns, id: \.title) { column in
                         Text("\(row[keyPath: column.keyPath])")
-                            .font(.system(size: 14, weight: .semibold, design: .rounded))
+                            .font(.system(size: 22, weight: .bold, design: .rounded))
                             .foregroundStyle(DashboardTheme.primaryText)
                     }
 
                     Text("\(row.total)")
-                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                        .font(.system(size: 22, weight: .bold, design: .rounded))
                         .foregroundStyle(DashboardTheme.primaryText)
                 }
+                .frame(maxHeight: .infinity)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
     }
 }
 
