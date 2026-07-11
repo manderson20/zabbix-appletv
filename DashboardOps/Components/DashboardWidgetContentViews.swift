@@ -347,7 +347,7 @@ struct LineChartWidgetContentView: View {
 private struct ChartLegendView: View {
     let series: [ChartSeries]
 
-    private let columns = [GridItem(.adaptive(minimum: 170, maximum: 320), spacing: 12, alignment: .leading)]
+    private let columns = [GridItem(.adaptive(minimum: 220, maximum: 320), spacing: 12, alignment: .leading)]
 
     var body: some View {
         LazyVGrid(columns: columns, alignment: .leading, spacing: 4) {
@@ -357,11 +357,17 @@ private struct ChartLegendView: View {
                         .fill(Color(hex: line.colorHex) ?? DashboardTheme.accent)
                         .frame(width: 8, height: 8)
 
+                    // Zabbix interface item names put the part that actually distinguishes two
+                    // series of the same graph — "Bits sent" vs "Bits received" — at the very end
+                    // (e.g. "BSD-WAN-CV: Interface Port 1: Bits received"). Tail truncation cut
+                    // exactly that off, leaving two legend entries that read identically and no
+                    // way to tell which color was which. Eliding the middle instead keeps both the
+                    // host/interface prefix and the sent/received suffix visible.
                     Text(line.name)
                         .font(.system(size: 11, weight: .regular, design: .rounded))
                         .foregroundStyle(DashboardTheme.secondaryText)
                         .lineLimit(1)
-                        .truncationMode(.tail)
+                        .truncationMode(.middle)
                 }
             }
         }
