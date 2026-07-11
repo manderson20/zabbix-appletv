@@ -17,6 +17,7 @@ nonisolated struct ZabbixSeverityPaletteParameters: Encodable, Sendable {
         "severity_color_3", "severity_color_4", "severity_color_5",
         "severity_name_0", "severity_name_1", "severity_name_2",
         "severity_name_3", "severity_name_4", "severity_name_5",
+        "blink_period",
     ]
 }
 

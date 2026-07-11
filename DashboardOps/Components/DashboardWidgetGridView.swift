@@ -276,29 +276,61 @@ private struct ProblemsWidgetContentView: View {
             // attention away from that toward older, already-acknowledged-by-nobody problems
             // instead — the opposite of what matters on a wall display. Whatever doesn't fit in
             // the card's height is the oldest of the batch, which is the right thing to clip.
-            VStack(alignment: .leading, spacing: 8) {
-                ForEach(problems) { problem in
-                    HStack(alignment: .top, spacing: 10) {
-                        Circle()
-                            .fill(severityIndicatorColor(for: problem.severity))
-                            .frame(width: 14, height: 14)
-                            .padding(.top, 4)
-
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(problem.name)
-                                .font(.system(size: 18, weight: .semibold, design: .rounded))
-                                .foregroundStyle(DashboardTheme.primaryText)
-                                .lineLimit(1)
-
-                            if let host = problem.host {
-                                Text(host)
-                                    .font(.system(size: 15, weight: .regular, design: .rounded))
-                                    .foregroundStyle(DashboardTheme.secondaryText)
-                                    .lineLimit(1)
-                            }
-                        }
+            //
+            // A TimelineView (rather than a one-shot render) is what lets a problem's "still
+            // within the blink window" state age out on its own as time passes, not just when
+            // the widget happens to re-fetch data.
+            TimelineView(.periodic(from: .now, by: 5)) { context in
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(problems) { problem in
+                        ProblemRow(problem: problem, now: context.date)
                     }
                 }
+            }
+        }
+    }
+}
+
+/// A single row in the Problems list, blinking its severity indicator while the problem is newer
+/// than the server's configured "blink period" — matching Zabbix's own attention-drawing effect
+/// for freshly-started problems on a wall display, where a new alert would otherwise be as quiet
+/// as one that's been sitting for hours.
+private struct ProblemRow: View {
+    let problem: DashboardProblem
+    let now: Date
+
+    @State private var isBlinkPhaseOn = false
+
+    private var isNew: Bool {
+        now.timeIntervalSince(problem.since) < Double(SeverityPalette.blinkPeriodSeconds)
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Circle()
+                .fill(severityIndicatorColor(for: problem.severity))
+                .frame(width: 14, height: 14)
+                .padding(.top, 4)
+                .opacity(isNew && isBlinkPhaseOn ? 0.3 : 1)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(problem.name)
+                    .font(.system(size: 18, weight: .semibold, design: .rounded))
+                    .foregroundStyle(DashboardTheme.primaryText)
+                    .lineLimit(1)
+
+                if let host = problem.host {
+                    Text(host)
+                        .font(.system(size: 15, weight: .regular, design: .rounded))
+                        .foregroundStyle(DashboardTheme.secondaryText)
+                        .lineLimit(1)
+                }
+            }
+        }
+        .onAppear {
+            guard isNew else { return }
+            withAnimation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true)) {
+                isBlinkPhaseOn = true
             }
         }
     }

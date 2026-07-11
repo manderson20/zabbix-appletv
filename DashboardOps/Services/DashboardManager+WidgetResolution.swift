@@ -81,7 +81,7 @@ extension DashboardManager {
             return
         }
 
-        await SeverityPalette.update(hex: palette.colorsBySeverity, names: palette.namesBySeverity)
+        await SeverityPalette.update(hex: palette.colorsBySeverity, names: palette.namesBySeverity, blinkPeriodSeconds: palette.blinkPeriodSeconds)
     }
 
     func resolveWidgetKind(

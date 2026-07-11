@@ -20,11 +20,17 @@ enum SeverityPalette {
     private static var hexBySeverity = defaultHex
     private static var namesBySeverity = defaultNames
 
+    /// How long a newly-started problem should visually "blink" to draw attention, matching
+    /// Zabbix's own "Trigger displaying options" setting. Defaults to Zabbix's own stock value
+    /// (2 minutes) until a live fetch completes.
+    private(set) static var blinkPeriodSeconds = 120
+
     /// Updates the cached palette from a live server fetch.
-    static func update(hex: [String], names: [String]) {
+    static func update(hex: [String], names: [String], blinkPeriodSeconds: Int) {
         guard hex.count == 6, names.count == 6 else { return }
         hexBySeverity = hex
         namesBySeverity = names
+        Self.blinkPeriodSeconds = blinkPeriodSeconds
     }
 
     static func color(for severity: Int) -> Color {
