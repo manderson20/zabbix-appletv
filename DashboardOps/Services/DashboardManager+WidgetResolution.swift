@@ -904,6 +904,7 @@ extension DashboardManager {
             return .unsupported(rawType: widget.type)
         }
 
+        let historyWindowSeconds = Self.historyWindowSeconds(from: widget.fields)
         var series: [ChartSeries] = []
 
         for dataset in datasets {
@@ -926,7 +927,7 @@ extension DashboardManager {
                     )
 
                     for item in items {
-                        let points = try await recentPoints(for: item.itemid, valueType: item.value_type?.intValue ?? 0, serverBaseURL: serverBaseURL, authToken: authToken)
+                        let points = try await recentPoints(for: item.itemid, valueType: item.value_type?.intValue ?? 0, historyWindowSeconds: historyWindowSeconds, serverBaseURL: serverBaseURL, authToken: authToken)
 
                         series.append(
                             ChartSeries(
@@ -958,7 +959,7 @@ extension DashboardManager {
             )
             guard let item = items.first else { continue }
 
-            let points = try await recentPoints(for: item.itemid, valueType: item.value_type?.intValue ?? 0, serverBaseURL: serverBaseURL, authToken: authToken)
+            let points = try await recentPoints(for: item.itemid, valueType: item.value_type?.intValue ?? 0, historyWindowSeconds: historyWindowSeconds, serverBaseURL: serverBaseURL, authToken: authToken)
 
             series.append(
                 ChartSeries(
@@ -1038,11 +1039,12 @@ extension DashboardManager {
         let items = try await zabbixAPIClient.items(serverBaseURL: serverBaseURL, authToken: authToken, itemIDs: graph.gitems.map(\.itemid))
         let itemsByID = Dictionary(uniqueKeysWithValues: items.map { ($0.itemid, $0) })
 
+        let historyWindowSeconds = Self.historyWindowSeconds(from: widget.fields)
         var series: [ChartSeries] = []
         for gitem in graph.gitems {
             guard let item = itemsByID[gitem.itemid] else { continue }
 
-            let points = try await recentPoints(for: item.itemid, valueType: item.value_type?.intValue ?? 0, serverBaseURL: serverBaseURL, authToken: authToken)
+            let points = try await recentPoints(for: item.itemid, valueType: item.value_type?.intValue ?? 0, historyWindowSeconds: historyWindowSeconds, serverBaseURL: serverBaseURL, authToken: authToken)
 
             series.append(ChartSeries(id: "\(widget.widgetid).\(item.itemid)", name: item.name, colorHex: gitem.color, units: item.units ?? "", fillOpacity: 0.5, points: points))
         }
@@ -1101,6 +1103,7 @@ extension DashboardManager {
     private func recentPoints(
         for itemID: String,
         valueType: Int,
+        historyWindowSeconds: Int,
         serverBaseURL: URL,
         authToken: String
     ) async throws -> [ChartPoint] {
@@ -1109,7 +1112,7 @@ extension DashboardManager {
             authToken: authToken,
             itemID: itemID,
             historyValueType: valueType,
-            sinceUnixTime: Int(Date().timeIntervalSince1970) - Self.defaultHistoryWindowSeconds,
+            sinceUnixTime: Int(Date().timeIntervalSince1970) - historyWindowSeconds,
             limit: Self.maxHistoryPointsFetched
         )
 
@@ -1123,6 +1126,41 @@ extension DashboardManager {
 
     private static let defaultHistoryWindowSeconds = 24 * 3600
     private static let maxHistoryPointsFetched = 6000
+
+    /// The widget's own configured graph time range ("time_period.from"), matching what a Zabbix
+    /// graph widget's name usually spells out (e.g. "Internet Usage Last Hour" is itself configured
+    /// with `time_period.from = now-1h`, verified live) — every graph on a dashboard is otherwise
+    /// free to set its own window independent of its neighbors, so a single hardcoded fetch window
+    /// silently ignored that and showed every graph the same 24 hours regardless of its own label.
+    /// Falls back to the 24-hour default when the widget doesn't set one, or uses a relative-time
+    /// expression more complex than the plain "now-<N><unit>" offset seen on every live example.
+    static func historyWindowSeconds(from fields: [ZabbixWidgetField]) -> Int {
+        guard let fromRaw = fieldValue(fields, name: "time_period.from"),
+              let seconds = secondsBeforeNow(fromRelativeTime: fromRaw), seconds > 0 else {
+            return defaultHistoryWindowSeconds
+        }
+        return seconds
+    }
+
+    /// Parses Zabbix's relative time syntax in the common "now-<N><unit>" shape used by dashboard
+    /// widgets (verified live: "now-1h", "now-6h", "now-24h"). Returns `nil` for "now" itself (a
+    /// zero-length window) or any expression outside that shape (e.g. day-aligned "now/d"), so the
+    /// caller can fall back to its own default rather than fetching no history at all.
+    private static func secondsBeforeNow(fromRelativeTime raw: String) -> Int? {
+        let trimmed = raw.trimmingCharacters(in: .whitespaces)
+        guard trimmed.hasPrefix("now-"), let unit = trimmed.last else { return nil }
+        let magnitudeSubstring = trimmed.dropFirst(4).dropLast()
+        guard let magnitude = Int(magnitudeSubstring) else { return nil }
+
+        switch unit {
+        case "s": return magnitude
+        case "m": return magnitude * 60
+        case "h": return magnitude * 3600
+        case "d": return magnitude * 86400
+        case "w": return magnitude * 604800
+        default: return nil
+        }
+    }
 
     /// Classifies each host's set of interfaces (already filtered to one type, or unfiltered for
     /// the "Total hosts" row) into available/unavailable/mixed/unknown, matching Zabbix's own
