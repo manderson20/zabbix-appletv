@@ -106,7 +106,7 @@ nonisolated enum DashboardWidgetKind: Sendable {
     case webMonitoring([WebScenarioSummary])
     case itemHistory([ItemHistorySeries])
     case dataOverview([DataOverviewEntry])
-    case lineChart([ChartSeries])
+    case lineChart(series: [ChartSeries], window: ChartTimeWindow)
     case pieChart([ChartSlice])
     case geomap([GeoMapMarker])
     case networkMap(NetworkMapDiagram)
@@ -403,8 +403,19 @@ nonisolated struct ChartPoint: Identifiable, Sendable {
     /// Date the value was recorded.
     let date: Date
 
-    /// Recorded value.
-    let value: Double
+    /// Recorded value, or `nil` to mark a break in the line where the item reported no data for a
+    /// stretch of the window — Swift Charts renders a `nil` value as a gap, so an outage shows as
+    /// blank space rather than a straight line interpolated across the missing period.
+    let value: Double?
+}
+
+/// The wall-clock span a chart is meant to cover, independent of where its data points actually
+/// fall — used to pin the x-axis to the widget's configured window (e.g. the full "last 24 hours")
+/// so periods with no data read as blank instead of the axis collapsing to just the range that
+/// happens to have points.
+nonisolated struct ChartTimeWindow: Sendable {
+    let start: Date
+    let end: Date
 }
 
 /// A single slice of a pie chart widget, showing one dataset's latest value.

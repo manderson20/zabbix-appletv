@@ -909,6 +909,7 @@ extension DashboardManager {
         }
 
         let historyWindowSeconds = Self.historyWindowSeconds(from: widget.fields)
+        let windowEnd = Date()
         var series: [ChartSeries] = []
 
         for dataset in datasets {
@@ -931,7 +932,7 @@ extension DashboardManager {
                     )
 
                     for item in items {
-                        let points = try await recentPoints(for: item.itemid, valueType: item.value_type?.intValue ?? 0, historyWindowSeconds: historyWindowSeconds, serverBaseURL: serverBaseURL, authToken: authToken)
+                        let points = try await recentPoints(for: item.itemid, valueType: item.value_type?.intValue ?? 0, historyWindowSeconds: historyWindowSeconds, endDate: windowEnd, serverBaseURL: serverBaseURL, authToken: authToken)
 
                         series.append(
                             ChartSeries(
@@ -963,7 +964,7 @@ extension DashboardManager {
             )
             guard let item = items.first else { continue }
 
-            let points = try await recentPoints(for: item.itemid, valueType: item.value_type?.intValue ?? 0, historyWindowSeconds: historyWindowSeconds, serverBaseURL: serverBaseURL, authToken: authToken)
+            let points = try await recentPoints(for: item.itemid, valueType: item.value_type?.intValue ?? 0, historyWindowSeconds: historyWindowSeconds, endDate: windowEnd, serverBaseURL: serverBaseURL, authToken: authToken)
 
             series.append(
                 ChartSeries(
@@ -977,7 +978,8 @@ extension DashboardManager {
             )
         }
 
-        return series.isEmpty ? .unsupported(rawType: widget.type) : .lineChart(series)
+        let window = ChartTimeWindow(start: windowEnd.addingTimeInterval(-Double(historyWindowSeconds)), end: windowEnd)
+        return series.isEmpty ? .unsupported(rawType: widget.type) : .lineChart(series: series, window: window)
     }
 
     /// Returns all values for keys like "prefix0", "prefix1", ... in a dataset dictionary, in
@@ -1044,16 +1046,18 @@ extension DashboardManager {
         let itemsByID = Dictionary(uniqueKeysWithValues: items.map { ($0.itemid, $0) })
 
         let historyWindowSeconds = Self.historyWindowSeconds(from: widget.fields)
+        let windowEnd = Date()
         var series: [ChartSeries] = []
         for gitem in graph.gitems {
             guard let item = itemsByID[gitem.itemid] else { continue }
 
-            let points = try await recentPoints(for: item.itemid, valueType: item.value_type?.intValue ?? 0, historyWindowSeconds: historyWindowSeconds, serverBaseURL: serverBaseURL, authToken: authToken)
+            let points = try await recentPoints(for: item.itemid, valueType: item.value_type?.intValue ?? 0, historyWindowSeconds: historyWindowSeconds, endDate: windowEnd, serverBaseURL: serverBaseURL, authToken: authToken)
 
             series.append(ChartSeries(id: "\(widget.widgetid).\(item.itemid)", name: item.name, colorHex: gitem.color, units: item.units ?? "", fillOpacity: 0.5, points: points))
         }
 
-        return series.isEmpty ? .unsupported(rawType: widget.type) : .lineChart(series)
+        let window = ChartTimeWindow(start: windowEnd.addingTimeInterval(-Double(historyWindowSeconds)), end: windowEnd)
+        return series.isEmpty ? .unsupported(rawType: widget.type) : .lineChart(series: series, window: window)
     }
 
     // MARK: - Pie chart
@@ -1093,39 +1097,102 @@ extension DashboardManager {
 
     // MARK: - Shared helpers
 
-    /// Fetches an item's recent history, bounded to the last 24 hours to avoid the timeout an
-    /// unbounded `history.get` call risks against a server with a large history table.
+    /// Fetches an item's history across the widget's full configured window and reduces it to a
+    /// bounded, render-friendly set of points that still spans the whole window.
     ///
-    /// Fetches up to `maxHistoryPointsFetched` points (enough to cover 24h even for an item
-    /// polled every ~15s) rather than a small limit — a small limit combined with `sortorder:
-    /// DESC` returns only the newest slice of the window, which for a frequently-sampled item
-    /// (verified live: 480 points/24h at a 30s interval) covered barely 10 of the requested 24
-    /// hours. Points are returned as fetched (chronological), undownsampled: Zabbix's own graphs
-    /// render every history point rather than averaging, and Swift Charts handles a few thousand
-    /// `LineMark`s without difficulty, so thinning them out was only making the chart look
-    /// smoothed-over compared to the real dashboard.
+    /// The window (not a fixed point count) is what bounds the `history.get` call, so the graph
+    /// always covers its configured range rather than the newest slice a small `sortorder: DESC`
+    /// limit returns. That mattered because a frequently-sampled item (e.g. WAN bandwidth polled
+    /// ~1s) produces far more than the old 6000-point cap in 24h, so the cap silently trimmed the
+    /// graph to its most recent ~1.7 hours regardless of the 24h window it was labeled with.
+    ///
+    /// `bucketedChartPoints` then downsamples for rendering: each time bucket keeps its min and max
+    /// (so spikes survive, matching Zabbix's peak-preserving graph) and each run of empty buckets
+    /// becomes a single break, so a period the item reported nothing for renders as a gap.
     private func recentPoints(
         for itemID: String,
         valueType: Int,
         historyWindowSeconds: Int,
+        endDate: Date,
         serverBaseURL: URL,
         authToken: String
     ) async throws -> [ChartPoint] {
+        let windowStart = endDate.addingTimeInterval(-Double(historyWindowSeconds))
+
         let values = try await zabbixAPIClient.history(
             serverBaseURL: serverBaseURL,
             authToken: authToken,
             itemID: itemID,
             historyValueType: valueType,
-            sinceUnixTime: Int(Date().timeIntervalSince1970) - historyWindowSeconds,
+            sinceUnixTime: Int(windowStart.timeIntervalSince1970),
             limit: Self.maxHistoryPointsFetched
         )
 
-        return values.reversed().compactMap { value -> ChartPoint? in
+        // history.get returns newest-first; sort ascending so bucketing walks the window in order.
+        let rawPoints = values.compactMap { value -> (date: Date, value: Double)? in
             guard let doubleValue = Double(value.value), let timestamp = TimeInterval(value.clock) else {
                 return nil
             }
-            return ChartPoint(id: "\(itemID).\(value.clock)", date: Date(timeIntervalSince1970: timestamp), value: doubleValue)
+            return (Date(timeIntervalSince1970: timestamp), doubleValue)
+        }.sorted { $0.date < $1.date }
+
+        return Self.bucketedChartPoints(rawPoints, itemID: itemID, windowStart: windowStart, windowEnd: endDate, bucketCount: Self.chartBucketCount)
+    }
+
+    /// Downsamples an item's raw, chronological history into at most ~`2 * bucketCount` points that
+    /// still span `windowStart...windowEnd`. The window is split into fixed time buckets; each
+    /// bucket with data contributes its minimum and maximum sample (in chronological order) so
+    /// short spikes survive instead of being averaged away, and each run of empty buckets
+    /// contributes one `nil`-valued break so a stretch the item reported nothing for renders as a
+    /// blank gap rather than a line drawn straight across it. Points already sorted ascending.
+    static func bucketedChartPoints(
+        _ points: [(date: Date, value: Double)],
+        itemID: String,
+        windowStart: Date,
+        windowEnd: Date,
+        bucketCount: Int
+    ) -> [ChartPoint] {
+        let totalSeconds = windowEnd.timeIntervalSince(windowStart)
+        guard totalSeconds > 0, bucketCount > 0 else {
+            return points.map { ChartPoint(id: "\(itemID).\($0.date.timeIntervalSince1970)", date: $0.date, value: $0.value) }
         }
+
+        let bucketSeconds = totalSeconds / Double(bucketCount)
+        var buckets: [[(date: Date, value: Double)]] = Array(repeating: [], count: bucketCount)
+        for point in points {
+            let offset = point.date.timeIntervalSince(windowStart)
+            guard offset >= 0, offset <= totalSeconds else { continue }
+            let index = min(Int(offset / bucketSeconds), bucketCount - 1)
+            buckets[index].append(point)
+        }
+
+        var result: [ChartPoint] = []
+        result.reserveCapacity(bucketCount)
+        var previousBucketHadData = false
+
+        for (index, bucket) in buckets.enumerated() {
+            guard let minPoint = bucket.min(by: { $0.value < $1.value }),
+                  let maxPoint = bucket.max(by: { $0.value < $1.value }) else {
+                // One break at the first empty bucket after data is enough for Swift Charts to
+                // break the line across however many empty buckets follow it.
+                if previousBucketHadData {
+                    let breakDate = windowStart.addingTimeInterval(bucketSeconds * (Double(index) + 0.5))
+                    result.append(ChartPoint(id: "\(itemID).gap.\(index)", date: breakDate, value: nil))
+                    previousBucketHadData = false
+                }
+                continue
+            }
+
+            previousBucketHadData = true
+            let ordered = minPoint.date <= maxPoint.date ? [minPoint, maxPoint] : [maxPoint, minPoint]
+            for (position, point) in ordered.enumerated() {
+                // Skip the duplicate when a bucket's min and max are the same sample.
+                if position == 1, point.date == ordered[0].date, point.value == ordered[0].value { continue }
+                result.append(ChartPoint(id: "\(itemID).\(index).\(position)", date: point.date, value: point.value))
+            }
+        }
+
+        return result
     }
 
     /// A graph widget with no "time_period.*" fields at all is configured to use "Dashboard" as
@@ -1136,7 +1203,18 @@ extension DashboardManager {
     /// have no time_period fields and neither dashboard has a time-filter widget, so this is what
     /// Zabbix itself would show for them, not an arbitrary placeholder.
     private static let defaultHistoryWindowSeconds = 3600
-    private static let maxHistoryPointsFetched = 6000
+
+    /// Upper bound on raw history rows fetched per item, a safety net against a pathologically
+    /// dense item rather than the normal limiter (the time window is). Generous enough to cover a
+    /// 24h window for an item sampled roughly every second (~86k points); only a faster-than-~1s
+    /// item over a long window is trimmed, and `bucketedChartPoints` still spans whatever returned.
+    private static let maxHistoryPointsFetched = 100_000
+
+    /// Number of time buckets a chart's window is downsampled to. Each bucket emits up to two
+    /// points (its min and max), so a series draws at most ~2x this many marks regardless of how
+    /// many raw samples it has — dense enough to read as continuous on a TV without handing Swift
+    /// Charts tens of thousands of marks per series.
+    private static let chartBucketCount = 800
 
     /// The widget's own configured graph time range ("time_period.from"), matching what a Zabbix
     /// graph widget's name usually spells out (e.g. "Internet Usage Last Hour" is itself configured
