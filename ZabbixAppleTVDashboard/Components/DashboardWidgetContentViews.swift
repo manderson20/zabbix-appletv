@@ -258,12 +258,50 @@ struct SLAReportWidgetContentView: View {
 
 struct LineChartWidgetContentView: View {
     let series: [ChartSeries]
+    let window: ChartTimeWindow
 
     private var units: String { series.first?.units ?? "" }
 
     private var yAxisScale: ZabbixValueFormatting.Scale {
-        let maxValue = series.flatMap(\.points).map(\.value).max() ?? 0
+        let maxValue = series.flatMap(\.points).compactMap(\.value).max() ?? 0
         return ZabbixValueFormatting.scale(forMaxMagnitude: maxValue, units: units)
+    }
+
+    /// One drawable run of a series between the `nil` breaks that mark gaps in its data. Each
+    /// segment gets a unique grouping id so Swift Charts draws it as its own line — which is what
+    /// makes the line break across a gap rather than interpolate straight over it — while all of a
+    /// series' segments still map to that series' single color. (Swift Charts' closure-form
+    /// `.value()` can't take an optional to signal a gap, so splitting into segments is how the
+    /// blanks get drawn.)
+    private struct ChartSegment: Identifiable {
+        let id: String
+        let seriesName: String
+        let colorHex: String
+        let fillOpacity: Double
+        let points: [ChartPoint]
+    }
+
+    /// Splits every series into its non-`nil` runs. A `nil`-valued point (a gap marker inserted for
+    /// a stretch the item reported no data) ends the current run and starts a new one after it.
+    private var segments: [ChartSegment] {
+        var result: [ChartSegment] = []
+        for line in series {
+            var runIndex = 0
+            var current: [ChartPoint] = []
+
+            func flush() {
+                guard !current.isEmpty else { return }
+                result.append(ChartSegment(id: "\(line.id)#\(runIndex)", seriesName: line.name, colorHex: line.colorHex, fillOpacity: line.fillOpacity, points: current))
+                runIndex += 1
+                current = []
+            }
+
+            for point in line.points {
+                if point.value == nil { flush() } else { current.append(point) }
+            }
+            flush()
+        }
+        return result
     }
 
     /// Builds one point's marks in their own function (rather than inline in the `Chart` closure)
@@ -271,49 +309,55 @@ struct LineChartWidgetContentView: View {
     /// `Chart { ForEach { ForEach { ... } } }` tree at once — the inline form timed out entirely.
     ///
     /// `foregroundStyle(by:)` (a plottable grouping value, not a bare `Color`) is what tells Swift
-    /// Charts these points belong to distinct series — without it, points from different series
-    /// interleave into one zigzagging path sorted by x-position instead of staying separate.
-    /// Swift Charts also stacks `AreaMark`s by default whenever they're grouped this way (as if
-    /// plotting composition, like a stacked area chart); `.position(.overlay)` is what makes each
-    /// series' fill independently start from 0 instead of piling on top of the others, which was
-    /// inflating the visible peak to the sum of every series rather than each one's own value.
+    /// Charts these points belong to distinct lines — without it, points from different segments
+    /// interleave into one zigzagging path sorted by x-position instead of staying separate. Each
+    /// segment's id groups it as its own line so gaps break cleanly.
     @ChartContentBuilder
-    private func marks(for point: ChartPoint, in line: ChartSeries) -> some ChartContent {
+    private func marks(for point: ChartPoint, in segment: ChartSegment) -> some ChartContent {
         // Explicit yStart/yEnd (rather than the single-`y` initializer) bypasses Swift Charts'
         // automatic stacking baseline — with a plain `y:` value, grouping by `foregroundStyle(by:)`
         // makes each series' baseline the sum of the ones before it (as if plotting composition),
         // which was inflating the visible peak to the sum of every series rather than each one's
         // own value. Pinning yStart to 0 draws each series' fill independently from the bottom.
-        AreaMark(x: .value("Time", point.date), yStart: .value("Baseline", 0), yEnd: .value(line.name, point.value))
-            .foregroundStyle(by: .value("Series", line.name))
-            .opacity(line.fillOpacity)
+        // `point.value` is non-nil within a segment by construction.
+        AreaMark(x: .value("Time", point.date), yStart: .value("Baseline", 0), yEnd: .value(segment.seriesName, point.value ?? 0))
+            .foregroundStyle(by: .value("Series", segment.id))
+            .opacity(segment.fillOpacity)
 
-        LineMark(x: .value("Time", point.date), y: .value(line.name, point.value))
-            .foregroundStyle(by: .value("Series", line.name))
+        LineMark(x: .value("Time", point.date), y: .value(segment.seriesName, point.value ?? 0))
+            .foregroundStyle(by: .value("Series", segment.id))
     }
 
     var body: some View {
         if series.allSatisfy({ $0.points.isEmpty }) {
-            Text("No data in the last 24 hours")
+            Text("No data for this time period")
                 .font(.system(size: 16, weight: .regular, design: .rounded))
                 .foregroundStyle(DashboardTheme.secondaryText)
         } else {
+            let segments = segments
             VStack(alignment: .leading, spacing: 6) {
                 Chart {
-                    ForEach(series) { line in
-                        ForEach(line.points) { point in
-                            marks(for: point, in: line)
+                    ForEach(segments) { segment in
+                        ForEach(segment.points) { point in
+                            marks(for: point, in: segment)
                         }
                     }
                 }
+                // Every segment of a series maps to that series' one color, so a broken-up line
+                // stays a single visual color across its gaps.
                 .chartForegroundStyleScale(
-                    domain: series.map(\.name),
-                    range: series.map { Color(hex: $0.colorHex) ?? DashboardTheme.accent }
+                    domain: segments.map(\.id),
+                    range: segments.map { Color(hex: $0.colorHex) ?? DashboardTheme.accent }
                 )
                 // Swift Charts' built-in legend doesn't wrap long labels within the card's actual
                 // width — it can run entries off the edge instead — so it's hidden in favor of
                 // the wrapping `ChartLegendView` below, which we fully control.
                 .chartLegend(.hidden)
+                // Pin the x-axis to the widget's full configured window rather than letting Swift
+                // Charts auto-fit to the data's own extent — so a period Zabbix has no data for
+                // reads as blank space at the correct spot on a full-width axis instead of the
+                // whole graph zooming in on just the range that happens to have points.
+                .chartXScale(domain: window.start...window.end)
                 .chartXAxis {
                     AxisMarks(values: .automatic(desiredCount: 3)) {
                         AxisValueLabel(format: .dateTime.hour().minute())
@@ -420,38 +464,63 @@ struct GaugeWidgetContentView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            // The arc only sweeps 270° (a `trim` to 0.75), leaving a 90° gap at the bottom of the
-            // circle's own bounding square that's otherwise just blank — the item name fits there
-            // instead of needing a separate row underneath, so the ring itself can claim nearly
-            // the widget's full available height rather than sharing it with a second line.
+            // A 180° semicircle sweeping from the minimum on the left, over the top, to the maximum
+            // on the right — plus a needle pointing at the current value — matching Zabbix's own
+            // gauge widget rather than a bare arc. The flat side faces down, so the lower half of
+            // the bounding square holds the value, item name, and the min/max end labels.
             let diameter = max(min(geometry.size.width, geometry.size.height), 40)
+            let lineWidth = max(diameter * 0.09, 6)
 
             ZStack {
                 Circle()
-                    .trim(from: 0, to: 0.75)
-                    .stroke(DashboardTheme.secondaryCardBackground, style: StrokeStyle(lineWidth: max(diameter * 0.09, 6), lineCap: .round))
-                    .rotationEffect(.degrees(135))
+                    .trim(from: 0, to: 0.5)
+                    .stroke(DashboardTheme.secondaryCardBackground, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
+                    .rotationEffect(.degrees(180))
 
                 Circle()
-                    .trim(from: 0, to: 0.75 * fraction)
-                    .stroke(gaugeTint, style: StrokeStyle(lineWidth: max(diameter * 0.09, 6), lineCap: .round))
-                    .rotationEffect(.degrees(135))
+                    .trim(from: 0, to: 0.5 * fraction)
+                    .stroke(gaugeTint, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
+                    .rotationEffect(.degrees(180))
+
+                // Needle points straight up at mid-scale; (fraction - 0.5) maps the 0…1 range onto
+                // -90°…+90°, so it swings to the left end at the minimum and the right at the maximum.
+                GaugeNeedle()
+                    .fill(DashboardTheme.primaryText)
+                    .rotationEffect(.degrees((fraction - 0.5) * 180))
+
+                Circle()
+                    .fill(DashboardTheme.primaryText)
+                    .frame(width: lineWidth, height: lineWidth)
+
+                Text(ZabbixValueFormatting.format(reading.minValue, units: reading.units))
+                    .font(.system(size: max(diameter * 0.07, 9), weight: .regular, design: .rounded))
+                    .foregroundStyle(DashboardTheme.secondaryText)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+                    .offset(x: -diameter * 0.4, y: diameter * 0.06)
+
+                Text(ZabbixValueFormatting.format(reading.maxValue, units: reading.units))
+                    .font(.system(size: max(diameter * 0.07, 9), weight: .regular, design: .rounded))
+                    .foregroundStyle(DashboardTheme.secondaryText)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+                    .offset(x: diameter * 0.4, y: diameter * 0.06)
 
                 Text(ZabbixValueFormatting.format(reading.value, units: reading.units))
-                    .font(.system(size: diameter * 0.22, weight: .bold, design: .rounded))
+                    .font(.system(size: diameter * 0.2, weight: .bold, design: .rounded))
                     .foregroundStyle(DashboardTheme.primaryText)
                     .minimumScaleFactor(0.5)
                     .lineLimit(1)
                     .padding(.horizontal, 8)
-                    .offset(y: -diameter * 0.08)
+                    .offset(y: diameter * 0.2)
 
                 Text(reading.name)
                     .font(.system(size: max(diameter * 0.08, 10), weight: .regular, design: .rounded))
                     .foregroundStyle(DashboardTheme.secondaryText)
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
-                    .frame(width: diameter * 0.56)
-                    .offset(y: diameter * 0.42)
+                    .frame(width: diameter * 0.7)
+                    .offset(y: diameter * 0.36)
             }
             .frame(width: diameter, height: diameter)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
@@ -467,6 +536,24 @@ struct GaugeWidgetContentView: View {
             return color
         }
         return DashboardTheme.accent
+    }
+}
+
+/// A slim triangular gauge needle that points straight up, pivoting at the bounding box's center
+/// (the gauge's arc center). `GaugeWidgetContentView` rotates it to the value's angle; the tip
+/// reaches near the top of the square, so at ±90° it lines up with the arc's left/right ends.
+private struct GaugeNeedle: Shape {
+    func path(in rect: CGRect) -> Path {
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        let tipY = rect.minY + rect.height * 0.08
+        let baseHalfWidth = max(rect.width * 0.02, 2)
+
+        var path = Path()
+        path.move(to: CGPoint(x: rect.midX, y: tipY))
+        path.addLine(to: CGPoint(x: center.x - baseHalfWidth, y: center.y))
+        path.addLine(to: CGPoint(x: center.x + baseHalfWidth, y: center.y))
+        path.closeSubpath()
+        return path
     }
 }
 

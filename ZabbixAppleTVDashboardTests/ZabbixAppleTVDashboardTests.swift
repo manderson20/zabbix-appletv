@@ -534,4 +534,38 @@ struct ZabbixAppleTVDashboardTests {
         #expect(DashboardManager.historyWindowSeconds(from: unparseable) == 3600)
     }
 
+    @Test func bucketedChartPointsPreservesPeaksAndMarksGaps() throws {
+        let start = Date(timeIntervalSince1970: 0)
+        let end = Date(timeIntervalSince1970: 1000)
+
+        // Ten 100-second buckets. Data sits only in the first and last bucket, with a sharp spike
+        // in the first — the eight empty buckets between them stand in for a stretch of no data.
+        let points: [(date: Date, value: Double)] = [
+            (Date(timeIntervalSince1970: 10), 5),
+            (Date(timeIntervalSince1970: 40), 100),   // spike
+            (Date(timeIntervalSince1970: 70), 6),
+            (Date(timeIntervalSince1970: 950), 7)
+        ]
+
+        let result = DashboardManager.bucketedChartPoints(points, itemID: "1", windowStart: start, windowEnd: end, bucketCount: 10)
+
+        // The spike survives downsampling — a bucket keeps its maximum, not just an average.
+        #expect(result.compactMap(\.value).contains(100))
+
+        // Exactly one gap break marks the empty middle, sitting between the two data clusters.
+        let gaps = result.filter { $0.value == nil }
+        #expect(gaps.count == 1)
+        if let gap = gaps.first {
+            #expect(gap.date > Date(timeIntervalSince1970: 70))
+            #expect(gap.date < Date(timeIntervalSince1970: 950))
+        }
+
+        // The final bucket's value stays at its real time near the end of the window rather than
+        // collapsing toward the start — this is what keeps the axis spanning the full period.
+        #expect(result.contains { $0.value == 7 && $0.date == Date(timeIntervalSince1970: 950) })
+
+        // Bounded output: at most the min and max of each bucket.
+        #expect(result.count <= 2 * 10)
+    }
+
 }
