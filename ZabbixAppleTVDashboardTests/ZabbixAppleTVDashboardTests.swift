@@ -218,7 +218,7 @@ struct ZabbixAppleTVDashboardTests {
                 frame: DashboardWidgetFrame(x: 4, y: 0, width: 8, height: 4),
                 refreshIntervalSeconds: 30,
                 hasHiddenHeader: false,
-                kind: .itemValue(name: "CPU Load", value: "0.42", units: "", backgroundColorHex: nil, trend: nil, lastUpdated: nil)
+                kind: .itemValue(name: "CPU Load", value: "0.42", units: "", backgroundColorHex: nil, trend: nil, lastUpdated: nil, mappedText: nil)
             )
         ]
 
@@ -566,6 +566,39 @@ struct ZabbixAppleTVDashboardTests {
 
         // Bounded output: at most the min and max of each bucket.
         #expect(result.count <= 2 * 10)
+    }
+
+    @Test func valueMapResolvesRawReadingsToLabels() throws {
+        // A typical status value map (0 -> Down, 1 -> Up) with a default fallback.
+        let json = Data("""
+        {"mappings":[
+          {"type":"0","value":"0","newvalue":"Down"},
+          {"type":"0","value":"1","newvalue":"Up"},
+          {"type":"5","value":"","newvalue":"Unknown"}
+        ]}
+        """.utf8)
+        let map = try JSONDecoder().decode(ZabbixValueMap.self, from: json)
+
+        #expect(map.mappedText(for: "1") == "Up")
+        #expect(map.mappedText(for: "0") == "Down")
+        // A float reading of the same value still matches the integer mapping.
+        #expect(map.mappedText(for: "1.00") == "Up")
+        // Anything unmapped falls back to the default rule.
+        #expect(map.mappedText(for: "7") == "Unknown")
+    }
+
+    @Test func itemValueMapDecodesEmptyArrayAsNoMap() throws {
+        // Zabbix returns "valuemap": [] (an empty array, not an object) for an item without a value
+        // map — this must decode to "no map" rather than failing the whole item.get response.
+        let withoutMap = try JSONDecoder().decode(ZabbixItemSummary.self, from: Data("""
+        {"itemid":"1","name":"CPU load","lastvalue":"0.42","valuemap":[]}
+        """.utf8))
+        #expect(withoutMap.valuemap?.valueMap == nil)
+
+        let withMap = try JSONDecoder().decode(ZabbixItemSummary.self, from: Data("""
+        {"itemid":"2","name":"ICMP ping","lastvalue":"1","valuemap":{"mappings":[{"type":"0","value":"1","newvalue":"Up"}]}}
+        """.utf8))
+        #expect(withMap.valuemap?.valueMap?.mappedText(for: "1") == "Up")
     }
 
 }

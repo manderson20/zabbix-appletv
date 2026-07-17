@@ -90,7 +90,7 @@ nonisolated enum ClockStyle: Sendable {
 /// native rendering here — see the widget build-out plan for the reasoning behind each.
 nonisolated enum DashboardWidgetKind: Sendable {
     case clock(ClockStyle)
-    case itemValue(name: String, value: String, units: String, backgroundColorHex: String?, trend: ItemValueTrend?, lastUpdated: Date?)
+    case itemValue(name: String, value: String, units: String, backgroundColorHex: String?, trend: ItemValueTrend?, lastUpdated: Date?, mappedText: String?)
     case problems([DashboardProblem])
     case problemsBySeverity([SeverityCount])
     case hostAvailability([HostInterfaceAvailability])
@@ -200,6 +200,11 @@ nonisolated struct GaugeReading: Sendable {
     /// A single fixed arc color ("value_arc_color"), used when the widget isn't configured with
     /// threshold color bands — Zabbix's gauge widget supports either mode.
     let fixedArcColorHex: String?
+
+    /// The item's value-mapped label, when it has a value map, e.g. "Up" for a reading of 1. The
+    /// needle still uses the numeric `value`; this is shown as the gauge's center text so it reads
+    /// "Up (1.00)" rather than a bare number, matching Zabbix's own gauge.
+    let mappedText: String?
 }
 
 /// A single threshold marker on a gauge.

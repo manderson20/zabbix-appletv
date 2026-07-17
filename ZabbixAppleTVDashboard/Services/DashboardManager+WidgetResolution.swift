@@ -171,7 +171,8 @@ extension DashboardManager {
                 units: item.units ?? "",
                 backgroundColorHex: Self.fieldValue(widget.fields, name: "bg_color"),
                 trend: trend,
-                lastUpdated: item.lastclock.flatMap(TimeInterval.init).map { Date(timeIntervalSince1970: $0) }
+                lastUpdated: item.lastclock.flatMap(TimeInterval.init).map { Date(timeIntervalSince1970: $0) },
+                mappedText: item.lastvalue.flatMap { item.valuemap?.valueMap?.mappedText(for: $0) }
             )
 
         case "problemsbysv":
@@ -339,7 +340,8 @@ extension DashboardManager {
                 maxValue: maxValue,
                 units: item.units ?? "",
                 thresholds: thresholds,
-                fixedArcColorHex: Self.fieldValue(widget.fields, name: "value_arc_color")
+                fixedArcColorHex: Self.fieldValue(widget.fields, name: "value_arc_color"),
+                mappedText: item.lastvalue.flatMap { item.valuemap?.valueMap?.mappedText(for: $0) }
             )
         )
     }

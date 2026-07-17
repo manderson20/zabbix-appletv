@@ -462,6 +462,16 @@ struct GaugeWidgetContentView: View {
         return ((reading.value - reading.minValue) / range).clamped(to: 0...1)
     }
 
+    /// The gauge's center text. When the item has a value map, it reads like "Up (1.00)" — the
+    /// mapped label with the raw value in parentheses, matching Zabbix's own gauge — otherwise the
+    /// plain formatted value.
+    private var centerText: String {
+        guard let mappedText = reading.mappedText else {
+            return ZabbixValueFormatting.format(reading.value, units: reading.units)
+        }
+        return "\(mappedText) (\(ZabbixValueFormatting.formatItemValue(reading.value, units: "")))"
+    }
+
     var body: some View {
         GeometryReader { geometry in
             // A 180° semicircle sweeping from the minimum on the left, over the top, to the maximum
@@ -506,7 +516,7 @@ struct GaugeWidgetContentView: View {
                     .minimumScaleFactor(0.6)
                     .offset(x: diameter * 0.4, y: diameter * 0.06)
 
-                Text(ZabbixValueFormatting.format(reading.value, units: reading.units))
+                Text(centerText)
                     .font(.system(size: diameter * 0.2, weight: .bold, design: .rounded))
                     .foregroundStyle(DashboardTheme.primaryText)
                     .minimumScaleFactor(0.5)
