@@ -62,9 +62,14 @@ nonisolated struct ZabbixItemGetParameters: Encodable, Sendable {
     /// Item fields to return.
     let output: [String]
 
-    init(itemIDs: [String], output: [String] = ["itemid", "name", "lastvalue", "prevvalue", "lastclock", "units", "value_type"]) {
+    /// Requests each item's value map (its `mappings`), so a raw reading can be shown as its label
+    /// (e.g. "Up (1)") the way Zabbix's own item-value and gauge widgets do.
+    let selectValueMap: [String]
+
+    init(itemIDs: [String], output: [String] = ["itemid", "name", "lastvalue", "prevvalue", "lastclock", "units", "value_type"], selectValueMap: [String] = ["mappings"]) {
         self.itemids = itemIDs
         self.output = output
+        self.selectValueMap = selectValueMap
     }
 }
 
