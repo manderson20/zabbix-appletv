@@ -109,7 +109,8 @@ extension DashboardManager {
             let problems = try await zabbixAPIClient.problems(
                 serverBaseURL: serverBaseURL,
                 authToken: authToken,
-                severities: severities.isEmpty ? nil : severities
+                severities: severities.isEmpty ? nil : severities,
+                showSuppressed: Self.fieldValue(widget.fields, name: "show_suppressed") == "1"
             )
 
             let triggerHosts = try await zabbixAPIClient.triggerHosts(
@@ -174,7 +175,21 @@ extension DashboardManager {
             )
 
         case "problemsbysv":
-            let problems = try await zabbixAPIClient.problems(serverBaseURL: serverBaseURL, authToken: authToken)
+            // Honor the same scoping the real widget applies: its own severity filter, "show
+            // suppressed" option, and any host groups it deliberately excludes ("exclude_groupids",
+            // verified live: this dashboard's widget hides groups 27 and 40). Counting every problem
+            // regardless of these inflated the tallies well above what Zabbix shows for the same widget.
+            let severities = Self.indexedValues(widget.fields, name: "severities").compactMap(Int.init)
+            let excludedGroupIDs = Set(Self.indexedValues(widget.fields, name: "exclude_groupids"))
+
+            let allProblems = try await zabbixAPIClient.problems(
+                serverBaseURL: serverBaseURL,
+                authToken: authToken,
+                severities: severities.isEmpty ? nil : severities,
+                showSuppressed: Self.fieldValue(widget.fields, name: "show_suppressed") == "1"
+            )
+            let problems = try await problemsExcludingGroups(allProblems, excludedGroupIDs: excludedGroupIDs, serverBaseURL: serverBaseURL, authToken: authToken)
+
             var countsBySeverity = [Int: Int](uniqueKeysWithValues: (0...5).map { ($0, 0) })
             for problem in problems {
                 countsBySeverity[problem.severity.intValue, default: 0] += 1
@@ -1278,6 +1293,37 @@ extension DashboardManager {
         }
 
         return HostInterfaceAvailability(interfaceTypeName: name, available: available, unavailable: unavailable, mixed: mixed, unknown: unknown)
+    }
+
+    /// Filters problems to those whose host is not in any of `excludedGroupIDs`, matching the
+    /// "exclude_groupids" option on the problems and problems-by-severity widgets. Resolves each
+    /// problem's trigger → host → host groups in two batched lookups; a problem whose host can't be
+    /// resolved is kept (fail-open) rather than silently dropped.
+    private func problemsExcludingGroups(
+        _ problems: [ZabbixProblemSummary],
+        excludedGroupIDs: Set<String>,
+        serverBaseURL: URL,
+        authToken: String
+    ) async throws -> [ZabbixProblemSummary] {
+        guard !excludedGroupIDs.isEmpty else { return problems }
+
+        let triggerHosts = try await zabbixAPIClient.triggerHosts(
+            serverBaseURL: serverBaseURL,
+            authToken: authToken,
+            triggerIDs: Array(Set(problems.map(\.objectid)))
+        )
+        let hostIDByTriggerID = Dictionary(uniqueKeysWithValues: triggerHosts.compactMap { entry in
+            entry.hosts.first.map { (entry.triggerid, $0.hostid) }
+        })
+
+        let hostIDs = Array(Set(hostIDByTriggerID.values))
+        let hostGroups = try await zabbixAPIClient.hostGroups(serverBaseURL: serverBaseURL, authToken: authToken, hostIDs: hostIDs)
+        let groupIDsByHostID = Dictionary(uniqueKeysWithValues: hostGroups.map { ($0.hostid, Set($0.hostgroups.map(\.groupid))) })
+
+        return problems.filter { problem in
+            guard let hostID = hostIDByTriggerID[problem.objectid] else { return true }
+            return groupIDsByHostID[hostID, default: []].isDisjoint(with: excludedGroupIDs)
+        }
     }
 
     /// Resolves host names for a set of trigger identifiers in one batched lookup.

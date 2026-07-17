@@ -140,11 +140,14 @@ actor ZabbixAPIClient {
         )
     }
 
-    /// Fetches currently active problems, optionally filtered to a set of severities.
-    func problems(serverBaseURL: URL, authToken: String, severities: [Int]? = nil) async throws -> [ZabbixProblemSummary] {
+    /// Fetches currently active problems, optionally filtered to a set of severities. Suppressed
+    /// problems (hosts in maintenance, manually-suppressed problems) are excluded by default to
+    /// match Zabbix's own problem widgets; pass `showSuppressed: true` for a widget configured to
+    /// show them.
+    func problems(serverBaseURL: URL, authToken: String, severities: [Int]? = nil, showSuppressed: Bool = false) async throws -> [ZabbixProblemSummary] {
         try await send(
             method: "problem.get",
-            params: ZabbixProblemGetParameters(severities: severities),
+            params: ZabbixProblemGetParameters(severities: severities, suppressed: showSuppressed ? nil : false),
             serverBaseURL: serverBaseURL,
             authToken: authToken,
             resultType: [ZabbixProblemSummary].self

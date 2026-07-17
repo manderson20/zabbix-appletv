@@ -96,18 +96,45 @@ nonisolated struct ZabbixProblemGetParameters: Encodable, Sendable {
     /// own "show_lines" field) pass their own explicit `limit`.
     let limit: Int
 
+    /// Suppression filter, matching Zabbix's own "Show suppressed problems" widget option. `false`
+    /// returns only unsuppressed problems (Zabbix's default across its problem widgets — a host in
+    /// maintenance or a manually-suppressed problem is hidden); `true` returns only suppressed;
+    /// `nil` omits the filter so every problem is returned regardless of suppression. Without this,
+    /// the app counted suppressed problems the real widgets hide, inflating severity tallies well
+    /// above what the same dashboard shows in Zabbix.
+    let suppressed: Bool?
+
     init(
         output: [String] = ["eventid", "name", "severity", "clock", "objectid"],
         severities: [Int]? = nil,
         sortfield: [String] = ["eventid"],
         sortorder: String = "DESC",
-        limit: Int = 5000
+        limit: Int = 5000,
+        suppressed: Bool? = false
     ) {
         self.output = output
         self.severities = severities
         self.sortfield = sortfield
         self.sortorder = sortorder
         self.limit = limit
+        self.suppressed = suppressed
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case output, severities, sortfield, sortorder, limit, suppressed
+    }
+
+    // Custom encoding so a `nil` optional is omitted entirely rather than sent as JSON `null`:
+    // omitting `suppressed` is how "return problems regardless of suppression" is expressed, and
+    // omitting `severities` cleanly means "all severities".
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(output, forKey: .output)
+        try container.encodeIfPresent(severities, forKey: .severities)
+        try container.encode(sortfield, forKey: .sortfield)
+        try container.encode(sortorder, forKey: .sortorder)
+        try container.encode(limit, forKey: .limit)
+        try container.encodeIfPresent(suppressed, forKey: .suppressed)
     }
 }
 
