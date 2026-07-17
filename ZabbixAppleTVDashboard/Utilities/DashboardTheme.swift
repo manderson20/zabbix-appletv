@@ -40,7 +40,11 @@ enum DashboardTheme {
 extension Color {
     /// Creates a color from a "RRGGBB" hex string, as used throughout Zabbix's widget fields
     /// (series colors, thresholds, background colors).
-    init?(hex: String) {
+    ///
+    /// `nonisolated` because it's pure string→RGB math with no main-actor state: under the
+    /// project's default main-actor isolation it would otherwise be implicitly main-actor-isolated,
+    /// which warns when it's passed as a plain function value (e.g. `flatMap(Color.init(hex:))`).
+    nonisolated init?(hex: String) {
         var sanitized = hex.trimmingCharacters(in: .whitespacesAndNewlines)
         if sanitized.hasPrefix("#") {
             sanitized.removeFirst()
