@@ -208,7 +208,7 @@ struct ZabbixAppleTVDashboardTests {
                 id: "1",
                 title: "Clock",
                 frame: DashboardWidgetFrame(x: 0, y: 0, width: 4, height: 2),
-                refreshIntervalSeconds: nil,
+                refreshIntervalSeconds: 60,
                 hasHiddenHeader: false,
                 kind: .clock(.analog)
             ),
@@ -501,12 +501,16 @@ struct ZabbixAppleTVDashboardTests {
     @Test func refreshIntervalSecondsParsesRfRateField() throws {
         // "rf_rate" verified on a live server's "problems" (30s) and "systeminfo" (120s) widgets.
         let thirtySeconds = [ZabbixWidgetField(name: "rf_rate", value: "30")]
-        let disabled = [ZabbixWidgetField(name: "rf_rate", value: "0")]
+        // "0" is Zabbix's "No refresh". On an unattended display that can't be manually refreshed,
+        // it falls back to the slowest interval rather than freezing forever.
+        let noRefresh = [ZabbixWidgetField(name: "rf_rate", value: "0")]
+        // A widget left at "Default" stores no rf_rate field; Zabbix refreshes it at 60s, so it
+        // must keep updating rather than freezing on its launch-time snapshot.
         let absent: [ZabbixWidgetField] = []
 
         #expect(DashboardManager.refreshIntervalSeconds(from: thirtySeconds) == 30)
-        #expect(DashboardManager.refreshIntervalSeconds(from: disabled) == nil)
-        #expect(DashboardManager.refreshIntervalSeconds(from: absent) == nil)
+        #expect(DashboardManager.refreshIntervalSeconds(from: noRefresh) == DashboardManager.maximumRefreshIntervalSeconds)
+        #expect(DashboardManager.refreshIntervalSeconds(from: absent) == DashboardManager.defaultRefreshIntervalSeconds)
     }
 
     @Test func historyWindowSecondsRespectsEachWidgetsOwnTimePeriod() throws {

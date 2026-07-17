@@ -18,9 +18,12 @@ nonisolated struct RenderableDashboardWidget: Identifiable, Sendable {
     /// Grid position and size.
     let frame: DashboardWidgetFrame
 
-    /// This widget's own Zabbix-configured refresh interval, in seconds. `nil` means the widget
-    /// isn't periodically refreshed (matches Zabbix's own "No refresh" option).
-    let refreshIntervalSeconds: Int?
+    /// How often this widget re-fetches its data, in seconds — always a positive interval. On an
+    /// unattended wall display there is deliberately no "never refresh" case: Zabbix's own "No
+    /// refresh" option assumes a person can manually refresh the browser, which a kiosk with no one
+    /// at the remote can't, so a widget set to it is bounded to a slow refresh rather than frozen
+    /// forever. See `DashboardManager.refreshIntervalSeconds(from:)` for how each case maps.
+    let refreshIntervalSeconds: Int
 
     /// True when Zabbix's own widget config hides the header — the generic card title bar is
     /// suppressed for these, matching real Zabbix (typically compact colored value widgets that
