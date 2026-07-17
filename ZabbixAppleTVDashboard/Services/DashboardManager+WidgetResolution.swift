@@ -1311,14 +1311,37 @@ extension DashboardManager {
         fields.first { $0.name == name }?.value
     }
 
-    /// Returns the widget's own Zabbix-configured refresh interval in seconds ("rf_rate"),
-    /// verified against a live server (e.g. 30s on a "problems" widget, 120s on "systeminfo").
-    /// `nil` when the field is absent or explicitly "0" ("No refresh" in Zabbix's own UI).
-    static func refreshIntervalSeconds(from fields: [ZabbixWidgetField]) -> Int? {
-        guard let rate = fieldValue(fields, name: "rf_rate").flatMap(Int.init), rate > 0 else {
-            return nil
+    /// Zabbix's default dashboard widget refresh rate, applied when a widget is left at "Default"
+    /// in its refresh-interval dropdown. Verified against Zabbix's own UI, where "1 minute" is the
+    /// bolded default for standard widgets. (A couple of status-style widgets default to 120s, but
+    /// those always carry an explicit "rf_rate" field, so they never fall through to this value.)
+    static let defaultRefreshIntervalSeconds = 60
+
+    /// The slowest refresh this app will apply, used for a widget the admin explicitly set to
+    /// Zabbix's "No refresh". That option means "never auto-refresh" in the Zabbix frontend, where
+    /// a person can refresh the browser at will — but this app targets an unattended wall display
+    /// with no one at the remote, so "never" would leave the widget frozen on its launch-time
+    /// snapshot for as long as the Apple TV stays on. Instead the widget still updates, just at the
+    /// longest standard Zabbix interval (15 minutes), honoring the admin's "this changes rarely"
+    /// intent without hammering the API or ever going permanently stale.
+    static let maximumRefreshIntervalSeconds = 900
+
+    /// Returns how often to re-fetch a widget's data, in seconds — always a positive interval,
+    /// since an unattended display should never show a widget that stops updating. The value comes
+    /// from the widget's own Zabbix "rf_rate" field, verified against a live server (e.g. 30s on a
+    /// "problems" widget, 120s on "systeminfo"):
+    ///
+    /// - An explicit positive "rf_rate" is used as-is.
+    /// - An absent field means the widget is at "Default" in Zabbix's dropdown (Zabbix stores no
+    ///   field in that case) → `defaultRefreshIntervalSeconds`. Treating absent as "never" is what
+    ///   left every default-rate widget (item value, gauge, etc.) frozen on its opening snapshot.
+    /// - An explicit "0" is Zabbix's "No refresh" → `maximumRefreshIntervalSeconds` rather than
+    ///   never, for the unattended-display reason documented on that constant.
+    static func refreshIntervalSeconds(from fields: [ZabbixWidgetField]) -> Int {
+        guard let rate = fieldValue(fields, name: "rf_rate").flatMap(Int.init) else {
+            return defaultRefreshIntervalSeconds
         }
-        return rate
+        return rate > 0 ? rate : maximumRefreshIntervalSeconds
     }
 
     /// Returns all values for a dot-indexed widget field array, e.g. "groupids.0", "groupids.1".

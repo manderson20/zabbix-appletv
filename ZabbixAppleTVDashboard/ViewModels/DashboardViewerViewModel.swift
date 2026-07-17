@@ -282,9 +282,8 @@ final class DashboardViewerViewModel: ObservableObject {
         let allWidgets = pages.flatMap(\.widgets)
         let dueWidgetIDs = Set(
             allWidgets.compactMap { widget -> String? in
-                guard let interval = widget.refreshIntervalSeconds else { return nil }
                 let lastRefresh = lastRefreshedAt[widget.id] ?? .distantPast
-                return now.timeIntervalSince(lastRefresh) >= TimeInterval(interval) ? widget.id : nil
+                return now.timeIntervalSince(lastRefresh) >= TimeInterval(widget.refreshIntervalSeconds) ? widget.id : nil
             }
         )
 
