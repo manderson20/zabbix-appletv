@@ -252,6 +252,24 @@ actor ZabbixAPIClient {
         )
     }
 
+    /// Fetches an item's hourly trend values over a time range, used to backfill the part of a
+    /// graph window that raw history no longer covers (trends are retained far longer).
+    func trends(
+        serverBaseURL: URL,
+        authToken: String,
+        itemID: String,
+        sinceUnixTime: Int,
+        untilUnixTime: Int
+    ) async throws -> [ZabbixTrendValue] {
+        try await send(
+            method: "trend.get",
+            params: ZabbixTrendGetParameters(itemID: itemID, timeFrom: sinceUnixTime, timeTill: untilUnixTime),
+            serverBaseURL: serverBaseURL,
+            authToken: authToken,
+            resultType: [ZabbixTrendValue].self
+        )
+    }
+
     /// Fetches recent notifications and remote commands since a given time.
     func alerts(serverBaseURL: URL, authToken: String, sinceUnixTime: Int) async throws -> [ZabbixAlert] {
         try await send(

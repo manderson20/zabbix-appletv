@@ -1146,14 +1146,37 @@ extension DashboardManager {
         )
 
         // history.get returns newest-first; sort ascending so bucketing walks the window in order.
-        let rawPoints = values.compactMap { value -> (date: Date, value: Double)? in
+        var points = values.compactMap { value -> (date: Date, value: Double)? in
             guard let doubleValue = Double(value.value), let timestamp = TimeInterval(value.clock) else {
                 return nil
             }
             return (Date(timeIntervalSince1970: timestamp), doubleValue)
         }.sorted { $0.date < $1.date }
 
-        return Self.bucketedChartPoints(rawPoints, itemID: itemID, windowStart: windowStart, windowEnd: endDate, bucketCount: Self.chartBucketCount)
+        // Raw history has a limited retention, so on a long window an item can have history for only
+        // its most recent stretch — leaving the rest of the graph blank even though Zabbix's own
+        // graph shows it. Fill the older part from trends (hourly min/avg/max, kept far longer),
+        // exactly as Zabbix does: use trends for everything before the earliest raw sample.
+        let earliestHistory = points.first?.date ?? endDate
+        if earliestHistory.timeIntervalSince(windowStart) > Self.trendFillMinimumGapSeconds {
+            let trendValues = try await zabbixAPIClient.trends(
+                serverBaseURL: serverBaseURL,
+                authToken: authToken,
+                itemID: itemID,
+                sinceUnixTime: Int(windowStart.timeIntervalSince1970),
+                untilUnixTime: Int(earliestHistory.timeIntervalSince1970)
+            )
+            let trendPoints = trendValues.compactMap { value -> (date: Date, value: Double)? in
+                guard let average = Double(value.value_avg), let timestamp = TimeInterval(value.clock) else {
+                    return nil
+                }
+                return (Date(timeIntervalSince1970: timestamp), average)
+            }.filter { $0.date < earliestHistory }
+
+            points = (trendPoints + points).sorted { $0.date < $1.date }
+        }
+
+        return Self.bucketedChartPoints(points, itemID: itemID, windowStart: windowStart, windowEnd: endDate, bucketCount: Self.chartBucketCount)
     }
 
     /// Downsamples an item's raw, chronological history into at most ~`2 * bucketCount` points that
@@ -1232,6 +1255,11 @@ extension DashboardManager {
     /// many raw samples it has — dense enough to read as continuous on a TV without handing Swift
     /// Charts tens of thousands of marks per series.
     private static let chartBucketCount = 800
+
+    /// How much of a graph's window can be missing raw history before we backfill from trends. Set
+    /// to one hour (trends are hourly, so a sub-hour gap isn't worth an extra request), so a graph
+    /// whose history covers its whole window skips the trend fetch entirely.
+    private static let trendFillMinimumGapSeconds: TimeInterval = 3600
 
     /// The widget's own configured graph time range ("time_period.from"), matching what a Zabbix
     /// graph widget's name usually spells out (e.g. "Internet Usage Last Hour" is itself configured
