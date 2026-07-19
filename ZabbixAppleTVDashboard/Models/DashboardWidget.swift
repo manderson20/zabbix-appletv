@@ -142,7 +142,7 @@ nonisolated enum DashboardWidgetKind: Sendable {
     case dataOverview(DataOverviewMatrix)
     case lineChart(series: [ChartSeries], window: ChartTimeWindow, stacked: Bool)
     case pieChart([ChartSlice])
-    case geomap([GeoMapMarker])
+    case geomap(markers: [GeoMapMarker], defaultView: GeoMapView?)
     case networkMap(NetworkMapDiagram)
     case mapList([MapListEntry])
     case navigationTree([NavTreeNode])
@@ -545,6 +545,15 @@ nonisolated struct GeoMapMarker: Identifiable, Sendable {
 
     /// This host's highest active problem severity, 0 if none.
     let severity: Int
+}
+
+/// The Geomap widget's configured initial view (`default_view`): a center and a web-map zoom level,
+/// used to open the map at the author's chosen location rather than auto-fitting to the markers.
+nonisolated struct GeoMapView: Sendable {
+    let latitude: Double
+    let longitude: Double
+    /// Web-map zoom level (0 = whole world, higher = closer).
+    let zoom: Double
 }
 
 /// A network topology diagram for a map widget.

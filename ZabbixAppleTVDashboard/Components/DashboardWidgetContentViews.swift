@@ -12,8 +12,19 @@ import UIKit
 
 struct GeomapWidgetContentView: View {
     let markers: [GeoMapMarker]
+    var defaultView: GeoMapView? = nil
 
     private var cameraPosition: MapCameraPosition {
+        // Honor the widget's configured initial view when set: center on it and derive a MapKit span
+        // from the web-map zoom level (each zoom step roughly halves the visible degrees).
+        if let view = defaultView {
+            let degrees = min(max(360 / pow(2, view.zoom), 0.002), 180)
+            return .region(MKCoordinateRegion(
+                center: CLLocationCoordinate2D(latitude: view.latitude, longitude: view.longitude),
+                span: MKCoordinateSpan(latitudeDelta: degrees, longitudeDelta: degrees)
+            ))
+        }
+
         guard !markers.isEmpty else {
             return .automatic
         }

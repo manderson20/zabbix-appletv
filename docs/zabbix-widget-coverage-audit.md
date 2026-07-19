@@ -59,7 +59,7 @@ cosmetic-leaning last).
 | Honeycomb | partial | wrong-data | 1 | `primary_label`/`secondary_label` macro templates, `items.N`, value maps, item-tag filter, threshold coloring, and unit/decimal formatting all applied; only the hardcoded 60-cell cap remains |
 | Item navigator | partial | missing-detail | 1 | `group_by` now sections the list (by host); `items.N` + value maps + item-tag filter applied — only the specific group-by attribute (tag vs host) isn't distinguished |
 | Data overview | partial | wrong-data | 1 | Renders the hosts×items matrix (with `style` orientation) + tags + value maps + unit/decimal formatting; only the arbitrary 100-item cap remains |
-| Geomap | partial | missing-detail | 1 | Marker severity scoped to the widget's tag + severity filter; only `default_view` initial center/zoom (cosmetic) remains |
+| Geomap | full | missing-detail | 0 | Marker severity scoped to the widget's tag + severity filter, and `default_view` initial center/zoom honored |
 | Problems | partial | missing-detail | 1 | `groupids`/tags/suppression/acknowledgement all honored; only `show_lines` default (20 vs 25) remains |
 | Problems by severity | full | missing-detail | 1 | `groupids`/tags/`ext_ack`, the totals tally, and `show_type=GROUPS` (per-group × per-severity problem-count table) all honored; only the `layout` (horizontal/vertical) cosmetic remains |
 | Action log | partial | missing-detail | 1 | Content filters (`actionids`/`mediatypeids`/`userids`/`statuses` → `alert.get`) **verified against a live widget**; the widget has no time period to honor. Only failed-status (2) styling and the last-N-vs-7-day lookback edge remain |
@@ -156,8 +156,8 @@ cosmetic-leaning last).
 - Matrix orientation: `style`/`layout` (Trigger overview, Data overview, Problems by severity, Host
   availability).
 - `show_legend`/`legend_*` (classic + svg graphs, Pie), `show_timeline`, `highlight_row`,
-  `draw_type` doughnut-vs-pie, `default_view` initial map center/zoom (Geomap), `tzone_format`
-  (Clock), SLO trailing-zero trimming.
+  `draw_type` doughnut-vs-pie, `tzone_format` (Clock), SLO trailing-zero trimming. (Geomap's
+  `default_view` initial center/zoom is now honored.)
 - Discovery: a no-permission/empty-state distinction.
 
 ## 4. Cross-cutting patterns (where a shared helper fixes many widgets)

@@ -919,7 +919,7 @@ extension DashboardManager {
             )
         }
 
-        return .geomap(markers)
+        return .geomap(markers: markers, defaultView: Self.parseGeoMapDefaultView(Self.fieldValue(widget.fields, name: "default_view")))
     }
 
     // MARK: - Network map
@@ -2673,6 +2673,18 @@ extension DashboardManager {
     /// fall back to the API-success proxy rather than reporting the server down.
     static func isServerRunning(fromHANodeStatuses statuses: [Int]) -> Bool? {
         statuses.isEmpty ? nil : statuses.contains(3)
+    }
+
+    /// Parses the Geomap widget's `default_view` — Zabbix stores it as "latitude,longitude,zoom" —
+    /// into a `GeoMapView`. Returns nil for an empty/malformed value so the caller falls back to
+    /// auto-fitting the markers.
+    static func parseGeoMapDefaultView(_ raw: String?) -> GeoMapView? {
+        guard let raw, !raw.isEmpty else { return nil }
+        let parts = raw.split(separator: ",").map { Double($0.trimmingCharacters(in: .whitespaces)) }
+        guard parts.count == 3, let latitude = parts[0], let longitude = parts[1], let zoom = parts[2] else {
+            return nil
+        }
+        return GeoMapView(latitude: latitude, longitude: longitude, zoom: zoom)
     }
 
     /// The Clock widget's configured display timezone (`tzone_timezone`), or nil to use the device's
