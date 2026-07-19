@@ -337,6 +337,19 @@ nonisolated struct WebScenarioSummary: Identifiable, Sendable {
 
     /// Host the scenario runs against, if known.
     let hostName: String?
+
+    /// Ok / Failed / Unknown, derived from the scenario's `web.test.fail` internal check item.
+    let status: WebScenarioStatus
+}
+
+/// A web scenario's current health, matching Zabbix's own Web monitoring widget states.
+nonisolated enum WebScenarioStatus: Sendable, Equatable {
+    /// The scenario's last run passed (`web.test.fail` == 0).
+    case ok
+    /// The scenario's last run failed at a step (`web.test.fail` > 0).
+    case failed
+    /// No status is known (no `web.test.fail` item, or it has never collected a value).
+    case unknown
 }
 
 /// An item's recent historical values, shown in an item history widget.

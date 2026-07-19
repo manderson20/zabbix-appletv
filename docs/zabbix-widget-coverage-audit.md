@@ -49,7 +49,7 @@ cosmetic-leaning last).
 |---|---|---|---|---|
 | Map navigation tree | rendered-only | wrong-data | 6 | Resolver takes no `widget`; ignores entire `navtree`, lists every map on the server |
 | SLA report | rendered-only | wrong-data | 1 | Shows static target SLO via `sla.get`, never the computed SLI (`sla.getsli`) — `slaid` mis-key now fixed |
-| Web monitoring | partial | wrong-data | 3 | Scenario Ok/Failed/Unknown status not derived; `exclude_groupids` + tags ignored (positive `groupids`/`hostids` work) |
+| Web monitoring | partial | wrong-data | 2 | `exclude_groupids` + tags ignored → shows a superset of scenarios; Ok/Failed/Unknown status now derived from `web.test.fail` |
 | Top triggers | partial | wrong-data | 2 | Wrong metric — ranks current problems by severity, not event-frequency over `time_period`; `groupids`/tags now scoped |
 | Graph (svggraph) | partial | wrong-data | 8 | Per-dataset aggregation/`timeshift`/`approximation`/`axisy` all ignored |
 | Graph (classic) | partial | wrong-data | 7 | Graph type (stacked/pie) lost; Simple-graph mode (`itemid`) unsupported |
@@ -80,6 +80,7 @@ cosmetic-leaning last).
 
 **Landed since the original audit:**
 
+- ~~**Web monitoring — scenario status not derived.**~~ **Done** — Ok/Failed/Unknown derived from each scenario's `web.test.fail[<name>]` item (fetched with `webitems: true`); `exclude_groupids` + tags scope still pending.
 - ~~**Item value — thresholds ignored.**~~ **Done** — reads `thresholds.N` (shared `thresholdColorHex` helper) so a value crossing a band repaints the background with its alert color.
 - ~~**Honeycomb — thresholds/cell coloring absent.**~~ **Done** — each cell is tinted by the threshold band its reading meets (same `thresholdColorHex` helper).
 - ~~**Geomap — marker severity ignores widget `tags`.**~~ **Done** — `maxSeverityByHostID` now takes the widget's tag + severity filter, so a marker's color reflects only the problems the widget shows.
@@ -114,8 +115,8 @@ cosmetic-leaning last).
   aggregation engine; honor `approximation` (min/avg/max) instead of hardcoding `value_avg`.
 - **Graph (classic) — graph type lost + Simple-graph unsupported.** Fetch `graphtype` and render
   stacked/pie; implement `source_type=1`/`itemid`.
-- **Web monitoring — scenario status not derived.** Fetch each scenario's status items to render
-  Ok/Failed/Unknown; also apply `exclude_groupids` + tags.
+- **Web monitoring — `exclude_groupids` + tags dropped.** Status is now derived; the remaining gap
+  is scope — a widget with an exclude/tag filter still shows a superset of scenarios.
 - **Map — non-host elements always OK.** Compute status for submap/host-group/trigger elements.
 - **Clock — `time_type=host` and `tzone_timezone` ignored.** Fetch the item's `lastclock` for
   host-time mode and honor the configured timezone.

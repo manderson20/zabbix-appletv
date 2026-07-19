@@ -392,6 +392,42 @@ struct ZabbixAppleTVDashboardTests {
         #expect(triggers.first?.hosts.first?.hostid == "10461")
     }
 
+    @Test func webScenarioStatusDerivesFromFailValue() throws {
+        // 0 → Ok, > 0 → Failed (the failed step), missing/non-numeric → Unknown.
+        #expect(DashboardManager.webScenarioStatus(fromFailValue: "0") == .ok)
+        #expect(DashboardManager.webScenarioStatus(fromFailValue: "3") == .failed)
+        #expect(DashboardManager.webScenarioStatus(fromFailValue: nil) == .unknown)
+        #expect(DashboardManager.webScenarioStatus(fromFailValue: "") == .unknown)
+    }
+
+    @Test func webScenarioNameParsesFromFailKey() throws {
+        #expect(DashboardManager.scenarioName(fromFailKey: "web.test.fail[Homepage]") == "Homepage")
+        #expect(DashboardManager.scenarioName(fromFailKey: "web.test.fail[Login flow]") == "Login flow")
+        // Non-fail keys and the sibling error item are rejected.
+        #expect(DashboardManager.scenarioName(fromFailKey: "web.test.error[Homepage]") == nil)
+        #expect(DashboardManager.scenarioName(fromFailKey: "system.cpu.load") == nil)
+    }
+
+    @Test func webFailItemDecodesKeyUnderscoreField() throws {
+        let responseData = try #require(
+            """
+            {
+              "jsonrpc": "2.0",
+              "result": [
+                { "itemid": "5501", "key_": "web.test.fail[Homepage]", "lastvalue": "0", "hostid": "10461" }
+              ],
+              "id": 1
+            }
+            """.data(using: .utf8)
+        )
+
+        let response = try JSONDecoder().decode(ZabbixAPIResponse<[ZabbixWebFailItem]>.self, from: responseData)
+        let items = try response.resolvedResult()
+        #expect(items.first?.key_ == "web.test.fail[Homepage]")
+        #expect(items.first?.lastvalue == "0")
+        #expect(items.first?.hostid == "10461")
+    }
+
     @Test func thresholdColorPicksHighestBandMet() throws {
         let fields = [
             ZabbixWidgetField(name: "thresholds.0.threshold", value: "50"),
