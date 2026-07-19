@@ -599,4 +599,29 @@ struct ZabbixAppleTVDashboardTests {
         #expect(withMap.valuemap?.valueMap?.mappedText(for: "1") == "Up")
     }
 
+    @Test func tagFiltersReadWidgetTagConfiguration() throws {
+        let fields = [
+            ZabbixWidgetField(name: "evaltype", value: "2"),
+            ZabbixWidgetField(name: "tags.0.tag", value: "env"),
+            ZabbixWidgetField(name: "tags.0.operator", value: "1"),   // Equals
+            ZabbixWidgetField(name: "tags.0.value", value: "prod"),
+            ZabbixWidgetField(name: "tags.1.tag", value: "team"),     // no operator -> 0 (Contains), no value -> ""
+            ZabbixWidgetField(name: "tags.2.value", value: "orphan"), // no tag name -> dropped
+        ]
+
+        let filters = DashboardManager.tagFilters(from: fields)
+        #expect(filters.count == 2)
+        #expect(filters[0].tag == "env")
+        #expect(filters[0].value == "prod")
+        #expect(filters[0].operator == 1)
+        #expect(filters[1].tag == "team")
+        #expect(filters[1].value == "")
+        #expect(filters[1].operator == 0)
+        #expect(DashboardManager.tagEvalType(from: fields) == 2)
+
+        // A widget with no tag filter yields nothing, leaving queries unfiltered.
+        #expect(DashboardManager.tagFilters(from: []).isEmpty)
+        #expect(DashboardManager.tagEvalType(from: []) == nil)
+    }
+
 }

@@ -73,6 +73,16 @@ nonisolated struct ZabbixItemGetParameters: Encodable, Sendable {
     }
 }
 
+/// A single tag filter for problem/trigger/host/item queries, mirroring a widget's `tags.N.*`
+/// configuration. `operator` uses Zabbix's shared tag-operator enum: 0 = Contains, 1 = Equals,
+/// 2 = Does not contain, 3 = Does not equal, 4 = Exists, 5 = Does not exist. The same struct is
+/// accepted by every `*.get` method that supports a `tags` array, so one builder scopes them all.
+nonisolated struct ZabbixTagFilter: Encodable, Sendable {
+    let tag: String
+    let value: String
+    let `operator`: Int
+}
+
 /// Parameters for `problem.get`.
 ///
 /// `problem.get` does not support `selectHosts` (verified against a live Zabbix 7.0 server) —
@@ -109,13 +119,23 @@ nonisolated struct ZabbixProblemGetParameters: Encodable, Sendable {
     /// above what the same dashboard shows in Zabbix.
     let suppressed: Bool?
 
+    /// The widget's own tag filter (from its `tags.N.*` fields). Omitted when empty so an unfiltered
+    /// query is unchanged.
+    let tags: [ZabbixTagFilter]?
+
+    /// Tag evaluation type (`evaltype`): 0 = And/Or, 2 = Or. Only meaningful — and only sent —
+    /// alongside a non-empty `tags`.
+    let evaltype: Int?
+
     init(
         output: [String] = ["eventid", "name", "severity", "clock", "objectid"],
         severities: [Int]? = nil,
         sortfield: [String] = ["eventid"],
         sortorder: String = "DESC",
         limit: Int = 5000,
-        suppressed: Bool? = false
+        suppressed: Bool? = false,
+        tags: [ZabbixTagFilter]? = nil,
+        evaltype: Int? = nil
     ) {
         self.output = output
         self.severities = severities
@@ -123,15 +143,17 @@ nonisolated struct ZabbixProblemGetParameters: Encodable, Sendable {
         self.sortorder = sortorder
         self.limit = limit
         self.suppressed = suppressed
+        self.tags = (tags?.isEmpty == false) ? tags : nil
+        self.evaltype = (tags?.isEmpty == false) ? evaltype : nil
     }
 
     private enum CodingKeys: String, CodingKey {
-        case output, severities, sortfield, sortorder, limit, suppressed
+        case output, severities, sortfield, sortorder, limit, suppressed, tags, evaltype
     }
 
     // Custom encoding so a `nil` optional is omitted entirely rather than sent as JSON `null`:
     // omitting `suppressed` is how "return problems regardless of suppression" is expressed, and
-    // omitting `severities` cleanly means "all severities".
+    // omitting `severities`/`tags` cleanly means "no such filter".
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(output, forKey: .output)
@@ -140,6 +162,8 @@ nonisolated struct ZabbixProblemGetParameters: Encodable, Sendable {
         try container.encode(sortorder, forKey: .sortorder)
         try container.encode(limit, forKey: .limit)
         try container.encodeIfPresent(suppressed, forKey: .suppressed)
+        try container.encodeIfPresent(tags, forKey: .tags)
+        try container.encodeIfPresent(evaltype, forKey: .evaltype)
     }
 }
 

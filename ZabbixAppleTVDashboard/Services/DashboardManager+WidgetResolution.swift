@@ -110,6 +110,8 @@ extension DashboardManager {
                 serverBaseURL: serverBaseURL,
                 authToken: authToken,
                 severities: severities.isEmpty ? nil : severities,
+                tags: Self.tagFilters(from: widget.fields),
+                evalType: Self.tagEvalType(from: widget.fields),
                 showSuppressed: Self.fieldValue(widget.fields, name: "show_suppressed") == "1"
             )
 
@@ -187,6 +189,8 @@ extension DashboardManager {
                 serverBaseURL: serverBaseURL,
                 authToken: authToken,
                 severities: severities.isEmpty ? nil : severities,
+                tags: Self.tagFilters(from: widget.fields),
+                evalType: Self.tagEvalType(from: widget.fields),
                 showSuppressed: Self.fieldValue(widget.fields, name: "show_suppressed") == "1"
             )
             let problems = try await problemsExcludingGroups(allProblems, excludedGroupIDs: excludedGroupIDs, serverBaseURL: serverBaseURL, authToken: authToken)
@@ -447,7 +451,9 @@ extension DashboardManager {
         let problems = try await zabbixAPIClient.problems(
             serverBaseURL: serverBaseURL,
             authToken: authToken,
-            severities: severities.isEmpty ? nil : severities
+            severities: severities.isEmpty ? nil : severities,
+            tags: Self.tagFilters(from: widget.fields),
+            evalType: Self.tagEvalType(from: widget.fields)
         )
 
         let hostByTriggerID = try await hostNamesByTriggerID(
@@ -1558,5 +1564,22 @@ extension DashboardManager {
         }
 
         return groupsByIndex.keys.sorted().compactMap { groupsByIndex[$0] }
+    }
+
+    /// Reads a widget's tag filter (its `tags.N.tag` / `tags.N.operator` / `tags.N.value` fields)
+    /// into API tag filters. Entries with no tag name are dropped; a missing operator defaults to
+    /// 0 (Contains), matching Zabbix. Returns an empty array when the widget has no tag filter, so
+    /// callers can pass it straight through and leave an unfiltered query unchanged.
+    static func tagFilters(from fields: [ZabbixWidgetField]) -> [ZabbixTagFilter] {
+        indexedFieldGroups(fields, prefix: "tags").compactMap { group in
+            guard let tag = group["tag"], !tag.isEmpty else { return nil }
+            return ZabbixTagFilter(tag: tag, value: group["value"] ?? "", operator: group["operator"].flatMap(Int.init) ?? 0)
+        }
+    }
+
+    /// The widget's tag evaluation type (`evaltype`): 0 = And/Or, 2 = Or. `nil` when unset (the API
+    /// then applies its And/Or default).
+    static func tagEvalType(from fields: [ZabbixWidgetField]) -> Int? {
+        fieldValue(fields, name: "evaltype").flatMap(Int.init)
     }
 }
