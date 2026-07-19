@@ -769,6 +769,11 @@ struct ZabbixAppleTVDashboardTests {
         let square = HoneycombWidgetContentView.honeycombLayout(count: 9, size: CGSize(width: 600, height: 600))
         #expect(square.columns == 3 && square.rows == 3)
 
+        // 12 cells in a wide widget → two offset rows of six — the packing Zabbix itself chose for
+        // this exact case (verified against the live QA dashboard's honeycomb).
+        let zabbixTwelve = HoneycombWidgetContentView.honeycombLayout(count: 12, size: CGSize(width: 1500, height: 300))
+        #expect(zabbixTwelve.columns == 6 && zabbixTwelve.rows == 2)
+
         // A short, wide widget with 11 cells packs them into a single row rather than the lopsided
         // 9-on-top / 2-on-bottom split the old near-square grid produced.
         let wideStrip = HoneycombWidgetContentView.honeycombLayout(count: 11, size: CGSize(width: 1800, height: 260))

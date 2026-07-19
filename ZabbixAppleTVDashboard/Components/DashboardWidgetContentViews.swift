@@ -802,22 +802,49 @@ struct GaugeWidgetContentView: View {
     }
 }
 
-/// A flat-top regular hexagon inscribed in its rect: flat edges top and bottom, points left and
-/// right. `rect.height` should be `rect.width * sqrt(3)/2` for the hexagon to come out regular.
-struct FlatTopHexagon: Shape {
+/// A pointy-top regular hexagon with softly rounded vertices, matching the hexagon Zabbix's own
+/// honeycomb draws (verified against the widget's SVG path: vertex at top/bottom, flat edges left
+/// and right, corners rounded by roughly 4% of the width). `rect.height` should be
+/// `rect.width * 2/sqrt(3)` for the hexagon to come out regular.
+struct PointyTopHexagon: Shape {
     func path(in rect: CGRect) -> Path {
         let w = rect.width, h = rect.height
         let cx = rect.midX, cy = rect.midY
-        let points = [
-            CGPoint(x: cx + w / 2, y: cy),        // right vertex
-            CGPoint(x: cx + w / 4, y: cy - h / 2), // top-right
-            CGPoint(x: cx - w / 4, y: cy - h / 2), // top-left
-            CGPoint(x: cx - w / 2, y: cy),        // left vertex
-            CGPoint(x: cx - w / 4, y: cy + h / 2), // bottom-left
-            CGPoint(x: cx + w / 4, y: cy + h / 2), // bottom-right
+        let vertices = [
+            CGPoint(x: cx, y: cy - h / 2),         // top vertex
+            CGPoint(x: cx + w / 2, y: cy - h / 4), // upper-right
+            CGPoint(x: cx + w / 2, y: cy + h / 4), // lower-right
+            CGPoint(x: cx, y: cy + h / 2),         // bottom vertex
+            CGPoint(x: cx - w / 2, y: cy + h / 4), // lower-left
+            CGPoint(x: cx - w / 2, y: cy - h / 4), // upper-left
         ]
+        let cornerRadius = w * 0.04
+
+        // For each vertex, the points where its two rounded-corner curves meet the adjacent edges:
+        // pulled back from the vertex along each edge by the corner radius.
+        func pullback(from vertex: CGPoint, toward other: CGPoint) -> CGPoint {
+            let edgeLength = hypot(other.x - vertex.x, other.y - vertex.y)
+            guard edgeLength > 0 else { return vertex }
+            let t = min(cornerRadius / edgeLength, 0.5)
+            return CGPoint(x: vertex.x + (other.x - vertex.x) * t, y: vertex.y + (other.y - vertex.y) * t)
+        }
+
         var path = Path()
-        path.addLines(points)
+        let count = vertices.count
+        for index in 0..<count {
+            let vertex = vertices[index]
+            let previous = vertices[(index + count - 1) % count]
+            let next = vertices[(index + 1) % count]
+            let entry = pullback(from: vertex, toward: previous)
+            let exit = pullback(from: vertex, toward: next)
+            if index == 0 {
+                path.move(to: entry)
+            } else {
+                path.addLine(to: entry)
+            }
+            // Round the vertex: curve from the entry point through the vertex to the exit point.
+            path.addQuadCurve(to: exit, control: vertex)
+        }
         path.closeSubpath()
         return path
     }
@@ -826,28 +853,35 @@ struct FlatTopHexagon: Shape {
 struct HoneycombWidgetContentView: View {
     let cells: [HoneycombCell]
 
-    /// A flat-top hexagon's height as a fraction of its width (`sqrt(3)/2`).
-    private static let hexHeightRatio: CGFloat = 0.8660254
+    /// A pointy-top hexagon's height as a multiple of its width (`2/sqrt(3)`).
+    private static let hexHeightRatio: CGFloat = 1.1547005
 
-    /// Thin gap between hexagons, so cells read as separate tiles (as Zabbix draws them) rather than
-    /// one continuous mesh.
+    /// Zabbix's default honeycomb cell fill in the dark theme — sampled live from the widget's SVG
+    /// (`.svg-honeycomb-cell path` computed fill: rgb(61, 80, 89)).
+    private static let zabbixCellFill = Color(red: 61 / 255, green: 80 / 255, blue: 89 / 255)
+
+    /// Zabbix's honeycomb label color (`.svg-honeycomb-label` computed color: rgb(238, 238, 238)).
+    private static let zabbixLabelColor = Color(red: 238 / 255, green: 238 / 255, blue: 238 / 255)
+
+    /// Thin gap between hexagons, matching the visible separation between Zabbix's cells.
     private static let hexGap: CGFloat = 4
 
-    /// Picks the flat-top honeycomb packing that fills `size` with `count` hexagons at the largest
-    /// size that still fits — so a few items become a few big hexagons and many stay legible. Flat-top
-    /// hexagons tessellate in offset columns: columns advance by 3/4 of a hexagon's width, and every
-    /// other column is dropped half a hexagon's height, so the used height spans `rows + 0.5`. For
-    /// each candidate column count the hexagon size is capped by both width and height; the count that
-    /// yields the biggest hexagon wins. Returns the chosen columns/rows and that hexagon width.
+    /// Picks the pointy-top honeycomb packing that shows `count` hexagons at the largest size that
+    /// fits `size` — Zabbix's own behavior, where a few items become a few big hexagons (12 items in
+    /// a wide widget → two offset rows of six). Pointy-top hexagons tessellate in offset rows: each
+    /// row advances by 3/4 of a hexagon's height, and every other row shifts right half a width (so
+    /// the used width spans `columns + 0.5` when there's more than one row). For each candidate
+    /// column count the hexagon size is capped by both width and height; the candidate yielding the
+    /// biggest hexagon wins. Returns the chosen columns/rows and that hexagon width.
     static func honeycombLayout(count: Int, size: CGSize) -> (columns: Int, rows: Int, hexWidth: CGFloat) {
         guard count > 0, size.width > 0, size.height > 0 else { return (max(count, 1), 1, max(size.width, 0)) }
 
         var best = (columns: 1, rows: count, hexWidth: CGFloat(0))
         for columns in 1...count {
             let rows = Int((Double(count) / Double(columns)).rounded(.up))
-            let columnOffset: CGFloat = columns > 1 ? 0.5 : 0 // alternating columns drop half a hex
-            let widthLimited = size.width / (0.75 * CGFloat(columns - 1) + 1)
-            let heightLimited = size.height / (hexHeightRatio * (CGFloat(rows) + columnOffset))
+            let rowShift: CGFloat = rows > 1 ? 0.5 : 0 // alternating rows shift right half a hex
+            let widthLimited = size.width / (CGFloat(columns) + rowShift)
+            let heightLimited = size.height / (hexHeightRatio * (0.75 * CGFloat(rows - 1) + 1))
             let hexWidth = min(widthLimited, heightLimited)
             if hexWidth > best.hexWidth {
                 best = (columns, rows, hexWidth)
@@ -866,10 +900,10 @@ struct HoneycombWidgetContentView: View {
                 let layout = Self.honeycombLayout(count: cells.count, size: geometry.size)
                 let hexWidth = layout.hexWidth
                 let hexHeight = hexWidth * Self.hexHeightRatio
-                let columnOffset: CGFloat = layout.columns > 1 ? 0.5 : 0
-                // The honeycomb's own extent, so it can be centered in whatever space is left over.
-                let usedWidth = hexWidth * (0.75 * CGFloat(layout.columns - 1) + 1)
-                let usedHeight = hexHeight * (CGFloat(layout.rows) + columnOffset)
+                let rowShift: CGFloat = layout.rows > 1 ? 0.5 : 0
+                // The honeycomb's own extent, so the cluster centers in the widget like Zabbix's.
+                let usedWidth = hexWidth * (CGFloat(layout.columns) + rowShift)
+                let usedHeight = hexHeight * (0.75 * CGFloat(layout.rows - 1) + 1)
                 let originX = (geometry.size.width - usedWidth) / 2
                 let originY = (geometry.size.height - usedHeight) / 2
 
@@ -877,9 +911,9 @@ struct HoneycombWidgetContentView: View {
                     ForEach(Array(cells.enumerated()), id: \.element.id) { index, cell in
                         let column = index % layout.columns
                         let row = index / layout.columns
-                        let centerX = originX + hexWidth / 2 + CGFloat(column) * 0.75 * hexWidth
-                        let centerY = originY + hexHeight / 2 + CGFloat(row) * hexHeight
-                            + (column % 2 == 1 ? hexHeight / 2 : 0)
+                        let centerX = originX + hexWidth / 2 + CGFloat(column) * hexWidth
+                            + (row % 2 == 1 ? hexWidth / 2 : 0)
+                        let centerY = originY + hexHeight / 2 + CGFloat(row) * 0.75 * hexHeight
                         hexCell(cell, width: hexWidth, height: hexHeight)
                             .position(x: centerX, y: centerY)
                     }
@@ -889,30 +923,31 @@ struct HoneycombWidgetContentView: View {
         }
     }
 
-    /// One hexagon cell, its fill clipped to the hexagon and its label/value scaled to the cell so a
-    /// few large hexagons read from across the room and many small ones still fit. Text is inset
-    /// horizontally so it stays clear of the hexagon's slanted top/bottom edges.
+    /// One hexagon cell, matching Zabbix's: the host/primary label in regular weight above the value
+    /// in bold (the value is the emphasized element), both near-white and centered, on the slate cell
+    /// fill (threshold coloring overrides the fill). Fonts scale with the cell so a few large
+    /// hexagons read from across the room; text is inset so it clears the slanted edges.
     private func hexCell(_ cell: HoneycombCell, width: CGFloat, height: CGFloat) -> some View {
-        VStack(spacing: 2) {
+        VStack(spacing: height * 0.02) {
             Text(cell.primaryLabel)
-                .font(.system(size: min(max(height * 0.17, 11), 32), weight: .bold, design: .rounded))
-                .foregroundStyle(DashboardTheme.primaryText)
+                .font(.system(size: min(max(height * 0.12, 10), 28), weight: .regular, design: .rounded))
+                .foregroundStyle(Self.zabbixLabelColor)
                 .lineLimit(1)
                 .minimumScaleFactor(0.5)
 
             Text(cell.secondaryLabel)
-                .font(.system(size: min(max(height * 0.14, 9), 24), weight: .regular, design: .rounded))
-                .foregroundStyle(DashboardTheme.secondaryText)
+                .font(.system(size: min(max(height * 0.14, 11), 34), weight: .bold, design: .rounded))
+                .foregroundStyle(Self.zabbixLabelColor)
                 .lineLimit(1)
                 .minimumScaleFactor(0.5)
         }
-        .padding(.horizontal, width * 0.16)
+        .padding(.horizontal, width * 0.12)
         .frame(width: width - Self.hexGap, height: height - Self.hexGap)
         .background(
-            FlatTopHexagon()
-                .fill(cell.backgroundColorHex.flatMap { Color(hex: $0) } ?? DashboardTheme.secondaryCardBackground)
+            PointyTopHexagon()
+                .fill(cell.backgroundColorHex.flatMap { Color(hex: $0) } ?? Self.zabbixCellFill)
         )
-        .clipShape(FlatTopHexagon())
+        .clipShape(PointyTopHexagon())
     }
 }
 
