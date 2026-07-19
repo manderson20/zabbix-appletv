@@ -159,8 +159,25 @@ extension DashboardManager {
                 return .unsupported(rawType: widget.type)
             }
 
+            // When the widget aggregates over a time period (min/max/avg/count/sum/first/last),
+            // show that computed value rather than the instantaneous last sample. A value map and
+            // the up/down trend only apply to the raw last value, so they're suppressed when
+            // aggregating.
+            let aggregateFunction = Self.fieldValue(widget.fields, name: "aggregate_function").flatMap(Int.init) ?? 0
+            let displayValue: String
+            let mappedText: String?
+            if aggregateFunction > 0 {
+                let (from, to) = Self.timePeriod(from: widget.fields)
+                let aggregated = try await aggregatedValue(itemID: item.itemid, valueType: item.value_type?.intValue ?? 0, function: aggregateFunction, from: from, to: to, serverBaseURL: serverBaseURL, authToken: authToken)
+                displayValue = aggregated.map { String($0) } ?? "\u{2014}"
+                mappedText = nil
+            } else {
+                displayValue = item.lastvalue ?? "\u{2014}"
+                mappedText = item.lastvalue.flatMap { item.valuemap?.valueMap?.mappedText(for: $0) }
+            }
+
             var trend: ItemValueTrend?
-            if let lastvalue = item.lastvalue.flatMap(Double.init), let prevvalue = item.prevvalue.flatMap(Double.init) {
+            if aggregateFunction == 0, let lastvalue = item.lastvalue.flatMap(Double.init), let prevvalue = item.prevvalue.flatMap(Double.init) {
                 if lastvalue > prevvalue, let upColor = Self.fieldValue(widget.fields, name: "up_color") {
                     trend = .up(colorHex: upColor)
                 } else if lastvalue < prevvalue, let downColor = Self.fieldValue(widget.fields, name: "down_color") {
@@ -170,12 +187,12 @@ extension DashboardManager {
 
             return .itemValue(
                 name: item.name,
-                value: item.lastvalue ?? "\u{2014}",
+                value: displayValue,
                 units: item.units ?? "",
                 backgroundColorHex: Self.fieldValue(widget.fields, name: "bg_color"),
                 trend: trend,
                 lastUpdated: item.lastclock.flatMap(TimeInterval.init).map { Date(timeIntervalSince1970: $0) },
-                mappedText: item.lastvalue.flatMap { item.valuemap?.valueMap?.mappedText(for: $0) }
+                mappedText: mappedText
             )
 
         case "problemsbysv":
@@ -1204,6 +1221,35 @@ extension DashboardManager {
     /// `bucketedChartPoints` then downsamples for rendering: each time bucket keeps its min and max
     /// (so spikes survive, matching Zabbix's peak-preserving graph) and each run of empty buckets
     /// becomes a single break, so a period the item reported nothing for renders as a gap.
+    /// Fetches an item's history over `[from, to]` and reduces it to a single aggregate value
+    /// (min/max/avg/count/sum/first/last), for widgets that display an aggregate rather than the
+    /// last sample. Returns nil when the item has no data in the window.
+    private func aggregatedValue(
+        itemID: String,
+        valueType: Int,
+        function: Int,
+        from: Date,
+        to: Date,
+        serverBaseURL: URL,
+        authToken: String
+    ) async throws -> Double? {
+        let values = try await zabbixAPIClient.history(
+            serverBaseURL: serverBaseURL,
+            authToken: authToken,
+            itemID: itemID,
+            historyValueType: valueType,
+            sinceUnixTime: Int(from.timeIntervalSince1970),
+            limit: Self.maxHistoryPointsFetched
+        )
+
+        let toEpoch = to.timeIntervalSince1970
+        let points = values.compactMap { value -> (clock: Double, value: Double)? in
+            guard let doubleValue = Double(value.value), let clock = Double(value.clock), clock <= toEpoch else { return nil }
+            return (clock, doubleValue)
+        }
+        return Self.aggregate(points, function: function)
+    }
+
     private func recentPoints(
         for itemID: String,
         valueType: Int,
@@ -1609,6 +1655,24 @@ extension DashboardManager {
         case "url": "URL"
         case "web": "Web monitoring"
         default: type.capitalized
+        }
+    }
+
+    /// Computes a Zabbix aggregate over an item's history points for the item-value/top-hosts
+    /// aggregation. `function`: 1 min, 2 max, 3 avg, 4 count, 5 sum, 6 first (earliest), 7 last
+    /// (latest). Returns nil for no data or an unknown/none function.
+    static func aggregate(_ points: [(clock: Double, value: Double)], function: Int) -> Double? {
+        guard !points.isEmpty else { return nil }
+        let values = points.map(\.value)
+        switch function {
+        case 1: return values.min()
+        case 2: return values.max()
+        case 3: return values.reduce(0, +) / Double(values.count)
+        case 4: return Double(values.count)
+        case 5: return values.reduce(0, +)
+        case 6: return points.min(by: { $0.clock < $1.clock })?.value
+        case 7: return points.max(by: { $0.clock < $1.clock })?.value
+        default: return nil
         }
     }
 
