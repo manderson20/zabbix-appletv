@@ -140,7 +140,7 @@ nonisolated enum DashboardWidgetKind: Sendable {
     case webMonitoring([WebScenarioSummary])
     case itemHistory([ItemHistorySeries])
     case dataOverview(DataOverviewMatrix)
-    case lineChart(series: [ChartSeries], window: ChartTimeWindow)
+    case lineChart(series: [ChartSeries], window: ChartTimeWindow, stacked: Bool)
     case pieChart([ChartSlice])
     case geomap([GeoMapMarker])
     case networkMap(NetworkMapDiagram)
