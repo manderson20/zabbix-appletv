@@ -433,11 +433,15 @@ extension DashboardManager {
 
         return .honeycomb(
             items.prefix(60).map { item in
-                HoneycombCell(
+                // Each cell is tinted by the threshold band its reading meets — the same value-driven
+                // coloring Zabbix's honeycomb applies — using the shared thresholds.N resolver.
+                let cellColor = Self.thresholdColorHex(for: item.lastvalue.flatMap(Double.init), fields: widget.fields)
+                return HoneycombCell(
                     id: item.itemid,
                     primaryLabel: item.hosts.first?.name ?? "",
                     secondaryLabel: item.name,
-                    value: Self.mappedItemValue(rawValue: item.lastvalue, valueMap: item.valuemap?.valueMap)
+                    value: Self.mappedItemValue(rawValue: item.lastvalue, valueMap: item.valuemap?.valueMap),
+                    backgroundColorHex: cellColor
                 )
             }
         )
