@@ -10,7 +10,7 @@ Sorted by worst impact (wrong-data first; renders-nothing / entirely-wrong-conte
 
 | Widget | Support | Worst impact | # gaps | Headline gap |
 |---|---|---|---|---|
-| Item history | unsupported | wrong-data | 6 | Reads non-existent `itemids`; real items live at `columns.N.itemid` → renders nothing |
+| Item history | partial | missing-detail | 2 | Now reads `columns.N.itemid`, `show_lines`, value maps, and honors `time_period`; still missing trend backfill (`columns.N.history`/`approximation`) and per-column thresholds |
 | Map navigation tree | rendered-only | wrong-data | 6 | Ignores entire `navtree`; lists every map on the server, not the configured tree |
 | SLA report | rendered-only | wrong-data | 5 | Shows static target SLO via `sla.get`, never the computed SLI (`sla.getsli`) |
 | Action log | rendered-only | wrong-data | 6 | Hardcoded 7-day window; all four content filters + statuses ignored |
@@ -41,7 +41,7 @@ Sorted by worst impact (wrong-data first; renders-nothing / entirely-wrong-conte
 
 ### Tier 1 — Wrong data (app disagrees with Zabbix; erodes trust on a wall display)
 
-- **Item history — item selector reads the wrong field.** Read columns via `indexedFieldGroups(prefix:"columns")` and use each group's `itemid`; the widget currently reads `itemids` and renders nothing for every real 7.0 widget.
+- ~~**Item history — item selector reads the wrong field.** Read columns via `indexedFieldGroups(prefix:"columns")` and use each group's `itemid`; the widget currently reads `itemids` and renders nothing for every real 7.0 widget.~~ **Done** — reads `columns.N.itemid`, honors `show_lines` (default 25), applies value maps, and bounds to the widget's `time_period`.
 - **Honeycomb — item pattern reads bogus `itempatterns.N.itemname`.** Read the real `items.N` pattern array (`CWidgetFieldPatternSelectItem`) and pass it to `item.get` search; today an unfiltered fetch returns all server items, first 60 shown.
 - **Item navigator — reads field `item` instead of `items.N`.** Same class of bug; switch to the indexed `items` pattern array so scoping actually applies.
 - **Host navigator — reads non-existent `hostids`; real field is `hosts` (name patterns).** Read `hosts.N` patterns and stop hardcoding `filter{status:0}` — honor the `status` field (Any/Enabled/Disabled).

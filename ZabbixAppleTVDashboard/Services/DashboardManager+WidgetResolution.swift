@@ -1015,6 +1015,13 @@ extension DashboardManager {
         // rather than the hardcoded 5.
         let showLines = Self.fieldValue(widget.fields, name: "show_lines").flatMap(Int.init) ?? 25
 
+        // Honor the widget's configured time period (the same resolver every time-based widget uses)
+        // instead of a fixed window ending at now, so a widget scoped to, say, "yesterday" lists
+        // that window's values. history.get returns newest-first from `from`; values newer than the
+        // window's upper bound are trimmed before taking the most recent `showLines`.
+        let (from, to) = Self.timePeriod(from: widget.fields)
+        let toEpoch = to.timeIntervalSince1970
+
         let items = try await zabbixAPIClient.items(serverBaseURL: serverBaseURL, authToken: authToken, itemIDs: itemIDs)
 
         var series: [ItemHistorySeries] = []
@@ -1025,16 +1032,20 @@ extension DashboardManager {
                 authToken: authToken,
                 itemID: item.itemid,
                 historyValueType: historyValueType,
-                sinceUnixTime: Int(Date().timeIntervalSince1970) - Self.defaultHistoryWindowSeconds,
-                limit: showLines
+                sinceUnixTime: Int(from.timeIntervalSince1970),
+                limit: Self.maxHistoryPointsFetched
             )
+
+            let windowed = values
+                .filter { (TimeInterval($0.clock) ?? 0) <= toEpoch }
+                .prefix(showLines)
 
             series.append(
                 ItemHistorySeries(
                     id: item.itemid,
                     itemName: item.name,
                     units: item.units ?? "",
-                    values: values.map { value in
+                    values: windowed.map { value in
                         ItemHistoryPoint(
                             id: "\(item.itemid).\(value.clock)",
                             value: Self.mappedItemValue(rawValue: value.value, valueMap: item.valuemap?.valueMap),
