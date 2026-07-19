@@ -95,6 +95,10 @@ nonisolated struct ZabbixProblemGetParameters: Encodable, Sendable {
     /// (all severities included) when the widget doesn't filter by severity.
     let severities: [Int]?
 
+    /// Host groups to include, matching the widget's positive `groupids.N` scope (already expanded
+    /// to nested subgroups by the caller). Omitted (all groups) when the widget isn't group-scoped.
+    let groupids: [String]?
+
     /// Field to sort results by.
     let sortfield: [String]
 
@@ -130,6 +134,7 @@ nonisolated struct ZabbixProblemGetParameters: Encodable, Sendable {
     init(
         output: [String] = ["eventid", "name", "severity", "clock", "objectid"],
         severities: [Int]? = nil,
+        groupids: [String]? = nil,
         sortfield: [String] = ["eventid"],
         sortorder: String = "DESC",
         limit: Int = 5000,
@@ -139,6 +144,7 @@ nonisolated struct ZabbixProblemGetParameters: Encodable, Sendable {
     ) {
         self.output = output
         self.severities = severities
+        self.groupids = (groupids?.isEmpty == false) ? groupids : nil
         self.sortfield = sortfield
         self.sortorder = sortorder
         self.limit = limit
@@ -148,16 +154,17 @@ nonisolated struct ZabbixProblemGetParameters: Encodable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case output, severities, sortfield, sortorder, limit, suppressed, tags, evaltype
+        case output, severities, groupids, sortfield, sortorder, limit, suppressed, tags, evaltype
     }
 
     // Custom encoding so a `nil` optional is omitted entirely rather than sent as JSON `null`:
     // omitting `suppressed` is how "return problems regardless of suppression" is expressed, and
-    // omitting `severities`/`tags` cleanly means "no such filter".
+    // omitting `severities`/`groupids`/`tags` cleanly means "no such filter".
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(output, forKey: .output)
         try container.encodeIfPresent(severities, forKey: .severities)
+        try container.encodeIfPresent(groupids, forKey: .groupids)
         try container.encode(sortfield, forKey: .sortfield)
         try container.encode(sortorder, forKey: .sortorder)
         try container.encode(limit, forKey: .limit)
@@ -199,13 +206,28 @@ nonisolated struct ZabbixHostAvailabilityParameters: Encodable, Sendable {
     /// Requests each host's interfaces with their type and availability.
     let selectInterfaces: [String]
 
+    /// Host groups to include, matching the widget's `groupids.N` scope (already expanded to nested
+    /// subgroups). Omitted (whole server counted) when the widget isn't group-scoped.
+    let groupids: [String]?
+
     /// Restricts results to enabled hosts.
     let filter: ZabbixEnabledFilter
 
-    init(output: [String] = ["hostid"], selectInterfaces: [String] = ["type", "available"]) {
+    init(output: [String] = ["hostid"], selectInterfaces: [String] = ["type", "available"], groupIDs: [String]? = nil) {
         self.output = output
         self.selectInterfaces = selectInterfaces
+        self.groupids = (groupIDs?.isEmpty == false) ? groupIDs : nil
         self.filter = ZabbixEnabledFilter()
+    }
+
+    private enum CodingKeys: String, CodingKey { case output, selectInterfaces, groupids, filter }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(output, forKey: .output)
+        try container.encode(selectInterfaces, forKey: .selectInterfaces)
+        try container.encodeIfPresent(groupids, forKey: .groupids)
+        try container.encode(filter, forKey: .filter)
     }
 }
 
@@ -265,6 +287,27 @@ nonisolated struct ZabbixHostGroupLookupParameters: Encodable, Sendable {
         self.hostids = hostIDs
         self.output = output
         self.selectHostGroups = selectHostGroups
+    }
+}
+
+/// Parameters for `hostgroup.get`. Resolves specific groups by ID, or all groups when `groupIDs`
+/// is nil — used to expand a widget's selected groups to their nested subgroups by name, the way
+/// Zabbix's own frontend does before it queries.
+nonisolated struct ZabbixHostGroupGetParameters: Encodable, Sendable {
+    let groupids: [String]?
+    let output: [String]
+
+    init(groupIDs: [String]? = nil, output: [String] = ["groupid", "name"]) {
+        self.groupids = groupIDs
+        self.output = output
+    }
+
+    private enum CodingKeys: String, CodingKey { case groupids, output }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(groupids, forKey: .groupids)
+        try container.encode(output, forKey: .output)
     }
 }
 

@@ -110,6 +110,7 @@ extension DashboardManager {
                 serverBaseURL: serverBaseURL,
                 authToken: authToken,
                 severities: severities.isEmpty ? nil : severities,
+                groupIDs: try await scopedGroupIDs(from: widget, serverBaseURL: serverBaseURL, authToken: authToken),
                 tags: Self.tagFilters(from: widget.fields),
                 evalType: Self.tagEvalType(from: widget.fields),
                 showSuppressed: Self.fieldValue(widget.fields, name: "show_suppressed") == "1"
@@ -189,6 +190,7 @@ extension DashboardManager {
                 serverBaseURL: serverBaseURL,
                 authToken: authToken,
                 severities: severities.isEmpty ? nil : severities,
+                groupIDs: try await scopedGroupIDs(from: widget, serverBaseURL: serverBaseURL, authToken: authToken),
                 tags: Self.tagFilters(from: widget.fields),
                 evalType: Self.tagEvalType(from: widget.fields),
                 showSuppressed: Self.fieldValue(widget.fields, name: "show_suppressed") == "1"
@@ -210,7 +212,7 @@ extension DashboardManager {
             let interfaceTypes = Self.indexedValues(widget.fields, name: "interface_type").compactMap(Int.init)
             let requestedTypes = interfaceTypes.isEmpty ? [1] : interfaceTypes
 
-            let hosts = try await zabbixAPIClient.hostsWithInterfaces(serverBaseURL: serverBaseURL, authToken: authToken)
+            let hosts = try await zabbixAPIClient.hostsWithInterfaces(serverBaseURL: serverBaseURL, authToken: authToken, groupIDs: try await scopedGroupIDs(from: widget, serverBaseURL: serverBaseURL, authToken: authToken))
 
             var rows: [HostInterfaceAvailability] = [
                 Self.hostAvailabilityRow(name: "Total hosts", interfacesByHost: hosts.map(\.interfaces))
@@ -452,6 +454,7 @@ extension DashboardManager {
             serverBaseURL: serverBaseURL,
             authToken: authToken,
             severities: severities.isEmpty ? nil : severities,
+            groupIDs: try await scopedGroupIDs(from: widget, serverBaseURL: serverBaseURL, authToken: authToken),
             tags: Self.tagFilters(from: widget.fields),
             evalType: Self.tagEvalType(from: widget.fields)
         )
@@ -1581,5 +1584,28 @@ extension DashboardManager {
     /// then applies its And/Or default).
     static func tagEvalType(from fields: [ZabbixWidgetField]) -> Int? {
         fieldValue(fields, name: "evaltype").flatMap(Int.init)
+    }
+
+    /// Resolves a widget's positive host-group scope (`groupids.N`) into the full set of group IDs
+    /// to pass to `groupids`-supporting API calls — **including nested subgroups**, which Zabbix's
+    /// own frontend expands before querying but the API does not. Returns `nil` when the widget has
+    /// no group scope (meaning "all groups"), so callers pass it straight through.
+    ///
+    /// Nested expansion resolves the selected groups' names, then adds every visible group whose
+    /// name equals one of them or begins with "<name>/". Falls back to the literal selected IDs if
+    /// the name lookup fails, so scoping never silently widens to the whole server.
+    func scopedGroupIDs(from widget: ZabbixWidget, serverBaseURL: URL, authToken: String) async throws -> [String]? {
+        let selected = Set(Self.indexedValues(widget.fields, name: "groupids"))
+        guard !selected.isEmpty else { return nil }
+
+        let allGroups = (try? await zabbixAPIClient.hostGroupNames(serverBaseURL: serverBaseURL, authToken: authToken, groupIDs: nil)) ?? []
+        let selectedNames = allGroups.filter { selected.contains($0.groupid) }.map(\.name)
+        guard !selectedNames.isEmpty else { return Array(selected) }
+
+        var expanded = selected
+        for group in allGroups where selectedNames.contains(where: { group.name == $0 || group.name.hasPrefix("\($0)/") }) {
+            expanded.insert(group.groupid)
+        }
+        return Array(expanded)
     }
 }
