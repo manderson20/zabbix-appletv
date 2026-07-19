@@ -873,27 +873,76 @@ struct TopHostsWidgetContentView: View {
 struct TriggerOverviewWidgetContentView: View {
     let rows: [TriggerOverviewRow]
 
+    /// One column per distinct trigger name — Zabbix's trigger overview is a host × trigger matrix,
+    /// not a per-host strip of chips.
+    private static let triggerColumnWidth: CGFloat = 64
+    private static let rotatedHeaderHeight: CGFloat = 130
+    private static let cellHeight: CGFloat = 27
+
+    /// Distinct trigger names across all hosts, in first-appearance order: the matrix's columns.
+    private var triggerColumns: [String] {
+        var seen = Set<String>()
+        var columns: [String] = []
+        for row in rows {
+            for trigger in row.triggers where !seen.contains(trigger.name) {
+                seen.insert(trigger.name)
+                columns.append(trigger.name)
+            }
+        }
+        return columns
+    }
+
     var body: some View {
         if rows.isEmpty {
             Text("No active triggers")
                 .font(.system(size: 16, weight: .regular, design: .rounded))
                 .foregroundStyle(DashboardTheme.secondaryText)
         } else {
+            let columns = triggerColumns
+            // Zabbix's layout: a "Hosts" column of host names, one column per trigger with its name
+            // rotated vertically in the header, and a full severity-colored cell where that host has
+            // that trigger in problem state (green when an OK trigger is shown via "Show: Any");
+            // blank where the host doesn't have the trigger.
             AutoScrollingContent {
-                VStack(alignment: .leading, spacing: 8) {
-                    ForEach(rows) { row in
-                        HStack(alignment: .top, spacing: 10) {
-                            Text(row.hostName)
-                                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                ScrollView(.horizontal, showsIndicators: false) {
+                    Grid(alignment: .leading, horizontalSpacing: 3, verticalSpacing: 3) {
+                        GridRow {
+                            Text("Hosts")
+                                .font(.system(size: 14, weight: .regular, design: .rounded))
                                 .foregroundStyle(DashboardTheme.secondaryText)
-                                .frame(width: 110, alignment: .leading)
-                                .lineLimit(1)
+                                .frame(maxHeight: .infinity, alignment: .bottom)
+                                .gridColumnAlignment(.leading)
 
-                            HStack(spacing: 4) {
-                                ForEach(row.triggers.prefix(20)) { trigger in
-                                    RoundedRectangle(cornerRadius: 3, style: .continuous)
-                                        .fill(trigger.isProblem ? severityIndicatorColor(for: trigger.severity) : Color.green)
-                                        .frame(width: 14, height: 14)
+                            ForEach(columns, id: \.self) { name in
+                                // Rotated header: lay the text out horizontally at the header's
+                                // height, then rotate it into the narrow column.
+                                Text(name)
+                                    .font(.system(size: 12, weight: .regular, design: .rounded))
+                                    .foregroundStyle(DashboardTheme.secondaryText)
+                                    .lineLimit(1)
+                                    .frame(width: Self.rotatedHeaderHeight - 10, alignment: .leading)
+                                    .rotationEffect(.degrees(-90))
+                                    .frame(width: Self.triggerColumnWidth, height: Self.rotatedHeaderHeight, alignment: .bottom)
+                            }
+                        }
+
+                        ForEach(rows) { row in
+                            GridRow {
+                                Text(row.hostName)
+                                    .font(.system(size: 15, weight: .regular, design: .rounded))
+                                    .foregroundStyle(DashboardTheme.primaryText)
+                                    .lineLimit(1)
+                                    .frame(minWidth: 150, alignment: .leading)
+
+                                ForEach(columns, id: \.self) { name in
+                                    if let trigger = row.triggers.first(where: { $0.name == name }) {
+                                        RoundedRectangle(cornerRadius: 2, style: .continuous)
+                                            .fill(trigger.isProblem ? severityIndicatorColor(for: trigger.severity) : Color.green)
+                                            .frame(width: Self.triggerColumnWidth, height: Self.cellHeight)
+                                    } else {
+                                        Color.clear
+                                            .frame(width: Self.triggerColumnWidth, height: Self.cellHeight)
+                                    }
                                 }
                             }
                         }
