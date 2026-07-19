@@ -218,7 +218,7 @@ struct ZabbixAppleTVDashboardTests {
                 frame: DashboardWidgetFrame(x: 4, y: 0, width: 8, height: 4),
                 refreshIntervalSeconds: 30,
                 hasHiddenHeader: false,
-                kind: .itemValue(name: "CPU Load", value: "0.42", units: "", backgroundColorHex: nil, trend: nil, lastUpdated: nil, mappedText: nil)
+                kind: .itemValue(name: "CPU Load", value: "0.42", units: "", decimalPlaces: 2, backgroundColorHex: nil, trend: nil, lastUpdated: nil, mappedText: nil)
             )
         ]
 
@@ -664,6 +664,20 @@ struct ZabbixAppleTVDashboardTests {
         #expect(items.first?.key_ == "web.test.fail[Homepage]")
         #expect(items.first?.lastvalue == "0")
         #expect(items.first?.hostid == "10461")
+    }
+
+    @Test func itemValueFormattingHonorsDecimalPlacesAndUnits() throws {
+        // Default 2 decimals with a unit suffix.
+        #expect(ZabbixValueFormatting.formatItemValue(1, units: "%") == "1.00 %")
+        // decimal_places = 0 → integer; = 3 → three places.
+        #expect(ZabbixValueFormatting.formatItemValue(1.5, units: "%", decimalPlaces: 0) == "2 %")
+        #expect(ZabbixValueFormatting.formatItemValue(0.4237, units: "", decimalPlaces: 3) == "0.424")
+        // Empty units (units_show off) → no suffix.
+        #expect(ZabbixValueFormatting.formatItemValue(42, units: "", decimalPlaces: 2) == "42.00")
+        // Metric scaling still applies, with the chosen precision.
+        #expect(ZabbixValueFormatting.formatItemValue(1_500_000, units: "bps", decimalPlaces: 1) == "1.5 Mbps")
+        // Out-of-range decimals are clamped (no crash).
+        #expect(ZabbixValueFormatting.formatItemValue(1, units: "", decimalPlaces: -3) == "1")
     }
 
     @Test func thresholdColorPicksHighestBandMet() throws {

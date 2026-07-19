@@ -209,10 +209,19 @@ extension DashboardManager {
                 }
             }
 
+            // Units display honors the widget's overrides: `units` replaces the item's own units,
+            // `units_show` (default on) toggles whether any unit is shown, and `decimal_places`
+            // (default 2) sets the precision. Passing an empty unit string suppresses the suffix.
+            let showUnits = Self.fieldValue(widget.fields, name: "units_show") != "0"
+            let unitsOverride = Self.fieldValue(widget.fields, name: "units")
+            let resolvedUnits = showUnits ? (unitsOverride?.isEmpty == false ? unitsOverride! : (item.units ?? "")) : ""
+            let decimalPlaces = Self.fieldValue(widget.fields, name: "decimal_places").flatMap(Int.init) ?? 2
+
             return .itemValue(
                 name: item.name,
                 value: displayValue,
-                units: item.units ?? "",
+                units: resolvedUnits,
+                decimalPlaces: decimalPlaces,
                 backgroundColorHex: backgroundColorHex,
                 trend: trend,
                 lastUpdated: item.lastclock.flatMap(TimeInterval.init).map { Date(timeIntervalSince1970: $0) },

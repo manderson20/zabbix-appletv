@@ -66,7 +66,7 @@ cosmetic-leaning last).
 | System information | partial | missing-detail | 1 | `info_type=1` shows HA nodes and `isRunning` is derived from them (`hanode.get`); standalone still uses the API-success proxy for running |
 | Clock | partial | missing-detail | 1 | `time_type=host` (via `system.localtime` offset) and `tzone_timezone` now honored; server-time mode still falls back to local |
 | Map | full | missing-detail | 1 | Trigger + host-group elements now colored by their real severity; only submap (map-type) elements — needing recursive child-map rollup — stay OK |
-| Item value | partial | missing-detail | 4 | units/`units_show`/`decimal_places`/`description` overrides ignored — aggregation + `thresholds` alert color now honored |
+| Item value | partial | missing-detail | 2 | `units`/`units_show`/`decimal_places` overrides now applied — aggregation, `thresholds`, and formatting done; only the `description` label-macro template remains (plus `min`/`max`/position knobs) |
 | Gauge | partial | missing-detail | 8 | `description`/`units`/`units_show`/`decimal_places` overrides ignored (value + threshold arc correct) |
 | Pie chart | partial | missing-detail | 5 | Pattern datasets expand correctly + per-dataset aggregation honored; still missing merge/center-total, units, value maps |
 | Host availability | partial | missing-detail | 3 | Ignores maintenance, active-check availability (`active_available`), and layout — `groupids` + multi-interface classification now correct |
@@ -131,8 +131,9 @@ cosmetic-leaning last).
   overview) are rendered as flat lists. (The `navtree` hierarchy is now rendered indented by depth.)
 - **`time_period.to` and non-relative expressions.** ~~Item history~~ (done). Classic/svg graphs and
   Action log still always end at `now()` and drop `now/d`/absolute windows.
-- **Units + decimal formatting.** `units`/`units_show` overrides and `decimal_places` ignored in Item
-  value, Gauge, Honeycomb, Top hosts, Pie chart — raw `lastvalue` string shown.
+- **Units + decimal formatting.** ~~Item value~~ **done** (`units`/`units_show`/`decimal_places` via
+  the shared `formatItemValue` helper). Still ignored in Gauge, Honeycomb, Top hosts, Pie chart —
+  raw value string shown; the same helper should be wired into those next.
 - **Label/description templates.** `description`/`primary_label`/`secondary_label` macro templates
   ignored (Gauge, Item value, Honeycomb).
 - **Pie chart merge + center total.** `merge`/`merge_percent` and the `total_show`/center-value
