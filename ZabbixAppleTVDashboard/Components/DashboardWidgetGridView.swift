@@ -162,6 +162,8 @@ private struct DashboardWidgetCardView: View {
             NetworkMapWidgetContentView(diagram: diagram)
         case let .mapList(maps):
             MapListWidgetContentView(maps: maps)
+        case let .navigationTree(nodes):
+            NavigationTreeWidgetContentView(nodes: nodes)
         case let .hostList(hosts):
             HostListWidgetContentView(hosts: hosts)
         case let .itemList(items):

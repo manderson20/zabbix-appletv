@@ -158,6 +158,38 @@ struct MapListWidgetContentView: View {
     }
 }
 
+struct NavigationTreeWidgetContentView: View {
+    let nodes: [NavTreeNode]
+
+    var body: some View {
+        if nodes.isEmpty {
+            Text("No navigation tree configured")
+                .font(.system(size: 16, weight: .regular, design: .rounded))
+                .foregroundStyle(DashboardTheme.secondaryText)
+        } else {
+            AutoScrollingContent {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(nodes) { node in
+                        HStack(spacing: 8) {
+                            // Folder glyph for grouping nodes, a map glyph for nodes linking a map.
+                            Image(systemName: node.linksToMap ? "map" : "folder")
+                                .font(.system(size: 14))
+                                .foregroundStyle(DashboardTheme.secondaryText)
+
+                            Text(node.name)
+                                .font(.system(size: 16, weight: node.depth == 0 ? .semibold : .regular, design: .rounded))
+                                .foregroundStyle(DashboardTheme.primaryText)
+                                .lineLimit(1)
+                        }
+                        // Indent by depth so the hierarchy reads as a tree.
+                        .padding(.leading, CGFloat(node.depth) * 18)
+                    }
+                }
+            }
+        }
+    }
+}
+
 struct HostListWidgetContentView: View {
     let hosts: [HostListEntry]
 

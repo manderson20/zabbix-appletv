@@ -345,7 +345,7 @@ extension DashboardManager {
             return try await resolveNetworkMap(widget, serverBaseURL: serverBaseURL, authToken: authToken)
 
         case "navtree":
-            return try await resolveMapNavigationTree(serverBaseURL: serverBaseURL, authToken: authToken)
+            return resolveMapNavigationTree(widget)
 
         case "hostnavigator":
             return try await resolveHostNavigator(widget, serverBaseURL: serverBaseURL, authToken: authToken)
@@ -928,9 +928,58 @@ extension DashboardManager {
     /// click through a hierarchy to choose which map a paired Map widget shows — a selection model
     /// with no clear unattended-kiosk equivalent, per the static-display treatment agreed for
     /// navigator-style widgets.
-    private func resolveMapNavigationTree(serverBaseURL: URL, authToken: String) async throws -> DashboardWidgetKind {
-        let maps = try await zabbixAPIClient.maps(serverBaseURL: serverBaseURL, authToken: authToken)
-        return .mapList(maps.map { MapListEntry(id: $0.sysmapid, name: $0.name) })
+    /// Renders the widget's authored `navtree` hierarchy — previously the resolver took no widget and
+    /// listed every map on the server instead. The tree is stored as a flat set of `navtree.N.*`
+    /// nodes (name / parent / order / sysmapid), which are assembled into a depth-tagged ordered list.
+    private func resolveMapNavigationTree(_ widget: ZabbixWidget) -> DashboardWidgetKind {
+        .navigationTree(Self.buildNavTree(from: widget.fields))
+    }
+
+    /// Assembles the flat `navtree.N.*` node fields into a pre-order, depth-tagged list: root nodes
+    /// (parent 0) first, each followed by its children ordered by `order` then index. Cyclic parent
+    /// references are broken by a visited set, and any orphan whose parent doesn't exist is emitted
+    /// at the top level so no authored node is silently dropped.
+    static func buildNavTree(from fields: [ZabbixWidgetField]) -> [NavTreeNode] {
+        var byIndex: [Int: [String: String]] = [:]
+        let prefix = "navtree."
+        for field in fields where field.name.hasPrefix(prefix) {
+            let remainder = field.name.dropFirst(prefix.count)
+            let parts = remainder.split(separator: ".", maxSplits: 1)
+            guard parts.count == 2, let index = Int(parts[0]) else { continue }
+            byIndex[index, default: [:]][String(parts[1])] = field.value
+        }
+        guard !byIndex.isEmpty else { return [] }
+
+        var childrenByParent: [Int: [Int]] = [:]
+        for (index, group) in byIndex {
+            childrenByParent[group["parent"].flatMap(Int.init) ?? 0, default: []].append(index)
+        }
+        func sortedChildren(of parent: Int) -> [Int] {
+            (childrenByParent[parent] ?? []).sorted { lhs, rhs in
+                let lo = byIndex[lhs]?["order"].flatMap(Int.init) ?? 0
+                let ro = byIndex[rhs]?["order"].flatMap(Int.init) ?? 0
+                return lo != ro ? lo < ro : lhs < rhs
+            }
+        }
+
+        var result: [NavTreeNode] = []
+        var visited = Set<Int>()
+        func visit(_ index: Int, depth: Int) {
+            guard let group = byIndex[index], visited.insert(index).inserted else { return }
+            let sysmapid = group["sysmapid"] ?? "0"
+            result.append(NavTreeNode(
+                id: String(index),
+                name: group["name"] ?? "",
+                depth: depth,
+                linksToMap: !(sysmapid == "0" || sysmapid.isEmpty)
+            ))
+            for child in sortedChildren(of: index) { visit(child, depth: depth + 1) }
+        }
+
+        for root in sortedChildren(of: 0) { visit(root, depth: 0) }
+        // Any node not reached from a parent-0 root (orphan / broken parent ref) renders at top level.
+        for index in byIndex.keys.sorted() where !visited.contains(index) { visit(index, depth: 0) }
+        return result
     }
 
     // MARK: - Host navigator

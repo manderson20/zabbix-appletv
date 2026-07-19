@@ -11,7 +11,7 @@
 
 Coverage is broad and, since the original audit, materially deeper. Every widget renders
 *something*, and the count of widgets whose worst realistic-config behavior is **wrong-data** has
-dropped from 25/26 to **4/26**, with the other 22 down to **missing-detail** (renders correctly
+dropped from 25/26 to **3/26**, with the other 23 down to **missing-detail** (renders correctly
 but ignores a display or layout knob). The improvement came almost entirely from the cross-cutting
 helpers the original audit predicted would each fix a class of widgets:
 
@@ -34,10 +34,11 @@ helpers the original audit predicted would each fix a class of widgets:
   do (and honor their scope/`show_lines`). **Map navigation tree still does not.**
 
 The genuine strengths are unchanged: everything fetches under the session token, so server-side
-permissions hold and nothing leaks. The wrong-data set is down to 4 and is now concentrated in a
-handful of genuinely-unbuilt features — the navtree hierarchy (Map navigation tree), Action log's
-fixed window & content filters, and the Data-overview / Honeycomb row caps — rather than a systemic
-scope/filter drop. The scope, tag, aggregation, value-map, status-derivation, and time-period themes the original
+permissions hold and nothing leaks. The wrong-data set is down to 3: Action log's fixed window (its content filters are wired but the
+field names are unverified), and the Data-overview / Honeycomb `prefix(N)` row caps — which are
+deliberate TV safety limits with no corresponding Zabbix field. Every systemic theme the original
+audit opened with — scope, tags, aggregation, value maps, status derivation, time period, indexed
+fields, and passing the widget to every resolver — is now closed. The scope, tag, aggregation, value-map, status-derivation, and time-period themes the original
 audit opened with are all closed.
 
 ## 2. Coverage matrix
@@ -47,7 +48,7 @@ cosmetic-leaning last).
 
 | Widget | Support | Worst impact | # gaps | Headline gap |
 |---|---|---|---|---|
-| Map navigation tree | rendered-only | wrong-data | 6 | Resolver takes no `widget`; ignores entire `navtree`, lists every map on the server |
+| Map navigation tree | partial | missing-detail | 1 | Now receives the widget and renders the authored `navtree` hierarchy (indented, ordered); only per-node problem indicators remain |
 | SLA report | partial | missing-detail | 2 | Computes achieved SLI per service (`sla.getsli`) vs target with pass/fail color; shows only the latest period, and `serviceid` field name assumed (unverified live) |
 | Web monitoring | partial | missing-detail | 1 | Status (`web.test.fail`) + full scope (`groupids`/`hostids`/tags/`exclude_groupids`) honored; only the 15-row view cap remains |
 | Top triggers | partial | missing-detail | 1 | Now ranks by problem-event frequency over `time_period` with a count column; only acknowledgement filtering remains |
@@ -89,6 +90,7 @@ cosmetic-leaning last).
 - ~~**Map — non-host elements always OK.**~~ **Done** — trigger elements take the worst severity of their referenced triggers and host-group elements the worst across the group's hosts; only submap elements (needing a recursive child-map rollup) stay OK.
 - ~~**Graph (classic) — graph type lost + Simple-graph unsupported.**~~ **Done** — pie/exploded-pie graphs (`graphtype` 2/3) render as a pie of each item's latest value, and Simple-graph mode (`itemid`, no `graphid`) plots the single item; stacked graphs (type 1) still draw as overlaid lines (correct data, visual stacking pending).
 - ~~**Graph (svggraph) — per-dataset aggregation + timeshift.**~~ **Done** — each dataset's `aggregate_function` is applied over `aggregate_interval` buckets, and `timeshift` moves the data window and re-aligns it on the current axis for overlays (reusing the shared `aggregate`/duration helpers).
+- ~~**Map navigation tree — resolver doesn't receive the widget.**~~ **Done** — now accepts `ZabbixWidget` and renders the authored `navtree` hierarchy (parent/order/depth) as an indented, ordered list instead of listing every server map; per-node problem indicators are a follow-up.
 - ~~**Item value — thresholds ignored.**~~ **Done** — reads `thresholds.N` (shared `thresholdColorHex` helper) so a value crossing a band repaints the background with its alert color.
 - ~~**Honeycomb — thresholds/cell coloring absent.**~~ **Done** — each cell is tinted by the threshold band its reading meets (same `thresholdColorHex` helper).
 - ~~**Geomap — marker severity ignores widget `tags`.**~~ **Done** — `maxSeverityByHostID` now takes the widget's tag + severity filter, so a marker's color reflects only the problems the widget shows.
@@ -110,8 +112,6 @@ cosmetic-leaning last).
 
 **Still open:**
 
-- **Map navigation tree — resolver doesn't receive the widget.** Change the signature to accept
-  `ZabbixWidget`, then render the authored `navtree` hierarchy instead of listing every server map.
 - **Host availability — `maintenance` not honored.** Add the `maintenance_status` filter (default
   excludes maintenance); also fetch `active_available` for active-check availability.
 - **Graph (svggraph) — left/right `axisy` assignment.** Datasets can plot against a left or right Y
@@ -125,8 +125,8 @@ cosmetic-leaning last).
   `prefix(60)` and Data overview `prefix(100)` — these two are **safety caps with no corresponding
   Zabbix field**, left as-is. Problems default 20 vs 25; Top triggers 20 vs 10 — minor.
 - **Grouping/tree structure flattened.** `group_by` (Host/Item navigator), `show_type=GROUPS`
-  (Problems by severity), per-severity columns (Problem hosts), hosts×items matrix (Data overview),
-  and the `navtree` hierarchy are all rendered as flat lists.
+  (Problems by severity), per-severity columns (Problem hosts), and the hosts×items matrix (Data
+  overview) are rendered as flat lists. (The `navtree` hierarchy is now rendered indented by depth.)
 - **`time_period.to` and non-relative expressions.** ~~Item history~~ (done). Classic/svg graphs and
   Action log still always end at `now()` and drop `now/d`/absolute windows.
 - **Units + decimal formatting.** `units`/`units_show` overrides and `decimal_places` ignored in Item
@@ -187,8 +187,8 @@ These were the leverage points, and most have now been built. Status is marked i
 - **Field-serialization discipline.** ✅ **Resolved for the known cases** — `columns.N.itemid`,
   `items.N`, `hosts.N`, `slaid.0` all read with indexed helpers now. A lint/test enforcing this
   convention would prevent regressions.
-- **Pass the widget to every resolver.** ◐ **Partly** — Problem hosts, Action log, Discovery now
-  receive it. **Map navigation tree still does not.**
+- **Pass the widget to every resolver.** ✅ **Done** — Problem hosts, Action log, Discovery, and Map
+  navigation tree all now receive the widget; no resolver is structurally blocked from reading fields.
 - **Ranking + grouping models.** Top hosts ranking built; Top triggers frequency ranking and the
   grouping/tree widgets (navigators `group_by`, Problems-by-severity groups, Problem hosts severity
   columns, Data overview matrix, navtree hierarchy) still share missing "nest-by-attribute"
