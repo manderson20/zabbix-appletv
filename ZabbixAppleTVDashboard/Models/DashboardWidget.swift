@@ -140,7 +140,7 @@ nonisolated enum DashboardWidgetKind: Sendable {
     case webMonitoring([WebScenarioSummary])
     case itemHistory([ItemHistorySeries], showTimestamp: Bool)
     case dataOverview(DataOverviewMatrix)
-    case lineChart(series: [ChartSeries], window: ChartTimeWindow, stacked: Bool, showLegend: Bool, showLegendStats: Bool, yMin: Double?, yMax: Double?)
+    case lineChart(series: [ChartSeries], window: ChartTimeWindow, stacked: Bool, showLegend: Bool, showLegendStats: Bool, yMin: Double?, yMax: Double?, triggerLines: [GraphTriggerLine])
     case pieChart([ChartSlice], isDonut: Bool)
     case geomap(markers: [GeoMapMarker], defaultView: GeoMapView?)
     case networkMap(NetworkMapDiagram)
@@ -159,6 +159,22 @@ nonisolated enum DashboardWidgetKind: Sendable {
     case referencedObjectUnavailable
 
     case unsupported(rawType: String)
+}
+
+/// A trigger's constant threshold drawn as a dashed horizontal line on a classic graph, matching
+/// Zabbix's own trigger lines (e.g. the "> 90" of a high-CPU trigger at y = 90).
+nonisolated struct GraphTriggerLine: Identifiable, Sendable {
+    /// Stable line identifier (the trigger id).
+    let id: String
+
+    /// Legend label, Zabbix-style: "Trigger: <name> [> 90]".
+    let label: String
+
+    /// The threshold's y value.
+    let value: Double
+
+    /// Severity color hex for the line and its legend key.
+    let colorHex: String
 }
 
 /// Whether an item value's widget increased or decreased since its previous poll, with the

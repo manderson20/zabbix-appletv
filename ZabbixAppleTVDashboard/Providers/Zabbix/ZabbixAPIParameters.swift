@@ -29,6 +29,29 @@ nonisolated struct ZabbixCountParameters: Encodable, Sendable {
     }
 }
 
+/// Parameters for `trigger.get` when fetching the enabled triggers defined on a set of items,
+/// with their expressions expanded — used to draw a classic graph's trigger threshold lines.
+nonisolated struct ZabbixItemTriggerParameters: Encodable, Sendable {
+    let itemids: [String]
+    let output: [String]
+
+    /// Expands `{$MACRO}` references in expressions so a macro-based threshold still parses to a
+    /// number, the same expanded form Zabbix's own graph code reads.
+    let expandExpression = true
+
+    /// Expands macros in trigger names too ("over {$CPU.UTIL.CRIT}% ..." → "over 90% ..."), as
+    /// Zabbix's own legend shows them.
+    let expandDescription = true
+
+    /// Restricts to enabled triggers, as Zabbix's graphs draw lines only for those.
+    let filter = ["status": "0"]
+
+    init(itemIDs: [String], output: [String] = ["triggerid", "description", "priority", "expression"]) {
+        self.itemids = itemIDs
+        self.output = output
+    }
+}
+
 /// Parameters for `item.get` when fetching a single item by exact key — used for the Zabbix
 /// server's internal `zabbix[requiredperformance]` reading in the System information widget.
 nonisolated struct ZabbixItemByKeyParameters: Encodable, Sendable {

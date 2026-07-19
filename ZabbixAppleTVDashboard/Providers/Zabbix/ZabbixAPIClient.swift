@@ -183,6 +183,22 @@ actor ZabbixAPIClient {
         )
     }
 
+    /// Fetches the enabled triggers defined on a set of items, with expressions expanded — for a
+    /// classic graph's trigger threshold lines.
+    func triggersForItems(serverBaseURL: URL, authToken: String, itemIDs: [String]) async throws -> [ZabbixTriggerDefinition] {
+        guard !itemIDs.isEmpty else {
+            return []
+        }
+
+        return try await send(
+            method: "trigger.get",
+            params: ZabbixItemTriggerParameters(itemIDs: itemIDs),
+            serverBaseURL: serverBaseURL,
+            authToken: authToken,
+            resultType: [ZabbixTriggerDefinition].self
+        )
+    }
+
     /// Resolves the hosts a set of triggers belong to.
     func triggerHosts(serverBaseURL: URL, authToken: String, triggerIDs: [String]) async throws -> [ZabbixTriggerHosts] {
         guard !triggerIDs.isEmpty else {

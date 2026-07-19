@@ -26,3 +26,19 @@ nonisolated struct ZabbixTriggerSummary: Decodable, Sendable {
     /// Hosts the trigger is defined on.
     let hosts: [ZabbixHostReference]
 }
+
+/// A trigger definition with its (expanded) expression, as fetched for a classic graph's trigger
+/// threshold lines.
+nonisolated struct ZabbixTriggerDefinition: Decodable, Sendable {
+    /// Zabbix trigger identifier.
+    let triggerid: String
+
+    /// Trigger display name.
+    let description: String
+
+    /// Severity, from 0 (not classified) to 5 (disaster) — colors the drawn line.
+    let priority: ZabbixNumericString
+
+    /// The trigger expression with macros expanded (requested via `expandExpression`).
+    let expression: String?
+}
