@@ -294,10 +294,10 @@ actor ZabbixAPIClient {
     }
 
     /// Fetches recent notifications and remote commands since a given time.
-    func alerts(serverBaseURL: URL, authToken: String, sinceUnixTime: Int) async throws -> [ZabbixAlert] {
+    func alerts(serverBaseURL: URL, authToken: String, sinceUnixTime: Int, limit: Int = 50) async throws -> [ZabbixAlert] {
         try await send(
             method: "alert.get",
-            params: ZabbixAlertGetParameters(sinceUnixTime: sinceUnixTime),
+            params: ZabbixAlertGetParameters(sinceUnixTime: sinceUnixTime, limit: limit),
             serverBaseURL: serverBaseURL,
             authToken: authToken,
             resultType: [ZabbixAlert].self

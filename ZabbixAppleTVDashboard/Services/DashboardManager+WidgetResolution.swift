@@ -272,7 +272,7 @@ extension DashboardManager {
             return try await resolveProblemHosts(widget, serverBaseURL: serverBaseURL, authToken: authToken)
 
         case "actionlog":
-            return try await resolveActionLog(serverBaseURL: serverBaseURL, authToken: authToken)
+            return try await resolveActionLog(widget, serverBaseURL: serverBaseURL, authToken: authToken)
 
         case "discovery":
             return try await resolveDiscoveryStatus(serverBaseURL: serverBaseURL, authToken: authToken)
@@ -926,9 +926,17 @@ extension DashboardManager {
 
     /// Bounded to the last 7 days: an unbounded `alert.get` call timed out against a live server
     /// with years of alert history.
-    private func resolveActionLog(serverBaseURL: URL, authToken: String) async throws -> DashboardWidgetKind {
+    private func resolveActionLog(
+        _ widget: ZabbixWidget,
+        serverBaseURL: URL,
+        authToken: String
+    ) async throws -> DashboardWidgetKind {
         let sinceUnixTime = Int(Date().timeIntervalSince1970) - 7 * 24 * 3600
-        let alerts = try await zabbixAPIClient.alerts(serverBaseURL: serverBaseURL, authToken: authToken, sinceUnixTime: sinceUnixTime)
+        // "Show lines" caps the number of recent alerts listed (Zabbix's default is 25); alert.get
+        // already returns them newest-first, so this bounds the fetch to the configured row count
+        // rather than the client's blanket 50.
+        let showLines = Self.fieldValue(widget.fields, name: "show_lines").flatMap(Int.init) ?? 25
+        let alerts = try await zabbixAPIClient.alerts(serverBaseURL: serverBaseURL, authToken: authToken, sinceUnixTime: sinceUnixTime, limit: showLines)
 
         return .actionLog(
             alerts.map { alert in
