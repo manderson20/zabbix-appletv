@@ -516,9 +516,9 @@ struct GaugeWidgetContentView: View {
     /// plain formatted value.
     private var centerText: String {
         guard let mappedText = reading.mappedText else {
-            return ZabbixValueFormatting.format(reading.value, units: reading.units)
+            return ZabbixValueFormatting.formatItemValue(reading.value, units: reading.units, decimalPlaces: reading.decimalPlaces)
         }
-        return "\(mappedText) (\(ZabbixValueFormatting.formatItemValue(reading.value, units: "")))"
+        return "\(mappedText) (\(ZabbixValueFormatting.formatItemValue(reading.value, units: "", decimalPlaces: reading.decimalPlaces)))"
     }
 
     var body: some View {
