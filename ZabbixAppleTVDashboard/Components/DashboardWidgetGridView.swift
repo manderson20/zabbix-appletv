@@ -183,8 +183,8 @@ private struct DashboardWidgetCardView: View {
             ProblemsBySeverityWidgetContentView(counts: counts)
         case let .hostAvailability(breakdown):
             HostAvailabilityWidgetContentView(breakdown: breakdown)
-        case let .systemInformation(serverVersion, isRunning, haNodes):
-            SystemInformationWidgetContentView(serverVersion: serverVersion, isRunning: isRunning, haNodes: haNodes)
+        case let .systemInformation(rows, haNodes):
+            SystemInformationWidgetContentView(rows: rows, haNodes: haNodes)
         case let .gauge(reading):
             GaugeWidgetContentView(reading: reading)
         case let .honeycomb(cells):
@@ -644,33 +644,67 @@ private struct HostAvailabilityWidgetContentView: View {
 }
 
 private struct SystemInformationWidgetContentView: View {
-    let serverVersion: String
-    let isRunning: Bool
+    let rows: [SystemInfoRow]
     let haNodes: [SystemHANode]
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if haNodes.isEmpty {
-                statusRow(label: "Zabbix server is running", value: isRunning ? "Yes" : "No", color: isRunning ? .green : .red)
-                statusRow(label: "Zabbix server version", value: serverVersion, color: DashboardTheme.secondaryText)
-            } else {
-                // "High availability nodes" mode: one row per cluster node with its status.
-                ForEach(haNodes) { node in
-                    statusRow(label: node.name, value: node.statusLabel, color: node.isActive ? .green : DashboardTheme.secondaryText)
-                }
-            }
+    private static func color(for tint: SystemInfoTint) -> Color {
+        switch tint {
+        case .normal: DashboardTheme.primaryText
+        case .green: .green
+        case .red: .red
+        case .gray: DashboardTheme.secondaryText
         }
     }
 
-    private func statusRow(label: String, value: String, color: Color) -> some View {
-        HStack(spacing: 6) {
-            Text("\(label):")
-                .font(.system(size: 16, weight: .regular, design: .rounded))
-                .foregroundStyle(DashboardTheme.secondaryText)
+    var body: some View {
+        if haNodes.isEmpty {
+            // Zabbix's Parameter / Value / Details table. Rows an account can't compute (missing
+            // permission for a count) are simply absent, matching how the API scopes its answers.
+            AutoScrollingContent {
+                Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 7) {
+                    GridRow {
+                        ForEach(["Parameter", "Value", "Details"], id: \.self) { header in
+                            Text(header)
+                                .font(.system(size: 13, weight: .regular, design: .rounded))
+                                .foregroundStyle(DashboardTheme.secondaryText)
+                        }
+                    }
 
-            Text(value)
-                .font(.system(size: 16, weight: .semibold, design: .rounded))
-                .foregroundStyle(color)
+                    ForEach(rows) { row in
+                        GridRow {
+                            Text(row.parameter)
+                                .font(.system(size: 15, weight: .regular, design: .rounded))
+                                .foregroundStyle(DashboardTheme.primaryText)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+
+                            Text(row.value)
+                                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                                .foregroundStyle(Self.color(for: row.valueTint))
+
+                            // Colored segments concatenated into one Text so they wrap as a unit.
+                            row.details.reduce(Text("")) { partial, segment in
+                                partial + Text(segment.text).foregroundStyle(Self.color(for: segment.tint))
+                            }
+                            .font(.system(size: 15, weight: .regular, design: .rounded))
+                        }
+                    }
+                }
+            }
+        } else {
+            // "High availability nodes" mode: one row per cluster node with its status.
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(haNodes) { node in
+                    HStack(spacing: 6) {
+                        Text("\(node.name):")
+                            .font(.system(size: 16, weight: .regular, design: .rounded))
+                            .foregroundStyle(DashboardTheme.secondaryText)
+
+                        Text(node.statusLabel)
+                            .font(.system(size: 16, weight: .semibold, design: .rounded))
+                            .foregroundStyle(node.isActive ? .green : DashboardTheme.secondaryText)
+                    }
+                }
+            }
         }
     }
 }

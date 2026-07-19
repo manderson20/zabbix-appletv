@@ -10,6 +10,39 @@ import Foundation
 /// Empty object parameters for Zabbix methods that accept no object fields.
 nonisolated struct ZabbixEmptyObjectParameters: Encodable, Sendable {}
 
+/// Parameters for a `*.get` count query (`countOutput: true`), optionally filtered on exact field
+/// values — used by the System information widget's host/template/item/trigger tallies. Counts are
+/// computed server-side and, like every API result, scoped to what the authenticated account can
+/// see.
+nonisolated struct ZabbixCountParameters: Encodable, Sendable {
+    let countOutput = true
+
+    /// Exact-value filter (e.g. `["status": "0"]`); omitted when nil.
+    let filter: [String: String]?
+
+    private enum CodingKeys: String, CodingKey { case countOutput, filter }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(countOutput, forKey: .countOutput)
+        try container.encodeIfPresent(filter, forKey: .filter)
+    }
+}
+
+/// Parameters for `item.get` when fetching a single item by exact key — used for the Zabbix
+/// server's internal `zabbix[requiredperformance]` reading in the System information widget.
+nonisolated struct ZabbixItemByKeyParameters: Encodable, Sendable {
+    let output: [String]
+    let filter: [String: [String]]
+    let limit: Int
+
+    init(key: String, output: [String] = ["itemid", "name", "lastvalue"], limit: Int = 1) {
+        self.output = output
+        self.filter = ["key_": [key]]
+        self.limit = limit
+    }
+}
+
 /// Parameters for `settings.get` requesting only the trigger severity color/name fields.
 nonisolated struct ZabbixSeverityPaletteParameters: Encodable, Sendable {
     let output: [String] = [
