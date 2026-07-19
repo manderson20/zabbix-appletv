@@ -1374,6 +1374,9 @@ extension DashboardManager {
             let baseColorHex = dataset["color"] ?? "3DC9B0"
             let fillOpacity = Self.fillOpacity(fromTransparencyField: dataset["transparency"])
             let approximation = dataset["approximation"].flatMap(Int.init) ?? 2
+            let timeshift = dataset["timeshift"].flatMap(Self.durationSeconds) ?? 0
+            let aggregateFunction = dataset["aggregate_function"].flatMap(Int.init) ?? 0
+            let aggregateInterval = dataset["aggregate_interval"].flatMap(Self.durationSeconds) ?? 0
 
             var matchIndex = 0
             for host in hosts {
@@ -1386,7 +1389,7 @@ extension DashboardManager {
                     )
 
                     for item in items {
-                        let points = try await recentPoints(for: item.itemid, valueType: item.value_type?.intValue ?? 0, windowStart: windowStart, windowEnd: windowEnd, approximation: approximation, serverBaseURL: serverBaseURL, authToken: authToken)
+                        let points = try await recentPoints(for: item.itemid, valueType: item.value_type?.intValue ?? 0, windowStart: windowStart, windowEnd: windowEnd, approximation: approximation, timeshiftSeconds: timeshift, aggregateFunction: aggregateFunction, aggregateIntervalSeconds: aggregateInterval, serverBaseURL: serverBaseURL, authToken: authToken)
 
                         series.append(
                             ChartSeries(
@@ -1419,7 +1422,10 @@ extension DashboardManager {
             guard let item = items.first else { continue }
 
             let approximation = override["approximation"].flatMap(Int.init) ?? 2
-            let points = try await recentPoints(for: item.itemid, valueType: item.value_type?.intValue ?? 0, windowStart: windowStart, windowEnd: windowEnd, approximation: approximation, serverBaseURL: serverBaseURL, authToken: authToken)
+            let timeshift = override["timeshift"].flatMap(Self.durationSeconds) ?? 0
+            let aggregateFunction = override["aggregate_function"].flatMap(Int.init) ?? 0
+            let aggregateInterval = override["aggregate_interval"].flatMap(Self.durationSeconds) ?? 0
+            let points = try await recentPoints(for: item.itemid, valueType: item.value_type?.intValue ?? 0, windowStart: windowStart, windowEnd: windowEnd, approximation: approximation, timeshiftSeconds: timeshift, aggregateFunction: aggregateFunction, aggregateIntervalSeconds: aggregateInterval, serverBaseURL: serverBaseURL, authToken: authToken)
 
             series.append(
                 ChartSeries(
@@ -1678,15 +1684,24 @@ extension DashboardManager {
         windowStart: Date,
         windowEnd: Date,
         approximation: Int = 2,
+        timeshiftSeconds: TimeInterval = 0,
+        aggregateFunction: Int = 0,
+        aggregateIntervalSeconds: TimeInterval = 0,
         serverBaseURL: URL,
         authToken: String
     ) async throws -> [ChartPoint] {
+        // Timeshift moves the data source window (e.g. "1w" to overlay last week on this week); fetch
+        // the shifted window, then shift each sample forward by the same amount so it aligns on the
+        // current axis for comparison.
+        let fetchStart = windowStart.addingTimeInterval(-timeshiftSeconds)
+        let fetchEnd = windowEnd.addingTimeInterval(-timeshiftSeconds)
+
         let values = try await zabbixAPIClient.history(
             serverBaseURL: serverBaseURL,
             authToken: authToken,
             itemID: itemID,
             historyValueType: valueType,
-            sinceUnixTime: Int(windowStart.timeIntervalSince1970),
+            sinceUnixTime: Int(fetchStart.timeIntervalSince1970),
             limit: Self.maxHistoryPointsFetched
         )
 
@@ -1702,13 +1717,13 @@ extension DashboardManager {
         // its most recent stretch — leaving the rest of the graph blank even though Zabbix's own
         // graph shows it. Fill the older part from trends (hourly min/avg/max, kept far longer),
         // exactly as Zabbix does: use trends for everything before the earliest raw sample.
-        let earliestHistory = points.first?.date ?? windowEnd
-        if earliestHistory.timeIntervalSince(windowStart) > Self.trendFillMinimumGapSeconds {
+        let earliestHistory = points.first?.date ?? fetchEnd
+        if earliestHistory.timeIntervalSince(fetchStart) > Self.trendFillMinimumGapSeconds {
             let trendValues = try await zabbixAPIClient.trends(
                 serverBaseURL: serverBaseURL,
                 authToken: authToken,
                 itemID: itemID,
-                sinceUnixTime: Int(windowStart.timeIntervalSince1970),
+                sinceUnixTime: Int(fetchStart.timeIntervalSince1970),
                 untilUnixTime: Int(earliestHistory.timeIntervalSince1970)
             )
             let trendPoints = trendValues.compactMap { value -> (date: Date, value: Double)? in
@@ -1721,6 +1736,15 @@ extension DashboardManager {
 
             points = (trendPoints + points).sorted { $0.date < $1.date }
         }
+
+        // Re-align the shifted samples onto the current axis before bucketing.
+        if timeshiftSeconds != 0 {
+            points = points.map { (date: $0.date.addingTimeInterval(timeshiftSeconds), value: $0.value) }
+        }
+
+        // Aggregate into interval buckets when the dataset configures it (min/max/avg/…), rather
+        // than plotting every raw sample.
+        points = Self.aggregatedByInterval(points, function: aggregateFunction, intervalSeconds: aggregateIntervalSeconds, windowStart: windowStart)
 
         return Self.bucketedChartPoints(points, itemID: itemID, windowStart: windowStart, windowEnd: windowEnd, bucketCount: Self.chartBucketCount)
     }
@@ -1897,6 +1921,60 @@ extension DashboardManager {
             return nil
         }
         return calendar.date(byAdding: component, value: (sign == "-" ? -1 : 1) * magnitude, to: date)
+    }
+
+    /// Parses a Zabbix duration field (svggraph `timeshift` / `aggregate_interval`) into seconds:
+    /// a plain integer is seconds, or a magnitude with an `s`/`m`/`h`/`d`/`w` suffix (here `m` is
+    /// minutes). An optional leading `-`/`+` sets the sign. Returns nil for an empty/unparseable
+    /// value so the caller treats it as "no shift / no aggregation".
+    static func durationSeconds(from raw: String) -> TimeInterval? {
+        var text = raw.trimmingCharacters(in: .whitespaces)
+        guard !text.isEmpty else { return nil }
+
+        var sign = 1.0
+        if text.hasPrefix("-") { sign = -1; text.removeFirst() }
+        else if text.hasPrefix("+") { text.removeFirst() }
+
+        if let plainSeconds = Double(text) { return sign * plainSeconds }
+
+        guard let unit = text.last, let magnitude = Double(text.dropLast()) else { return nil }
+        let multiplier: Double
+        switch unit {
+        case "s": multiplier = 1
+        case "m": multiplier = 60
+        case "h": multiplier = 3600
+        case "d": multiplier = 86400
+        case "w": multiplier = 604800
+        default: return nil
+        }
+        return sign * magnitude * multiplier
+    }
+
+    /// Aggregates chronological samples into fixed-width interval buckets (svggraph's per-dataset
+    /// `aggregate_function` over `aggregate_interval`), applying the function (1 min … 7 last) to each
+    /// bucket and placing the result at the bucket's midpoint. Returns the points unchanged when no
+    /// function is set or the interval is non-positive.
+    static func aggregatedByInterval(
+        _ points: [(date: Date, value: Double)],
+        function: Int,
+        intervalSeconds: TimeInterval,
+        windowStart: Date
+    ) -> [(date: Date, value: Double)] {
+        guard function > 0, intervalSeconds > 0, !points.isEmpty else { return points }
+
+        let origin = windowStart.timeIntervalSince1970
+        var buckets: [Int: [(clock: Double, value: Double)]] = [:]
+        for point in points {
+            let clock = point.date.timeIntervalSince1970
+            let index = Int((clock - origin) / intervalSeconds)
+            buckets[index, default: []].append((clock, point.value))
+        }
+
+        return buckets.keys.sorted().compactMap { index in
+            guard let value = aggregate(buckets[index] ?? [], function: function) else { return nil }
+            let midpoint = origin + (Double(index) + 0.5) * intervalSeconds
+            return (Date(timeIntervalSince1970: midpoint), value)
+        }
     }
 
     /// Maps Zabbix's relative-time unit letters to calendar components (s/m/h/d/w/M/y).
