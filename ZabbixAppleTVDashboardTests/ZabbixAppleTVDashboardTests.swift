@@ -392,6 +392,39 @@ struct ZabbixAppleTVDashboardTests {
         #expect(triggers.first?.hosts.first?.hostid == "10461")
     }
 
+    @Test func slaPercentFormattingTrimsTrailingZeros() throws {
+        // Configured SLO strings render trimmed.
+        #expect(DashboardManager.formatSLOPercent("99.9000") == "99.9%")
+        #expect(DashboardManager.formatSLOPercent("100.0000") == "100%")
+        // Computed SLI doubles trim to at most four decimals.
+        #expect(DashboardManager.formatSLIPercent(99.95420) == "99.9542%")
+        #expect(DashboardManager.formatSLIPercent(99.9) == "99.9%")
+        #expect(DashboardManager.formatSLIPercent(100) == "100%")
+    }
+
+    @Test func slaGetSliResponseDecodesPeriodServiceMatrix() throws {
+        let responseData = try #require(
+            """
+            {
+              "jsonrpc": "2.0",
+              "result": {
+                "periods": [ { "period_from": 1700000000, "period_to": 1700086400 } ],
+                "serviceids": [ "12", "34" ],
+                "sli": [ [ { "sli": 99.95, "uptime": 86000, "downtime": 400 }, { "sli": 98.10, "uptime": 84000, "downtime": 2400 } ] ]
+              },
+              "id": 1
+            }
+            """.data(using: .utf8)
+        )
+
+        let response = try JSONDecoder().decode(ZabbixAPIResponse<ZabbixSLI>.self, from: responseData)
+        let report = try response.resolvedResult()
+        #expect(report.serviceids == ["12", "34"])
+        #expect(report.sli.first?.count == 2)
+        #expect(report.sli.first?[0].sli == 99.95)
+        #expect(report.sli.first?[1].sli == 98.10)
+    }
+
     @Test func rankTriggersByFrequencyCountsAndOrders() throws {
         let events = [
             ZabbixEventSummary(eventid: "1", objectid: "T1", severity: ZabbixNumericString(intValue: 3), name: "T1 v1", clock: "100"),

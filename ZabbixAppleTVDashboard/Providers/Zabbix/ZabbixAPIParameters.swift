@@ -877,6 +877,35 @@ nonisolated struct ZabbixSLAGetParameters: Encodable, Sendable {
     }
 }
 
+/// Parameters for `sla.getsli`, which computes achieved SLI over recent periods for an SLA.
+nonisolated struct ZabbixSLIGetParameters: Encodable, Sendable {
+    /// The SLA to report on.
+    let slaid: String
+
+    /// Restricts to these services; when nil, every service attached to the SLA is reported.
+    let serviceids: [String]?
+
+    /// Number of most-recent reporting periods to return.
+    let periods: Int
+
+    init(slaID: String, serviceIDs: [String]? = nil, periods: Int = 1) {
+        self.slaid = slaID
+        self.serviceids = (serviceIDs?.isEmpty == false) ? serviceIDs : nil
+        self.periods = periods
+    }
+}
+
+/// Parameters for `service.get` when resolving service names by ID for SLA report labels.
+nonisolated struct ZabbixServiceGetParameters: Encodable, Sendable {
+    let serviceids: [String]
+    let output: [String]
+
+    init(serviceIDs: [String], output: [String] = ["serviceid", "name"]) {
+        self.serviceids = serviceIDs
+        self.output = output
+    }
+}
+
 /// Parameters for `image.get` when fetching a single image's base64-encoded content.
 nonisolated struct ZabbixImageGetParameters: Encodable, Sendable {
     /// Image identifiers to fetch.

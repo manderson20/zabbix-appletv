@@ -605,9 +605,15 @@ nonisolated struct SLAReportEntry: Identifiable, Sendable {
     /// Stable entry identifier.
     let id: String
 
-    /// SLA display name.
+    /// Row label — the service name (or the SLA name when reporting a single unnamed row).
     let name: String
 
     /// Target SLO, e.g. "99.9%".
     let targetSLO: String
+
+    /// Achieved SLI for the latest period, e.g. "99.95%", or nil when it couldn't be computed.
+    let achievedSLI: String?
+
+    /// Whether the achieved SLI met the target SLO, when both are known — drives pass/fail color.
+    let meetsTarget: Bool?
 }
