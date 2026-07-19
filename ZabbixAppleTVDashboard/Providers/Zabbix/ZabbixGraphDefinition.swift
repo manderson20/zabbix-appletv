@@ -17,6 +17,9 @@ nonisolated struct ZabbixGraphDefinition: Decodable, Sendable {
     /// Graph display name.
     let name: String
 
+    /// Graph type: 0 = normal (lines), 1 = stacked, 2 = pie, 3 = exploded pie. Absent → normal.
+    let graphtype: ZabbixNumericString?
+
     /// Member items making up this graph.
     let gitems: [ZabbixGraphItem]
 }

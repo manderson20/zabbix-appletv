@@ -1488,6 +1488,19 @@ extension DashboardManager {
         serverBaseURL: URL,
         authToken: String
     ) async throws -> DashboardWidgetKind {
+        let (windowStart, windowEnd) = Self.timePeriod(from: widget.fields)
+
+        // Simple-graph mode: the widget references a single `itemid` directly (no configured graph),
+        // plotted as its own line — previously returned .unsupported.
+        if Self.fieldValue(widget.fields, name: "graphid") == nil,
+           let itemID = Self.firstIndexedValue(widget.fields, name: "itemid") {
+            let items = try await zabbixAPIClient.items(serverBaseURL: serverBaseURL, authToken: authToken, itemIDs: [itemID])
+            guard let item = items.first else { return .unsupported(rawType: widget.type) }
+            let points = try await recentPoints(for: item.itemid, valueType: item.value_type?.intValue ?? 0, windowStart: windowStart, windowEnd: windowEnd, serverBaseURL: serverBaseURL, authToken: authToken)
+            let series = [ChartSeries(id: "\(widget.widgetid).\(item.itemid)", name: item.name, colorHex: "3DC9B0", units: item.units ?? "", fillOpacity: 0.5, points: points)]
+            return .lineChart(series: series, window: ChartTimeWindow(start: windowStart, end: windowEnd))
+        }
+
         guard let graphID = Self.fieldValue(widget.fields, name: "graphid") else {
             return .unsupported(rawType: widget.type)
         }
@@ -1500,7 +1513,19 @@ extension DashboardManager {
         let items = try await zabbixAPIClient.items(serverBaseURL: serverBaseURL, authToken: authToken, itemIDs: graph.gitems.map(\.itemid))
         let itemsByID = Dictionary(uniqueKeysWithValues: items.map { ($0.itemid, $0) })
 
-        let (windowStart, windowEnd) = Self.timePeriod(from: widget.fields)
+        // Pie / exploded-pie graphs (graphtype 2/3) are a fundamentally different shape — render them
+        // as a pie of each item's latest value rather than misdrawing them as overlaid lines. Normal
+        // (0) and stacked (1) both render as a line chart; true visual stacking for type 1 is a
+        // follow-up (the data is correct either way, only the cumulative baseline differs).
+        let graphType = graph.graphtype?.intValue ?? 0
+        if graphType == 2 || graphType == 3 {
+            let slices = graph.gitems.compactMap { gitem -> ChartSlice? in
+                guard let item = itemsByID[gitem.itemid], let value = item.lastvalue.flatMap(Double.init) else { return nil }
+                return ChartSlice(id: "\(widget.widgetid).\(item.itemid)", name: item.name, colorHex: gitem.color, value: value)
+            }
+            return slices.isEmpty ? .unsupported(rawType: widget.type) : .pieChart(slices)
+        }
+
         var series: [ChartSeries] = []
         for gitem in graph.gitems {
             guard let item = itemsByID[gitem.itemid] else { continue }
