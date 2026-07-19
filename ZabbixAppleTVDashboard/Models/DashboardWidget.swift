@@ -252,6 +252,10 @@ nonisolated struct HostInterfaceAvailability: Identifiable, Sendable {
     /// Number of hosts with this interface type in an unknown state.
     let unknown: Int
 
+    /// True for the "Agent (active)" row: active checks aren't interface-based, so its Mixed
+    /// column renders Zabbix's "-" instead of a count.
+    var isActiveChecksRow: Bool = false
+
     var total: Int { available + unavailable + mixed + unknown }
 
     var id: String { interfaceTypeName }
