@@ -225,6 +225,13 @@ private struct DashboardWidgetCardView: View {
             ItemListWidgetContentView(sections: sections)
         case let .slaReport(entries):
             SLAReportWidgetContentView(entries: entries)
+        case .referencedObjectUnavailable:
+            // Zabbix's own wording for a widget whose referenced object is deleted or not visible
+            // to the logged-in account — kept verbatim so any account sees the same state here that
+            // Zabbix's frontend would show it.
+            Text("No permissions to referred object or it does not exist!")
+                .font(.system(size: 18, weight: .regular, design: .rounded))
+                .foregroundStyle(DashboardTheme.secondaryText)
         case let .unsupported(rawType):
             Text("The \"\(rawType)\" widget isn't supported yet.")
                 .font(.system(size: 18, weight: .regular, design: .rounded))

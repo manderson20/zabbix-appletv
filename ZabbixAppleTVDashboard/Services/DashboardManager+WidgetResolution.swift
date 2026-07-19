@@ -176,7 +176,8 @@ extension DashboardManager {
 
             let items = try await zabbixAPIClient.items(serverBaseURL: serverBaseURL, authToken: authToken, itemIDs: [itemID])
             guard let item = items.first else {
-                return .unsupported(rawType: widget.type)
+                // The configured item resolved to nothing — deleted, or not visible to this account.
+                return .referencedObjectUnavailable
             }
 
             // When the widget aggregates over a time period (min/max/avg/count/sum/first/last),
@@ -445,7 +446,11 @@ extension DashboardManager {
         }
 
         let items = try await zabbixAPIClient.items(serverBaseURL: serverBaseURL, authToken: authToken, itemIDs: [itemID])
-        guard let item = items.first, let value = item.lastvalue.flatMap(Double.init) else {
+        guard let item = items.first else {
+            // The configured item resolved to nothing — deleted, or not visible to this account.
+            return .referencedObjectUnavailable
+        }
+        guard let value = item.lastvalue.flatMap(Double.init) else {
             return .unsupported(rawType: widget.type)
         }
 
@@ -951,9 +956,12 @@ extension DashboardManager {
         serverBaseURL: URL,
         authToken: String
     ) async throws -> DashboardWidgetKind {
-        guard let mapID = Self.fieldValue(widget.fields, name: "sysmapid"),
-              let map = try await zabbixAPIClient.networkMap(serverBaseURL: serverBaseURL, authToken: authToken, mapID: mapID) else {
+        guard let mapID = Self.fieldValue(widget.fields, name: "sysmapid") else {
             return .unsupported(rawType: widget.type)
+        }
+        guard let map = try await zabbixAPIClient.networkMap(serverBaseURL: serverBaseURL, authToken: authToken, mapID: mapID) else {
+            // The configured map resolved to nothing — deleted, or not visible to this account.
+            return .referencedObjectUnavailable
         }
 
         let backgroundImageData = try await backgroundImageData(forImageID: map.backgroundid, serverBaseURL: serverBaseURL, authToken: authToken)
@@ -1788,7 +1796,8 @@ extension DashboardManager {
         if Self.firstIndexedValue(widget.fields, name: "graphid") == nil,
            let itemID = Self.firstIndexedValue(widget.fields, name: "itemid") {
             let items = try await zabbixAPIClient.items(serverBaseURL: serverBaseURL, authToken: authToken, itemIDs: [itemID])
-            guard let item = items.first else { return .unsupported(rawType: widget.type) }
+            // The configured item resolved to nothing — deleted, or not visible to this account.
+            guard let item = items.first else { return .referencedObjectUnavailable }
             let points = try await recentPoints(for: item.itemid, valueType: item.value_type?.intValue ?? 0, windowStart: windowStart, windowEnd: windowEnd, serverBaseURL: serverBaseURL, authToken: authToken)
             let series = [ChartSeries(id: "\(widget.widgetid).\(item.itemid)", name: item.name, colorHex: "3DC9B0", units: item.units ?? "", fillOpacity: 0.5, points: points)]
             return .lineChart(series: series, window: ChartTimeWindow(start: windowStart, end: windowEnd), stacked: false, showLegend: Self.fieldValue(widget.fields, name: "legend") != "0", showLegendStats: true, yMin: nil, yMax: nil)
@@ -1799,7 +1808,11 @@ extension DashboardManager {
         }
 
         let graphs = try await zabbixAPIClient.graphs(serverBaseURL: serverBaseURL, authToken: authToken, graphIDs: [graphID])
-        guard let graph = graphs.first, !graph.gitems.isEmpty else {
+        guard let graph = graphs.first else {
+            // The configured graph resolved to nothing — deleted, or not visible to this account.
+            return .referencedObjectUnavailable
+        }
+        guard !graph.gitems.isEmpty else {
             return .unsupported(rawType: widget.type)
         }
 

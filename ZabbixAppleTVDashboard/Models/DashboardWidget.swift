@@ -149,6 +149,15 @@ nonisolated enum DashboardWidgetKind: Sendable {
     case hostList([HostListSection])
     case itemList([ItemListSection])
     case slaReport([SLAReportEntry])
+
+    /// The widget references a specific object (item, graph, map, ...) that the authenticated
+    /// account couldn't resolve — deleted, or not visible to this account's permissions. Rendered
+    /// with Zabbix's own message for this state, so a limited account sees exactly what Zabbix's
+    /// frontend would show it rather than a misleading "unsupported" notice. The API can't
+    /// distinguish "no permission" from "doesn't exist" (both return an empty result), which is
+    /// precisely why Zabbix's message names both.
+    case referencedObjectUnavailable
+
     case unsupported(rawType: String)
 }
 
