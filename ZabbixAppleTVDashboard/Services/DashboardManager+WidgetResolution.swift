@@ -362,7 +362,7 @@ extension DashboardManager {
             return try await resolveNetworkMap(widget, serverBaseURL: serverBaseURL, authToken: authToken)
 
         case "navtree":
-            return resolveMapNavigationTree(widget)
+            return try await resolveMapNavigationTree(widget, serverBaseURL: serverBaseURL, authToken: authToken)
 
         case "hostnavigator":
             return try await resolveHostNavigator(widget, serverBaseURL: serverBaseURL, authToken: authToken)
@@ -981,8 +981,31 @@ extension DashboardManager {
     /// Renders the widget's authored `navtree` hierarchy — previously the resolver took no widget and
     /// listed every map on the server instead. The tree is stored as a flat set of `navtree.N.*`
     /// nodes (name / parent / order / sysmapid), which are assembled into a depth-tagged ordered list.
-    private func resolveMapNavigationTree(_ widget: ZabbixWidget) -> DashboardWidgetKind {
-        .navigationTree(Self.buildNavTree(from: widget.fields))
+    private func resolveMapNavigationTree(
+        _ widget: ZabbixWidget,
+        serverBaseURL: URL,
+        authToken: String
+    ) async throws -> DashboardWidgetKind {
+        let nodes = Self.buildNavTree(from: widget.fields)
+
+        // Color each map-linked node by its map's worst active-problem severity (rolled up to parent
+        // folders). Fetch every linked map's host elements in one call, then reuse the shared
+        // per-host severity lookup.
+        let sysmapIDs = Array(Set(nodes.compactMap(\.sysmapid)))
+        guard !sysmapIDs.isEmpty else {
+            return .navigationTree(nodes)
+        }
+
+        let mapElements = try await zabbixAPIClient.mapHostElements(serverBaseURL: serverBaseURL, authToken: authToken, sysmapIDs: sysmapIDs)
+        let severityByHostID = try await maxSeverityByHostID(serverBaseURL: serverBaseURL, authToken: authToken)
+
+        var severityBySysmapID: [String: Int] = [:]
+        for map in mapElements {
+            let hostIDs = map.selements.compactMap { $0.elementtype.intValue == 0 ? $0.elements.first?.hostid : nil }
+            severityBySysmapID[map.sysmapid] = hostIDs.map { severityByHostID[$0] ?? 0 }.max() ?? 0
+        }
+
+        return .navigationTree(Self.applyNavTreeSeverities(nodes, severityBySysmapID: severityBySysmapID))
     }
 
     /// Assembles the flat `navtree.N.*` node fields into a pre-order, depth-tagged list: root nodes
@@ -1016,12 +1039,15 @@ extension DashboardManager {
         var visited = Set<Int>()
         func visit(_ index: Int, depth: Int) {
             guard let group = byIndex[index], visited.insert(index).inserted else { return }
-            let sysmapid = group["sysmapid"] ?? "0"
+            let rawSysmapID = group["sysmapid"] ?? "0"
+            let sysmapID: String? = (rawSysmapID == "0" || rawSysmapID.isEmpty) ? nil : rawSysmapID
             result.append(NavTreeNode(
                 id: String(index),
                 name: group["name"] ?? "",
                 depth: depth,
-                linksToMap: !(sysmapid == "0" || sysmapid.isEmpty)
+                linksToMap: sysmapID != nil,
+                sysmapid: sysmapID,
+                severity: 0
             ))
             for child in sortedChildren(of: index) { visit(child, depth: depth + 1) }
         }
@@ -1030,6 +1056,29 @@ extension DashboardManager {
         // Any node not reached from a parent-0 root (orphan / broken parent ref) renders at top level.
         for index in byIndex.keys.sorted() where !visited.contains(index) { visit(index, depth: 0) }
         return result
+    }
+
+    /// Assigns each map-linked node its map's worst severity (`severityBySysmapID`), then rolls that
+    /// up so a folder node reflects the worst severity among its descendants. The pre-order list is
+    /// walked so each node's descendants are the contiguous following rows with greater depth.
+    static func applyNavTreeSeverities(_ nodes: [NavTreeNode], severityBySysmapID: [String: Int]) -> [NavTreeNode] {
+        // Leaf severities from each node's own linked map.
+        var updated = nodes.map { node in
+            NavTreeNode(id: node.id, name: node.name, depth: node.depth, linksToMap: node.linksToMap, sysmapid: node.sysmapid, severity: node.sysmapid.flatMap { severityBySysmapID[$0] } ?? 0)
+        }
+
+        // Roll up: a node inherits the worst severity of its descendants (read before mutation, so
+        // ancestor rows — earlier in pre-order — see each descendant's leaf value).
+        for i in updated.indices {
+            var worst = updated[i].severity
+            var j = i + 1
+            while j < updated.count, updated[j].depth > updated[i].depth {
+                worst = max(worst, updated[j].severity)
+                j += 1
+            }
+            updated[i] = NavTreeNode(id: updated[i].id, name: updated[i].name, depth: updated[i].depth, linksToMap: updated[i].linksToMap, sysmapid: updated[i].sysmapid, severity: worst)
+        }
+        return updated
     }
 
     // MARK: - Host navigator

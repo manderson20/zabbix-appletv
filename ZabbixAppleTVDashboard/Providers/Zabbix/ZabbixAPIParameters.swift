@@ -897,6 +897,20 @@ nonisolated struct ZabbixMapListParameters: Encodable, Sendable {
     }
 }
 
+/// Parameters for `map.get` when fetching several maps' elements (for navtree node severity) —
+/// only the element list, not the full topology the network-map widget needs.
+nonisolated struct ZabbixMapElementsGetParameters: Encodable, Sendable {
+    let sysmapids: [String]
+    let output: [String]
+    let selectSelements: String
+
+    init(sysmapIDs: [String], output: [String] = ["sysmapid"], selectSelements: String = "extend") {
+        self.sysmapids = sysmapIDs
+        self.output = output
+        self.selectSelements = selectSelements
+    }
+}
+
 /// Parameters for `map.get` when fetching a single map's full topology.
 nonisolated struct ZabbixNetworkMapGetParameters: Encodable, Sendable {
     /// Map identifier to fetch.

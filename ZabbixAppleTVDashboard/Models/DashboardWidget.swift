@@ -619,6 +619,13 @@ nonisolated struct NavTreeNode: Identifiable, Sendable {
 
     /// Whether this node links to a map (vs. being a grouping folder).
     let linksToMap: Bool
+
+    /// The linked map's identifier, or nil for a grouping folder.
+    let sysmapid: String?
+
+    /// Worst active-problem severity for this node — its linked map's, rolled up from descendants
+    /// for folders (0 = none/OK).
+    let severity: Int
 }
 
 /// A single host shown in a static host navigator list.

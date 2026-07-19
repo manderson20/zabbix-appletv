@@ -50,7 +50,7 @@ cosmetic-leaning last).
 
 | Widget | Support | Worst impact | # gaps | Headline gap |
 |---|---|---|---|---|
-| Map navigation tree | partial | missing-detail | 1 | Now receives the widget and renders the authored `navtree` hierarchy (indented, ordered); only per-node problem indicators remain |
+| Map navigation tree | partial | missing-detail | 1 | Renders the authored `navtree` hierarchy with per-node severity dots (each map's worst problem, rolled up to parent folders); only Zabbix's per-severity problem counts (vs a single worst-severity dot) remain |
 | SLA report | partial | missing-detail | 2 | Computes achieved SLI per service (`sla.getsli`) vs target with pass/fail color; shows only the latest period, and `serviceid` field name assumed (unverified live) |
 | Web monitoring | partial | missing-detail | 1 | Status (`web.test.fail`) + full scope (`groupids`/`hostids`/tags/`exclude_groupids`) honored; only the 15-row view cap remains |
 | Top triggers | partial | missing-detail | 1 | Now ranks by problem-event frequency over `time_period` with a count column; only acknowledgement filtering remains |
