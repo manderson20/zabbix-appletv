@@ -11,7 +11,7 @@
 
 Coverage is broad and, since the original audit, materially deeper. Every widget renders
 *something*, and the count of widgets whose worst realistic-config behavior is **wrong-data** has
-dropped from 25/26 to **3/26**, with the other 23 down to **missing-detail** (renders correctly
+dropped from 25/26 to **2/26**, with the other 24 down to **missing-detail** (renders correctly
 but ignores a display or layout knob). The improvement came almost entirely from the cross-cutting
 helpers the original audit predicted would each fix a class of widgets:
 
@@ -34,11 +34,13 @@ helpers the original audit predicted would each fix a class of widgets:
   do (and honor their scope/`show_lines`). **Map navigation tree still does not.**
 
 The genuine strengths are unchanged: everything fetches under the session token, so server-side
-permissions hold and nothing leaks. The wrong-data set is down to 3: Action log's fixed window (its content filters are wired but the
-field names are unverified), and the Data-overview / Honeycomb `prefix(N)` row caps — which are
-deliberate TV safety limits with no corresponding Zabbix field. Every systemic theme the original
-audit opened with — scope, tags, aggregation, value maps, status derivation, time period, indexed
-fields, and passing the widget to every resolver — is now closed. The scope, tag, aggregation, value-map, status-derivation, and time-period themes the original
+permissions hold and nothing leaks. The wrong-data set is down to 2, and both are the **Data-overview / Honeycomb `prefix(N)` row caps** —
+deliberate TV safety limits with no corresponding Zabbix field (they bound how many cells/rows render
+on a wall display; they are arguably correct behavior rather than defects). Every systemic theme the
+original audit opened with — scope, tags, aggregation, value maps, status derivation, time period,
+indexed fields, and passing the widget to every resolver — is closed, and Action log's content
+filters were confirmed against a live widget. In practice the renderer is now config-faithful; what
+remains is the missing-detail tier (display formatting, label templates, layout/matrix orientation). The scope, tag, aggregation, value-map, status-derivation, and time-period themes the original
 audit opened with are all closed.
 
 ## 2. Coverage matrix
@@ -60,7 +62,7 @@ cosmetic-leaning last).
 | Geomap | partial | missing-detail | 1 | Marker severity scoped to the widget's tag + severity filter; only `default_view` initial center/zoom (cosmetic) remains |
 | Problems | partial | missing-detail | 1 | `groupids`/tags/suppression/acknowledgement all honored; only `show_lines` default (20 vs 25) remains |
 | Problems by severity | partial | missing-detail | 1 | `groupids`/tags/`ext_ack` acknowledgement now honored; only `show_type=GROUPS` (collapsed to a flat tally) remains |
-| Action log | partial | wrong-data | 2 | Content-filter support (actions/media types/recipients/statuses → `alert.get`) added but the widget field names are **unverified** (safe-degrading); the fixed 7-day window remains |
+| Action log | partial | missing-detail | 1 | Content filters (`actionids`/`mediatypeids`/`userids`/`statuses` → `alert.get`) **verified against a live widget**; the widget has no time period to honor. Only failed-status (2) styling and the last-N-vs-7-day lookback edge remain |
 | System information | partial | missing-detail | 1 | `info_type=1` shows HA nodes and `isRunning` is derived from them (`hanode.get`); standalone still uses the API-success proxy for running |
 | Clock | partial | missing-detail | 1 | `time_type=host` (via `system.localtime` offset) and `tzone_timezone` now honored; server-time mode still falls back to local |
 | Map | full | missing-detail | 1 | Trigger + host-group elements now colored by their real severity; only submap (map-type) elements — needing recursive child-map rollup — stay OK |
@@ -103,7 +105,7 @@ cosmetic-leaning last).
 - ~~**Trigger overview — only PROBLEM state fetched.**~~ **Done** — `show: Any` fetches all triggers and renders OK cells green; tags + nested scope applied.
 - ~~**Discovery — no `status=active` filter.**~~ **Done** — filters to `status: 0`, sorted by name.
 - ~~**Problem hosts — resolver doesn't receive the widget.**~~ **Done** — now accepts `ZabbixWidget`; severity/groups(nested)/tags/suppression/exclude all applied.
-- ~~**Action log — resolver doesn't receive the widget.**~~ **Partly done** — now accepts `ZabbixWidget`, honors `show_lines`, and forwards content filters (actions / media types / recipients / statuses) to `alert.get`. **Caveat:** the widget field names for those filters are unverified (no live example / repo evidence), so they safe-degrade to no-filter if wrong; the fixed 7-day window also remains. Needs on-device confirmation against a filtered Action log widget.
+- ~~**Action log — resolver doesn't receive the widget.**~~ **Done** — accepts `ZabbixWidget`, honors `show_lines`, and forwards content filters (actions / media types / recipients / statuses) to `alert.get`. The field names (`actionids`/`mediatypeids`/`userids`/`statuses`) were **confirmed against a live "Action Event" widget** via a debug field-dump build; the widget carries no `time_period`, so the 7-day lookback isn't a dropped config. Remaining is display-only (failed-status styling).
 - ~~**Host availability — multi-interface classification bug.**~~ **Done** — available/unavailable/mixed/unknown categorization matches Zabbix; `groupids` scoping applied.
 - ~~**Host navigator / Item navigator / Honeycomb — indexed-field reads.**~~ **Done** — read `hosts.N` / `items.N`; Host navigator honors `status` (Any/Enabled/Disabled).
 - ~~**Value maps dropped on the "search" fetch path.**~~ **Done** — `ZabbixItemSearchParameters` requests `selectValueMap`; Data overview / Honeycomb / Item navigator / Item history apply `mappedText`.
