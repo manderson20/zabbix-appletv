@@ -624,4 +624,16 @@ struct ZabbixAppleTVDashboardTests {
         #expect(DashboardManager.tagEvalType(from: []) == nil)
     }
 
+    @Test func mappedItemValueAppliesValueMap() throws {
+        let map = try JSONDecoder().decode(ZabbixValueMap.self, from: Data("""
+        {"mappings":[{"type":"0","value":"1","newvalue":"Up"}]}
+        """.utf8))
+
+        // A mapped reading shows "label (raw)"; an unmapped reading, or no map at all, shows raw.
+        #expect(DashboardManager.mappedItemValue(rawValue: "1", valueMap: map) == "Up (1)")
+        #expect(DashboardManager.mappedItemValue(rawValue: "5", valueMap: map) == "5")
+        #expect(DashboardManager.mappedItemValue(rawValue: "42", valueMap: nil) == "42")
+        #expect(DashboardManager.mappedItemValue(rawValue: nil, valueMap: map) == "\u{2014}")
+    }
+
 }

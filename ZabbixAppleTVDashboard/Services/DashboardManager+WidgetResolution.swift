@@ -379,7 +379,7 @@ extension DashboardManager {
                     id: item.itemid,
                     primaryLabel: item.hosts.first?.name ?? "",
                     secondaryLabel: item.name,
-                    value: item.lastvalue ?? "\u{2014}"
+                    value: Self.mappedItemValue(rawValue: item.lastvalue, valueMap: item.valuemap?.valueMap)
                 )
             }
         )
@@ -424,7 +424,7 @@ extension DashboardManager {
                         hostIDs: [host.hostid],
                         namePattern: itemPattern
                     )
-                    values.append(items.first?.lastvalue ?? "\u{2014}")
+                    values.append(Self.mappedItemValue(rawValue: items.first?.lastvalue, valueMap: items.first?.valuemap?.valueMap))
                 } else if let text = column["text"] {
                     values.append(text)
                 } else {
@@ -739,7 +739,7 @@ extension DashboardManager {
                     id: item.itemid,
                     name: item.name,
                     hostName: item.hosts.first?.name ?? "",
-                    lastValue: item.lastvalue ?? "\u{2014}",
+                    lastValue: Self.mappedItemValue(rawValue: item.lastvalue, valueMap: item.valuemap?.valueMap),
                     units: item.units ?? ""
                 )
             }
@@ -907,7 +907,7 @@ extension DashboardManager {
                     id: item.itemid,
                     hostName: item.hosts.first?.name ?? "",
                     itemName: item.name,
-                    value: item.lastvalue ?? "\u{2014}",
+                    value: Self.mappedItemValue(rawValue: item.lastvalue, valueMap: item.valuemap?.valueMap),
                     units: item.units ?? ""
                 )
             }
@@ -1502,6 +1502,17 @@ extension DashboardManager {
         case "web": "Web monitoring"
         default: type.capitalized
         }
+    }
+
+    /// The display string for an item reading, applying its value map when it has one: "Up (1)"
+    /// rather than a bare "1", matching how the item-value and gauge widgets render. Falls back to
+    /// the raw value (or an em dash when absent) so unmapped items are unchanged.
+    static func mappedItemValue(rawValue: String?, valueMap: ZabbixValueMap?) -> String {
+        guard let raw = rawValue else { return "\u{2014}" }
+        if let mapped = valueMap?.mappedText(for: raw) {
+            return "\(mapped) (\(raw))"
+        }
+        return raw
     }
 
     /// Returns the value of a scalar widget field, e.g. "min" or "show_lines".
