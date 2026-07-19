@@ -309,6 +309,31 @@ nonisolated struct GaugeReading: Sendable {
     /// needle still uses the numeric `value`; this is shown as the gauge's center text so it reads
     /// "Up (1.00)" rather than a bare number, matching Zabbix's own gauge.
     let mappedText: String?
+
+    /// The widget's "Show" checkboxes, verified against the live edit form: 1 = Description,
+    /// 2 = Value, 3 = Needle, 4 = Value arc, 5 = Scale (which draws the min/max labels on a 180°
+    /// gauge). Defaults mirror a freshly-created widget (everything but the needle).
+    var showDescription: Bool = true
+    var showValue: Bool = true
+    var showNeedle: Bool = false
+    var showValueArc: Bool = true
+    var showScale: Bool = true
+
+    /// Needle fill ("needle_color"); Zabbix's near-white theme default (#F2F2F2) when unset —
+    /// sampled from the live frontend's needle path.
+    var needleColorHex: String? = nil
+
+    /// Arc sweep in degrees ("angle": 180 or 270).
+    var angleDegrees: Double = 180
+
+    /// Center value color ("value_color"); theme default when nil.
+    var valueColorHex: String? = nil
+
+    /// Description color ("desc_color"); theme default when nil.
+    var descriptionColorHex: String? = nil
+
+    /// Unfilled-arc track color ("empty_color"); Zabbix's sampled default when nil.
+    var emptyColorHex: String? = nil
 }
 
 /// A single threshold marker on a gauge.
