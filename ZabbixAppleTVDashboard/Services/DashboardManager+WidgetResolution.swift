@@ -113,7 +113,8 @@ extension DashboardManager {
                 groupIDs: try await scopedGroupIDs(from: widget, serverBaseURL: serverBaseURL, authToken: authToken),
                 tags: Self.tagFilters(from: widget.fields),
                 evalType: Self.tagEvalType(from: widget.fields),
-                showSuppressed: Self.fieldValue(widget.fields, name: "show_suppressed") == "1"
+                showSuppressed: Self.fieldValue(widget.fields, name: "show_suppressed") == "1",
+                acknowledged: Self.problemsAcknowledgedFilter(from: widget.fields)
             )
 
             let triggerHosts = try await zabbixAPIClient.triggerHosts(
@@ -219,7 +220,8 @@ extension DashboardManager {
                 groupIDs: try await scopedGroupIDs(from: widget, serverBaseURL: serverBaseURL, authToken: authToken),
                 tags: Self.tagFilters(from: widget.fields),
                 evalType: Self.tagEvalType(from: widget.fields),
-                showSuppressed: Self.fieldValue(widget.fields, name: "show_suppressed") == "1"
+                showSuppressed: Self.fieldValue(widget.fields, name: "show_suppressed") == "1",
+                acknowledged: Self.severityAcknowledgedFilter(from: widget.fields)
             )
             let problems = try await problemsExcludingGroups(allProblems, excludedGroupIDs: excludedGroupIDs, serverBaseURL: serverBaseURL, authToken: authToken)
 
@@ -2124,6 +2126,24 @@ extension DashboardManager {
     /// its And/Or default). `field` defaults to "evaltype"; host widgets use "host_tags_evaltype".
     static func tagEvalType(from fields: [ZabbixWidgetField], field: String = "evaltype") -> Int? {
         fieldValue(fields, name: field).flatMap(Int.init)
+    }
+
+    /// Maps the Problems widget's `acknowledgement_status` (0 = all, 1 = unacknowledged, 2 =
+    /// acknowledged) to a `problem.get` `acknowledged` filter. An absent or unrecognized value means
+    /// no filter (every problem), preserving prior behavior when the widget doesn't set the option.
+    static func problemsAcknowledgedFilter(from fields: [ZabbixWidgetField]) -> Bool? {
+        switch fieldValue(fields, name: "acknowledgement_status").flatMap(Int.init) {
+        case 1: return false
+        case 2: return true
+        default: return nil
+        }
+    }
+
+    /// Maps the Problems-by-severity widget's `ext_ack` (0 = all, 1 = unacknowledged only, 2 =
+    /// separated display) to a `problem.get` `acknowledged` filter. Only "unacknowledged only"
+    /// restricts the counts; "all" and the separated-display mode leave every problem in.
+    static func severityAcknowledgedFilter(from fields: [ZabbixWidgetField]) -> Bool? {
+        fieldValue(fields, name: "ext_ack").flatMap(Int.init) == 1 ? false : nil
     }
 
     /// Resolves a widget's positive host-group scope (`groupids.N`) into the full set of group IDs

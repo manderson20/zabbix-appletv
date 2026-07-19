@@ -392,6 +392,26 @@ struct ZabbixAppleTVDashboardTests {
         #expect(triggers.first?.hosts.first?.hostid == "10461")
     }
 
+    @Test func problemsAcknowledgedFilterMapsStatus() throws {
+        func filter(_ value: String?) -> Bool? {
+            DashboardManager.problemsAcknowledgedFilter(from: value.map { [ZabbixWidgetField(name: "acknowledgement_status", value: $0)] } ?? [])
+        }
+        #expect(filter("1") == false)  // unacknowledged only
+        #expect(filter("2") == true)   // acknowledged only
+        #expect(filter("0") == nil)    // all
+        #expect(filter(nil) == nil)    // field absent → no filter
+    }
+
+    @Test func severityAcknowledgedFilterOnlyRestrictsUnacknowledged() throws {
+        func filter(_ value: String?) -> Bool? {
+            DashboardManager.severityAcknowledgedFilter(from: value.map { [ZabbixWidgetField(name: "ext_ack", value: $0)] } ?? [])
+        }
+        #expect(filter("1") == false)  // unacknowledged only
+        #expect(filter("0") == nil)    // all
+        #expect(filter("2") == nil)    // separated display → count all
+        #expect(filter(nil) == nil)    // field absent → no filter
+    }
+
     @Test func trendApproximationSelectsMinAvgMax() throws {
         let full = ZabbixTrendValue(clock: "1700000000", value_avg: "50", value_min: "10", value_max: "90")
 

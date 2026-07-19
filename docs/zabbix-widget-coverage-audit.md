@@ -11,7 +11,7 @@
 
 Coverage is broad and, since the original audit, materially deeper. Every widget renders
 *something*, and the count of widgets whose worst realistic-config behavior is **wrong-data** has
-dropped from 25/26 to **12/26**, with the other 14 down to **missing-detail** (renders correctly
+dropped from 25/26 to **10/26**, with the other 16 down to **missing-detail** (renders correctly
 but ignores a display or layout knob). The improvement came almost entirely from the cross-cutting
 helpers the original audit predicted would each fix a class of widgets:
 
@@ -57,8 +57,8 @@ cosmetic-leaning last).
 | Item navigator | partial | missing-detail | 2 | `group_by` flattened; `show_lines` default 100 — `items.N` + value maps + item-tag filter now applied |
 | Data overview | partial | wrong-data | 3 | Arbitrary 100-item cap; hosts×items matrix flattened — `tags` + value maps now applied |
 | Geomap | partial | missing-detail | 2 | Marker severity now scoped to the widget's tag + severity filter; only `default_view` center/zoom and group-scoped severity remain |
-| Problems | partial | wrong-data | 2 | Acknowledgement filtering dropped (over-counts acked); `show_lines` default 20 vs 25 — `groupids`/tags/suppression now honored |
-| Problems by severity | partial | wrong-data | 2 | `ext_ack` still inflates counts; `show_type=GROUPS` collapsed to flat tally — `groupids`/tags now honored |
+| Problems | partial | missing-detail | 1 | `groupids`/tags/suppression/acknowledgement all honored; only `show_lines` default (20 vs 25) remains |
+| Problems by severity | partial | missing-detail | 1 | `groupids`/tags/`ext_ack` acknowledgement now honored; only `show_type=GROUPS` (collapsed to a flat tally) remains |
 | Action log | partial | wrong-data | 4 | Hardcoded 7-day window; content filters (recipients/severities/statuses) ignored — now receives widget + honors `show_lines` |
 | System information | partial | wrong-data | 2 | `info_type` ignored (HA-nodes mode wrong); `isRunning` hardcoded true |
 | Clock | partial | wrong-data | 2 | `time_type=host` / `tzone_timezone` ignored → shows device local time |
@@ -82,6 +82,7 @@ cosmetic-leaning last).
 
 - ~~**Web monitoring — scenario status not derived.**~~ **Done** — Ok/Failed/Unknown derived from each scenario's `web.test.fail[<name>]` item (fetched with `webitems: true`); `exclude_groupids` + tags scope still pending.
 - ~~**Top triggers — wrong metric.**~~ **Done** — ranks by problem-event count over `time_period` (`event.get` grouped by trigger, busiest-first) with a count column, replacing the current-problems-by-severity list.
+- ~~**Acknowledgement filtering dropped.**~~ **Done** — Problems (`acknowledgement_status`) and Problems by severity (`ext_ack`) map to `problem.get`'s `acknowledged` filter, so "unacknowledged only" no longer counts acked problems.
 - ~~**Item value — thresholds ignored.**~~ **Done** — reads `thresholds.N` (shared `thresholdColorHex` helper) so a value crossing a band repaints the background with its alert color.
 - ~~**Honeycomb — thresholds/cell coloring absent.**~~ **Done** — each cell is tinted by the threshold band its reading meets (same `thresholdColorHex` helper).
 - ~~**Geomap — marker severity ignores widget `tags`.**~~ **Done** — `maxSeverityByHostID` now takes the widget's tag + severity filter, so a marker's color reflects only the problems the widget shows.
@@ -105,8 +106,6 @@ cosmetic-leaning last).
 
 - **Map navigation tree — resolver doesn't receive the widget.** Change the signature to accept
   `ZabbixWidget`, then render the authored `navtree` hierarchy instead of listing every server map.
-- **Acknowledgement filtering dropped.** Problems (`acknowledgement_status`) and Problems by severity
-  (`ext_ack`) still over-count acknowledged problems.
 - **Host availability — `maintenance` not honored.** Add the `maintenance_status` filter (default
   excludes maintenance); also fetch `active_available` for active-check availability.
 - **Graph (svggraph) — per-dataset aggregation/`timeshift`/`axisy`.** Reuse the aggregation engine

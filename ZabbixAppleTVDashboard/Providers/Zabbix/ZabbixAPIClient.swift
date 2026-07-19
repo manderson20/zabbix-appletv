@@ -144,10 +144,10 @@ actor ZabbixAPIClient {
     /// problems (hosts in maintenance, manually-suppressed problems) are excluded by default to
     /// match Zabbix's own problem widgets; pass `showSuppressed: true` for a widget configured to
     /// show them.
-    func problems(serverBaseURL: URL, authToken: String, severities: [Int]? = nil, groupIDs: [String]? = nil, tags: [ZabbixTagFilter]? = nil, evalType: Int? = nil, showSuppressed: Bool = false) async throws -> [ZabbixProblemSummary] {
+    func problems(serverBaseURL: URL, authToken: String, severities: [Int]? = nil, groupIDs: [String]? = nil, tags: [ZabbixTagFilter]? = nil, evalType: Int? = nil, showSuppressed: Bool = false, acknowledged: Bool? = nil) async throws -> [ZabbixProblemSummary] {
         try await send(
             method: "problem.get",
-            params: ZabbixProblemGetParameters(severities: severities, groupids: groupIDs, suppressed: showSuppressed ? nil : false, tags: tags, evaltype: evalType),
+            params: ZabbixProblemGetParameters(severities: severities, groupids: groupIDs, suppressed: showSuppressed ? nil : false, tags: tags, evaltype: evalType, acknowledged: acknowledged),
             serverBaseURL: serverBaseURL,
             authToken: authToken,
             resultType: [ZabbixProblemSummary].self
