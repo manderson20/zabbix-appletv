@@ -934,32 +934,50 @@ struct ItemHistoryWidgetContentView: View {
 }
 
 struct DataOverviewWidgetContentView: View {
-    let entries: [DataOverviewEntry]
+    let matrix: DataOverviewMatrix
+
+    private let headerWidth: CGFloat = 130
+    private let cellWidth: CGFloat = 74
 
     var body: some View {
-        if entries.isEmpty {
+        if matrix.rows.isEmpty {
             Text("No items match this widget's filters")
                 .font(.system(size: 16, weight: .regular, design: .rounded))
                 .foregroundStyle(DashboardTheme.secondaryText)
         } else {
+            // A hosts×items grid; scrolls horizontally when there are more columns than fit and
+            // vertically (auto) through the rows.
             AutoScrollingContent {
-                VStack(alignment: .leading, spacing: 6) {
-                    ForEach(entries.prefix(30)) { entry in
-                        HStack {
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(entry.itemName)
-                                    .font(.system(size: 15, weight: .medium, design: .rounded))
-                                    .foregroundStyle(DashboardTheme.primaryText)
-                                    .lineLimit(1)
-                                Text(entry.hostName)
-                                    .font(.system(size: 12, weight: .regular, design: .rounded))
+                ScrollView(.horizontal, showsIndicators: false) {
+                    Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 4) {
+                        GridRow {
+                            Color.clear.frame(width: headerWidth, height: 1) // corner spacer
+                            ForEach(Array(matrix.columnHeaders.enumerated()), id: \.offset) { _, header in
+                                Text(header)
+                                    .font(.system(size: 12, weight: .semibold, design: .rounded))
                                     .foregroundStyle(DashboardTheme.secondaryText)
                                     .lineLimit(1)
+                                    .frame(width: cellWidth, alignment: .leading)
                             }
-                            Spacer()
-                            Text(entry.units.isEmpty ? entry.value : "\(entry.value) \(entry.units)")
-                                .font(.system(size: 15, weight: .semibold, design: .rounded))
-                                .foregroundStyle(DashboardTheme.accent)
+                        }
+
+                        ForEach(matrix.rows) { row in
+                            GridRow {
+                                Text(row.header)
+                                    .font(.system(size: 14, weight: .medium, design: .rounded))
+                                    .foregroundStyle(DashboardTheme.primaryText)
+                                    .lineLimit(1)
+                                    .frame(width: headerWidth, alignment: .leading)
+
+                                ForEach(Array(row.cells.enumerated()), id: \.offset) { _, cell in
+                                    Text(cell)
+                                        .font(.system(size: 14, weight: .regular, design: .rounded))
+                                        .foregroundStyle(DashboardTheme.accent)
+                                        .lineLimit(1)
+                                        .minimumScaleFactor(0.7)
+                                        .frame(width: cellWidth, alignment: .leading)
+                                }
+                            }
                         }
                     }
                 }

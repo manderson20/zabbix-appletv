@@ -150,8 +150,8 @@ private struct DashboardWidgetCardView: View {
             WebMonitoringWidgetContentView(scenarios: scenarios)
         case let .itemHistory(series):
             ItemHistoryWidgetContentView(series: series)
-        case let .dataOverview(entries):
-            DataOverviewWidgetContentView(entries: entries)
+        case let .dataOverview(matrix):
+            DataOverviewWidgetContentView(matrix: matrix)
         case let .lineChart(series, window):
             LineChartWidgetContentView(series: series, window: window)
         case let .pieChart(slices):
