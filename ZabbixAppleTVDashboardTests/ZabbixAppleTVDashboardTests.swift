@@ -318,6 +318,19 @@ struct ZabbixAppleTVDashboardTests {
         #expect(DashboardManager.firstIndexedValue(fields, name: "hostid") == nil)
     }
 
+    @Test func classicGraphReferenceIsStoredIndexedNotScalar() throws {
+        // A live classic "graph" widget stores its graph reference under the indexed field name
+        // `graphid.0`, not a bare `graphid`. An exact-name lookup misses it (the bug that made the
+        // widget render "not supported"); the indexed-aware read must find it.
+        let fields = [
+            ZabbixWidgetField(name: "graphid.0", value: "10714"),
+            ZabbixWidgetField(name: "reference", value: "REQHS")
+        ]
+
+        #expect(DashboardManager.fieldValue(fields, name: "graphid") == nil)
+        #expect(DashboardManager.firstIndexedValue(fields, name: "graphid") == "10714")
+    }
+
     @Test func widgetFieldHelpersGroupIndexedFieldsByPrefix() throws {
         let fields = [
             ZabbixWidgetField(name: "thresholds.0.threshold", value: "50"),
