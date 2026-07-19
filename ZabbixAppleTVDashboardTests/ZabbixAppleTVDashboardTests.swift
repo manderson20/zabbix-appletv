@@ -392,6 +392,31 @@ struct ZabbixAppleTVDashboardTests {
         #expect(triggers.first?.hosts.first?.hostid == "10461")
     }
 
+    @Test func itemSearchParamsForwardTagFilterWhenPresent() throws {
+        func encoded(_ params: ZabbixItemSearchParameters) throws -> [String: Any] {
+            let data = try JSONEncoder().encode(params)
+            return try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        }
+
+        // No tags → the query stays unfiltered (no tags/evaltype keys sent).
+        let untagged = try encoded(ZabbixItemSearchParameters(groupIDs: ["4"]))
+        #expect(untagged["tags"] == nil)
+        #expect(untagged["evaltype"] == nil)
+
+        // Item-tag filter is forwarded to item.get with its evaltype.
+        let tagged = try encoded(ZabbixItemSearchParameters(
+            tags: [ZabbixTagFilter(tag: "Application", value: "MySQL", operator: 0)],
+            evaltype: 2
+        ))
+        #expect((tagged["tags"] as? [[String: Any]])?.count == 1)
+        #expect(tagged["evaltype"] as? Int == 2)
+
+        // An empty tag array is treated as no filter (evaltype dropped too).
+        let emptyTags = try encoded(ZabbixItemSearchParameters(tags: [], evaltype: 2))
+        #expect(emptyTags["tags"] == nil)
+        #expect(emptyTags["evaltype"] == nil)
+    }
+
     @Test func discoveryRuleParamsFilterToActiveRules() throws {
         func encoded(_ params: ZabbixDiscoveryRuleGetParameters) throws -> [String: Any] {
             let data = try JSONEncoder().encode(params)
