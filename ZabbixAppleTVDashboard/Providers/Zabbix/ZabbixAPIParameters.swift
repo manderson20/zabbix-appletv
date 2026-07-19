@@ -540,8 +540,20 @@ nonisolated struct ZabbixAlertGetParameters: Encodable, Sendable {
     /// Maximum number of alerts to return.
     let limit: Int
 
+    /// The Action log widget's own content filters. Each is omitted when empty, so an unconfigured
+    /// widget's query is unchanged. `statuses` is sent as `filter: {status: [...]}`; the rest map to
+    /// `alert.get`'s array parameters of the same name.
+    let actionids: [String]?
+    let mediatypeids: [String]?
+    let userids: [String]?
+    let statuses: [Int]?
+
     init(
         sinceUnixTime: Int,
+        actionIDs: [String]? = nil,
+        mediatypeIDs: [String]? = nil,
+        userIDs: [String]? = nil,
+        statuses: [Int]? = nil,
         output: [String] = ["alertid", "clock", "subject", "message", "status", "sendto", "alerttype"],
         sortfield: String = "clock",
         sortorder: String = "DESC",
@@ -552,6 +564,29 @@ nonisolated struct ZabbixAlertGetParameters: Encodable, Sendable {
         self.sortfield = sortfield
         self.sortorder = sortorder
         self.limit = limit
+        self.actionids = (actionIDs?.isEmpty == false) ? actionIDs : nil
+        self.mediatypeids = (mediatypeIDs?.isEmpty == false) ? mediatypeIDs : nil
+        self.userids = (userIDs?.isEmpty == false) ? userIDs : nil
+        self.statuses = (statuses?.isEmpty == false) ? statuses : nil
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case output, time_from, sortfield, sortorder, limit, actionids, mediatypeids, userids, filter
+    }
+
+    private struct StatusFilter: Encodable { let status: [Int] }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(output, forKey: .output)
+        try container.encode(time_from, forKey: .time_from)
+        try container.encode(sortfield, forKey: .sortfield)
+        try container.encode(sortorder, forKey: .sortorder)
+        try container.encode(limit, forKey: .limit)
+        try container.encodeIfPresent(actionids, forKey: .actionids)
+        try container.encodeIfPresent(mediatypeids, forKey: .mediatypeids)
+        try container.encodeIfPresent(userids, forKey: .userids)
+        if let statuses { try container.encode(StatusFilter(status: statuses), forKey: .filter) }
     }
 }
 

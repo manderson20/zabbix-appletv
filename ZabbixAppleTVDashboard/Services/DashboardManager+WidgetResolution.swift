@@ -1118,7 +1118,25 @@ extension DashboardManager {
         // already returns them newest-first, so this bounds the fetch to the configured row count
         // rather than the client's blanket 50.
         let showLines = Self.fieldValue(widget.fields, name: "show_lines").flatMap(Int.init) ?? 25
-        let alerts = try await zabbixAPIClient.alerts(serverBaseURL: serverBaseURL, authToken: authToken, sinceUnixTime: sinceUnixTime, limit: showLines)
+
+        // The widget's content filters — recipients (users), actions, media types, and delivery
+        // statuses — narrow which alerts are shown. Each maps to an `alert.get` parameter and is
+        // applied only when the widget actually configures it, so an unfiltered widget is unchanged.
+        let actionIDs = Self.indexedValues(widget.fields, name: "actionids")
+        let mediatypeIDs = Self.indexedValues(widget.fields, name: "mediatypeids")
+        let userIDs = Self.indexedValues(widget.fields, name: "userids")
+        let statuses = Self.indexedValues(widget.fields, name: "statuses").compactMap(Int.init)
+
+        let alerts = try await zabbixAPIClient.alerts(
+            serverBaseURL: serverBaseURL,
+            authToken: authToken,
+            sinceUnixTime: sinceUnixTime,
+            limit: showLines,
+            actionIDs: actionIDs.isEmpty ? nil : actionIDs,
+            mediatypeIDs: mediatypeIDs.isEmpty ? nil : mediatypeIDs,
+            userIDs: userIDs.isEmpty ? nil : userIDs,
+            statuses: statuses.isEmpty ? nil : statuses
+        )
 
         return .actionLog(
             alerts.map { alert in
