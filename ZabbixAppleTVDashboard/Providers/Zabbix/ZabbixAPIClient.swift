@@ -365,11 +365,13 @@ actor ZabbixAPIClient {
         serverBaseURL: URL,
         authToken: String,
         groupIDs: [String]? = nil,
-        hostIDs: [String]? = nil
+        hostIDs: [String]? = nil,
+        tags: [ZabbixTagFilter]? = nil,
+        evalType: Int? = nil
     ) async throws -> [ZabbixWebScenario] {
         try await send(
             method: "httptest.get",
-            params: ZabbixWebScenarioGetParameters(groupIDs: groupIDs, hostIDs: hostIDs),
+            params: ZabbixWebScenarioGetParameters(groupIDs: groupIDs, hostIDs: hostIDs, tags: tags, evaltype: evalType),
             serverBaseURL: serverBaseURL,
             authToken: authToken,
             resultType: [ZabbixWebScenario].self

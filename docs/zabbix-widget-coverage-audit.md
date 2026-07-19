@@ -11,7 +11,7 @@
 
 Coverage is broad and, since the original audit, materially deeper. Every widget renders
 *something*, and the count of widgets whose worst realistic-config behavior is **wrong-data** has
-dropped from 25/26 to **8/26**, with the other 18 down to **missing-detail** (renders correctly
+dropped from 25/26 to **7/26**, with the other 19 down to **missing-detail** (renders correctly
 but ignores a display or layout knob). The improvement came almost entirely from the cross-cutting
 helpers the original audit predicted would each fix a class of widgets:
 
@@ -21,7 +21,7 @@ helpers the original audit predicted would each fix a class of widgets:
 - **Tag filtering** (`tags`/`evaltype`) is wired into the problem/trigger family, Top hosts, the host
   navigator, and — as of this change — the item-search path (`ZabbixItemSearchParameters` now carries
   `tags`, feeding `item.get`), so Data overview, Honeycomb, and Item navigator are scoped too. It
-  remains absent only on Geomap and Web.
+  remains absent only on Geomap (marker severity).
 - **Aggregation over a window** (`aggregate_function` + `time_period`) is implemented for Item value,
   Top hosts, and Pie chart via a shared engine. **Still missing** the per-dataset `aggregate_function`
   in Graph (svg) — though its `approximation` (min/avg/max trend backfill) is now honored.
@@ -49,7 +49,7 @@ cosmetic-leaning last).
 |---|---|---|---|---|
 | Map navigation tree | rendered-only | wrong-data | 6 | Resolver takes no `widget`; ignores entire `navtree`, lists every map on the server |
 | SLA report | partial | missing-detail | 2 | Computes achieved SLI per service (`sla.getsli`) vs target with pass/fail color; shows only the latest period, and `serviceid` field name assumed (unverified live) |
-| Web monitoring | partial | wrong-data | 2 | `exclude_groupids` + tags ignored → shows a superset of scenarios; Ok/Failed/Unknown status now derived from `web.test.fail` |
+| Web monitoring | partial | missing-detail | 1 | Status (`web.test.fail`) + full scope (`groupids`/`hostids`/tags/`exclude_groupids`) honored; only the 15-row view cap remains |
 | Top triggers | partial | missing-detail | 1 | Now ranks by problem-event frequency over `time_period` with a count column; only acknowledgement filtering remains |
 | Graph (svggraph) | partial | wrong-data | 7 | Per-dataset aggregation/`timeshift`/`axisy` ignored — `approximation` (min/avg/max trend backfill) now honored |
 | Graph (classic) | partial | wrong-data | 7 | Graph type (stacked/pie) lost; Simple-graph mode (`itemid`) unsupported |
@@ -85,13 +85,14 @@ cosmetic-leaning last).
 - ~~**Acknowledgement filtering dropped.**~~ **Done** — Problems (`acknowledgement_status`) and Problems by severity (`ext_ack`) map to `problem.get`'s `acknowledged` filter, so "unacknowledged only" no longer counts acked problems.
 - ~~**Clock — `time_type=host` / `tzone_timezone` ignored.**~~ **Done** — host time is derived from the host's `system.localtime` item (reported-minus-collected offset) and the configured timezone is applied to both faces; server-time mode still falls back to local.
 - ~~**System information — `isRunning` hardcoded true + `info_type` ignored.**~~ **Done** — `info_type=1` lists HA nodes via `hanode.get`, and `isRunning` is inferred from an active node; standalone servers (no HA nodes) keep the API-success proxy.
+- ~~**Web monitoring — `exclude_groupids` + tags dropped.**~~ **Done** — tags filter `httptest.get` server-side and `exclude_groupids` drops scenarios whose host is in an excluded group (client-side), so the widget's full scope is honored.
 - ~~**Item value — thresholds ignored.**~~ **Done** — reads `thresholds.N` (shared `thresholdColorHex` helper) so a value crossing a band repaints the background with its alert color.
 - ~~**Honeycomb — thresholds/cell coloring absent.**~~ **Done** — each cell is tinted by the threshold band its reading meets (same `thresholdColorHex` helper).
 - ~~**Geomap — marker severity ignores widget `tags`.**~~ **Done** — `maxSeverityByHostID` now takes the widget's tag + severity filter, so a marker's color reflects only the problems the widget shows.
 - ~~**Tag filtering on the item-search path.**~~ **Done** — `ZabbixItemSearchParameters` now carries `tags`/`evaltype` (forwarded to `item.get`); Data overview, Honeycomb, and Item navigator apply the widget's item-tag filter.
 - ~~**Item history — item selector reads the wrong field.**~~ **Done** — reads `columns.N.itemid`, honors `show_lines` (default 25), applies value maps, bounds to `time_period`.
 - ~~**Positive `groupids` scoping dropped.**~~ **Done** — a shared `scopedGroupIDs` (nested-aware) is applied in Problems, Problems by severity, Problem hosts, Top triggers, Top hosts, Host availability, and the navigators; the `problem.get`/`host.get` param structs carry `groupids`.
-- ~~**Tag filtering (`tags`+`evaltype`) unimplemented everywhere.**~~ **Partly done** — a shared `tagFilters`/`tagEvalType` builder is wired into Problems, Problems by severity, Problem hosts, Trigger overview, Top triggers, Top hosts, and Host navigator. **Still missing** on the item-search path (Data overview, Honeycomb, Item navigator) and Geomap/Web.
+- ~~**Tag filtering (`tags`+`evaltype`) unimplemented everywhere.**~~ **Mostly done** — a shared `tagFilters`/`tagEvalType` builder is wired into Problems, Problems by severity, Problem hosts, Trigger overview, Top triggers, Top hosts, Host navigator, the item-search path (Data overview, Honeycomb, Item navigator), and Web monitoring. **Only Geomap** (marker severity) remains tag-unfiltered.
 - ~~**Aggregation over a window ignored.**~~ **Mostly done** — Item value, Top hosts, and Pie chart compute `aggregate_function` over `time_period`. Graph (svg) now honors `approximation` for its trend backfill; only its per-dataset `aggregate_function` remains.
 - ~~**Top hosts — ranking unimplemented.**~~ **Done** — ranks up to 50 candidate hosts by the configured column (Top/Bottom N), limited to `show_lines`; per-column aggregation over `time_period`.
 - ~~**Trigger overview — only PROBLEM state fetched.**~~ **Done** — `show: Any` fetches all triggers and renders OK cells green; tags + nested scope applied.
@@ -115,8 +116,6 @@ cosmetic-leaning last).
   (`approximation` min/avg/max trend backfill is now done.)
 - **Graph (classic) — graph type lost + Simple-graph unsupported.** Fetch `graphtype` and render
   stacked/pie; implement `source_type=1`/`itemid`.
-- **Web monitoring — `exclude_groupids` + tags dropped.** Status is now derived; the remaining gap
-  is scope — a widget with an exclude/tag filter still shows a superset of scenarios.
 - **Map — non-host elements always OK.** Compute status for submap/host-group/trigger elements.
 
 ### Tier 2 — Missing configured detail (renders, but ignores a knob)
@@ -158,13 +157,13 @@ These were the leverage points, and most have now been built. Status is marked i
 
 - **Host-group scoping helper (positive + exclude + nested).** ✅ **Built** — `scopedGroupIDs`
   expands nested subgroups and is applied across the problem/host family; `exclude_groupids` is
-  honored via `problemsExcludingGroups` in Problems, Problems by severity, and Problem hosts. Web
-  monitoring still ignores `exclude_groupids`.
+  honored via `problemsExcludingGroups` in Problems, Problems by severity, and Problem hosts, and
+  client-side in Web monitoring (drops scenarios whose host is in an excluded group).
 - **Tag-filter builder (`tags` + `evaltype`).** ✅ **Built** — `tagFilters`/`tagEvalType` wired into
   the problem/trigger family, Top hosts, Host navigator, and the item-search path
   (`ZabbixItemSearchParameters` now forwards `tags` to `item.get`; Data overview / Honeycomb / Item
-  navigator scoped; Geomap marker severity now tag-scoped too). Only **Web monitoring** remains
-  tag-unfiltered.
+  navigator scoped) and Web monitoring (`httptest.get`). Only **Geomap** (marker severity uses the
+  server-wide problem set) remains tag-unfiltered.
 - **Suppression + maintenance handling.** ◐ **Partly** — `show_suppressed` honored in Problems,
   Problems by severity, Problem hosts; Trigger overview still can't (trigger.get lacks the filter).
   `maintenance` still ignored in Host availability, Honeycomb, Top hosts, Web, Host navigator.
@@ -198,8 +197,8 @@ These were the leverage points, and most have now been built. Status is marked i
 ## 5. Data-robustness summary
 
 - **Under-filtering, narrowing.** Every widget still fetches under the session token, so no leaks.
-  The scope gap has shrunk further: group scoping and tag filtering (including the item-search path)
-  are now applied. The residual over-broad case is **Web** (no exclude/tags).
+  The scope gap has shrunk further: group scoping and tag filtering (including the item-search path
+  and Web) are now applied. The residual over-broad case is **Geomap** (server-wide marker severity).
 - **Hard caps + arbitrary ordering.** Data overview `prefix(100)` and Honeycomb `prefix(60)` are
   intentional safety caps (no Zabbix field). Item history, Action log, and Top hosts now bound by
   the configured count. `problem.get limit:5000` remains a coarse ceiling for very busy servers.
