@@ -304,6 +304,21 @@ struct ZabbixAppleTVDashboardTests {
         #expect(Int(count) == 912)
     }
 
+    @Test func simpleTriggerThresholdParsesSingleComparisonConstants() throws {
+        // The simple-expression case Zabbix's own graphs draw a trigger line for.
+        let simple = DashboardManager.simpleTriggerThreshold(fromExpression: "last(/BSD-DNS1/system.cpu.util)>90")
+        #expect(simple?.comparison == ">" && simple?.value == 90)
+
+        let decimal = DashboardManager.simpleTriggerThreshold(fromExpression: "avg(/h/k,5m)>=1.5")
+        #expect(decimal?.comparison == ">=" && decimal?.value == 1.5)
+
+        // Compound expressions (two comparisons) have no single line — skipped, as Zabbix skips them.
+        #expect(DashboardManager.simpleTriggerThreshold(fromExpression: "last(/h/a)>1 and last(/h/b)>2") == nil)
+        // Suffixed constants ("16G") don't parse to a bare number — skipped rather than misplotted.
+        #expect(DashboardManager.simpleTriggerThreshold(fromExpression: "last(/h/vfs.fs.size)<16G") == nil)
+        #expect(DashboardManager.simpleTriggerThreshold(fromExpression: nil) == nil)
+    }
+
     @Test func hostPrefixedTitleMatchesZabbixDefaultHeaders() throws {
         // Zabbix's default header for object-referencing widgets is "HOST: name".
         #expect(DashboardManager.hostPrefixedTitle(host: "BSD-DNS1", name: "Available memory") == "BSD-DNS1: Available memory")

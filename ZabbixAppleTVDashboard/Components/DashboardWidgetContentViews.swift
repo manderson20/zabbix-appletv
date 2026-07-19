@@ -355,6 +355,7 @@ struct LineChartWidgetContentView: View {
     var showLegendStats: Bool = false
     var yMin: Double? = nil
     var yMax: Double? = nil
+    var triggerLines: [GraphTriggerLine] = []
 
     private var units: String { series.first?.units ?? "" }
 
@@ -374,7 +375,9 @@ struct LineChartWidgetContentView: View {
         }
 
         guard !stacked else { return nil }
-        let values = series.flatMap(\.points).compactMap(\.value)
+        // Trigger lines participate in the auto range, as on Zabbix's own graphs — a 90% threshold
+        // stays visible over data hugging zero.
+        let values = series.flatMap(\.points).compactMap(\.value) + triggerLines.map(\.value)
         guard let minValue = values.min(), let maxValue = values.max(), minValue > 0 else { return nil }
         let span = maxValue - minValue
         let padding = span > 0 ? span * 0.05 : max(maxValue * 0.01, 0.5)
@@ -468,6 +471,17 @@ struct LineChartWidgetContentView: View {
             .opacity(line.fillOpacity)
     }
 
+    /// A trigger's constant threshold as Zabbix draws it: a dashed horizontal rule in the
+    /// trigger's severity color.
+    @ChartContentBuilder
+    private var triggerLineMarks: some ChartContent {
+        ForEach(triggerLines) { line in
+            RuleMark(y: .value("Trigger", line.value))
+                .foregroundStyle(Color(hex: line.colorHex) ?? .orange)
+                .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
+        }
+    }
+
     private var segmentedChart: some View {
         let segments = segments
         return Chart {
@@ -476,6 +490,8 @@ struct LineChartWidgetContentView: View {
                     marks(for: point, in: segment)
                 }
             }
+
+            triggerLineMarks
         }
         // Every segment of a series maps to that series' one color, so a broken-up line stays a
         // single visual color across its gaps.
@@ -492,6 +508,8 @@ struct LineChartWidgetContentView: View {
                     stackedMark(for: point, in: line)
                 }
             }
+
+            triggerLineMarks
         }
         .chartForegroundStyleScale(
             domain: series.map(\.id),
@@ -548,7 +566,7 @@ struct LineChartWidgetContentView: View {
                 // Zabbix shows the legend whenever it's enabled — including single-series graphs,
                 // where the color key is what names the series ("— BSD-DNS1: Available memory").
                 if showLegend {
-                    ChartLegendView(series: series, showStats: showLegendStats)
+                    ChartLegendView(series: series, showStats: showLegendStats, triggerLines: triggerLines)
                 }
             }
         }
@@ -577,8 +595,26 @@ private extension View {
 private struct ChartLegendView: View {
     let series: [ChartSeries]
     var showStats: Bool = false
+    var triggerLines: [GraphTriggerLine] = []
 
     private let columns = [GridItem(.adaptive(minimum: 240, maximum: 360), spacing: 12, alignment: .leading)]
+
+    /// Zabbix's trigger legend rows: a severity-colored dot and the "Trigger: name [> 90]" label,
+    /// listed under the series rows.
+    @ViewBuilder
+    private var triggerRows: some View {
+        ForEach(triggerLines) { line in
+            HStack(spacing: 5) {
+                Circle()
+                    .fill(Color(hex: line.colorHex) ?? .orange)
+                    .frame(width: 8, height: 8)
+                Text(line.label)
+                    .font(.system(size: 11, weight: .regular, design: .rounded))
+                    .foregroundStyle(DashboardTheme.secondaryText)
+                    .lineLimit(1)
+            }
+        }
+    }
 
     /// A series' legend stats over the drawn window, formatted with the series' units.
     static func stats(for line: ChartSeries) -> (last: String, min: String, avg: String, max: String)? {
@@ -598,6 +634,19 @@ private struct ChartLegendView: View {
 
     var body: some View {
         if showStats {
+            VStack(alignment: .leading, spacing: 3) {
+                statsGrid
+                triggerRows
+            }
+        } else {
+            VStack(alignment: .leading, spacing: 3) {
+                namesGrid
+                triggerRows
+            }
+        }
+    }
+
+    private var statsGrid: some View {
             Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 2) {
                 GridRow {
                     Color.clear.frame(width: 1, height: 1).gridCellUnsizedAxes([.horizontal, .vertical])
@@ -631,7 +680,9 @@ private struct ChartLegendView: View {
                     }
                 }
             }
-        } else {
+    }
+
+    private var namesGrid: some View {
             LazyVGrid(columns: columns, alignment: .leading, spacing: 6) {
                 ForEach(series) { line in
                     HStack(alignment: .top, spacing: 5) {
@@ -652,7 +703,6 @@ private struct ChartLegendView: View {
                     }
                 }
             }
-        }
     }
 }
 

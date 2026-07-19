@@ -34,10 +34,15 @@ enum SeverityPalette {
     }
 
     static func color(for severity: Int) -> Color {
-        let hex = hexBySeverity.indices.contains(severity)
+        Color(hex: colorHex(for: severity)) ?? .gray
+    }
+
+    /// The raw severity color hex, for resolvers that stamp a color into model data (e.g. a classic
+    /// graph's trigger line) rather than looking it up at render time.
+    static func colorHex(for severity: Int) -> String {
+        hexBySeverity.indices.contains(severity)
             ? hexBySeverity[severity]
             : (defaultHex.indices.contains(severity) ? defaultHex[severity] : "97AAB3")
-        return Color(hex: hex) ?? .gray
     }
 
     static func name(for severity: Int) -> String {

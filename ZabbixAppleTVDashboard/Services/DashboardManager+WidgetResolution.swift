@@ -1745,7 +1745,7 @@ extension DashboardManager {
         }
 
         let window = ChartTimeWindow(start: windowStart, end: windowEnd)
-        return series.isEmpty ? .unsupported(rawType: widget.type) : .lineChart(series: series, window: window, stacked: false, showLegend: Self.fieldValue(widget.fields, name: "legend") != "0", showLegendStats: false, yMin: Self.fieldValue(widget.fields, name: "lefty_min").flatMap(Double.init), yMax: Self.fieldValue(widget.fields, name: "lefty_max").flatMap(Double.init))
+        return series.isEmpty ? .unsupported(rawType: widget.type) : .lineChart(series: series, window: window, stacked: false, showLegend: Self.fieldValue(widget.fields, name: "legend") != "0", showLegendStats: false, yMin: Self.fieldValue(widget.fields, name: "lefty_min").flatMap(Double.init), yMax: Self.fieldValue(widget.fields, name: "lefty_max").flatMap(Double.init), triggerLines: [])
     }
 
     /// Returns all values for keys like "prefix0", "prefix1", ... in a dataset dictionary, in
@@ -1812,7 +1812,8 @@ extension DashboardManager {
             let series = [ChartSeries(id: "\(widget.widgetid).\(item.itemid)", name: item.name, colorHex: "3DC9B0", units: item.units ?? "", fillOpacity: 0.5, points: points)]
             // Zabbix's default Simple-graph header is "HOST: item name".
             pendingDefaultTitle = Self.hostPrefixedTitle(host: item.hosts?.first?.name, name: item.name)
-            return .lineChart(series: series, window: ChartTimeWindow(start: windowStart, end: windowEnd), stacked: false, showLegend: Self.fieldValue(widget.fields, name: "legend") != "0", showLegendStats: true, yMin: nil, yMax: nil)
+            let simpleTriggerLines = await triggerLines(forItemIDs: [item.itemid], serverBaseURL: serverBaseURL, authToken: authToken)
+            return .lineChart(series: series, window: ChartTimeWindow(start: windowStart, end: windowEnd), stacked: false, showLegend: Self.fieldValue(widget.fields, name: "legend") != "0", showLegendStats: true, yMin: nil, yMax: nil, triggerLines: simpleTriggerLines)
         }
 
         guard let graphID = Self.firstIndexedValue(widget.fields, name: "graphid") else {
@@ -1867,7 +1868,8 @@ extension DashboardManager {
         // render Zabbix's stats legend (last/min/avg/max per series).
         // Zabbix's default classic-graph header is "HOST: graph name".
         pendingDefaultTitle = Self.hostPrefixedTitle(host: graph.gitems.first.flatMap { itemsByID[$0.itemid]?.hosts?.first?.name }, name: graph.name)
-        return series.isEmpty ? .unsupported(rawType: widget.type) : .lineChart(series: series, window: window, stacked: graphType == 1, showLegend: Self.fieldValue(widget.fields, name: "legend") != "0", showLegendStats: true, yMin: yMin, yMax: yMax)
+        let graphTriggerLines = await triggerLines(forItemIDs: graph.gitems.map(\.itemid), serverBaseURL: serverBaseURL, authToken: authToken)
+        return series.isEmpty ? .unsupported(rawType: widget.type) : .lineChart(series: series, window: window, stacked: graphType == 1, showLegend: Self.fieldValue(widget.fields, name: "legend") != "0", showLegendStats: true, yMin: yMin, yMax: yMax, triggerLines: graphTriggerLines)
     }
 
     // MARK: - Pie chart
@@ -2568,6 +2570,46 @@ extension DashboardManager {
         case 4: "JMX"
         default: "Interface Type \(type)"
         }
+    }
+
+    /// Builds a classic graph's trigger threshold lines: every enabled trigger on the graph's items
+    /// whose (macro-expanded) expression is a single comparison against a constant, drawn at that
+    /// constant in the trigger's severity color — the same set Zabbix's own graphs draw. Complex
+    /// expressions are skipped, as Zabbix skips them. Best-effort: a fetch failure just means no
+    /// lines rather than failing the graph.
+    private func triggerLines(forItemIDs itemIDs: [String], serverBaseURL: URL, authToken: String) async -> [GraphTriggerLine] {
+        let triggers = (try? await zabbixAPIClient.triggersForItems(serverBaseURL: serverBaseURL, authToken: authToken, itemIDs: itemIDs)) ?? []
+        var lines: [GraphTriggerLine] = []
+        for trigger in triggers {
+            guard let threshold = Self.simpleTriggerThreshold(fromExpression: trigger.expression) else { continue }
+            let colorHex = await SeverityPalette.colorHex(for: trigger.priority.intValue)
+            lines.append(GraphTriggerLine(
+                id: trigger.triggerid,
+                label: "Trigger: \(trigger.description) [\(threshold.comparison) \(threshold.value.formatted(.number.grouping(.never)))]",
+                value: threshold.value,
+                colorHex: colorHex
+            ))
+        }
+        return lines
+    }
+
+    /// Extracts the constant threshold from a simple trigger expression — "last(/host/key)>90",
+    /// "avg(/h/k,5m)>=1.5" — the same single-comparison case Zabbix's own classic graphs draw a
+    /// trigger line for. Returns nil for compound or non-constant expressions (multiple
+    /// comparisons, suffixed constants like "16G", macro thresholds that didn't expand).
+    static func simpleTriggerThreshold(fromExpression expression: String?) -> (comparison: String, value: Double)? {
+        guard let expression, !expression.isEmpty else { return nil }
+        // `[^<>=]+` up front guarantees exactly one comparison in the whole expression; the
+        // constant must close the expression.
+        let pattern = "^[^<>=]+([<>]=?|=)\\s*(-?[0-9]+(?:\\.[0-9]+)?)\\s*$"
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(in: expression, range: NSRange(expression.startIndex..., in: expression)),
+              let comparisonRange = Range(match.range(at: 1), in: expression),
+              let valueRange = Range(match.range(at: 2), in: expression),
+              let value = Double(expression[valueRange]) else {
+            return nil
+        }
+        return (String(expression[comparisonRange]), value)
     }
 
     /// Zabbix's data-driven default header for object-referencing widgets: "HOST: name", or just

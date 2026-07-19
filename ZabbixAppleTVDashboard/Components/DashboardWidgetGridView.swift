@@ -207,8 +207,8 @@ private struct DashboardWidgetCardView: View {
             ItemHistoryWidgetContentView(series: series, showTimestamp: showTimestamp)
         case let .dataOverview(matrix):
             DataOverviewWidgetContentView(matrix: matrix)
-        case let .lineChart(series, window, stacked, showLegend, showLegendStats, yMin, yMax):
-            LineChartWidgetContentView(series: series, window: window, stacked: stacked, showLegend: showLegend, showLegendStats: showLegendStats, yMin: yMin, yMax: yMax)
+        case let .lineChart(series, window, stacked, showLegend, showLegendStats, yMin, yMax, triggerLines):
+            LineChartWidgetContentView(series: series, window: window, stacked: stacked, showLegend: showLegend, showLegendStats: showLegendStats, yMin: yMin, yMax: yMax, triggerLines: triggerLines)
         case let .pieChart(slices, isDonut):
             PieChartWidgetContentView(slices: slices, isDonut: isDonut)
         case let .geomap(markers, defaultView):
