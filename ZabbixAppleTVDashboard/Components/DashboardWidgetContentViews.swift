@@ -639,65 +639,67 @@ struct GaugeWidgetContentView: View {
         return "\(mappedText) (\(ZabbixValueFormatting.formatItemValue(reading.value, units: "", decimalPlaces: reading.decimalPlaces)))"
     }
 
+    /// Zabbix's gauge value-arc fill when the widget doesn't set one — sampled live from the
+    /// frontend's SVG (`.svg-gauge-value-arc-sector`: rgb(105, 128, 141)).
+    private static let zabbixValueArcColor = Color(red: 105 / 255, green: 128 / 255, blue: 141 / 255)
+
+    /// The unfilled remainder of the arc (`.svg-gauge-empty-arc-sector`: rgb(56, 56, 56)).
+    private static let zabbixEmptyArcColor = Color(red: 56 / 255, green: 56 / 255, blue: 56 / 255)
+
     var body: some View {
         GeometryReader { geometry in
-            // A 180° semicircle sweeping from the minimum on the left, over the top, to the maximum
-            // on the right — plus a needle pointing at the current value — matching Zabbix's own
-            // gauge widget rather than a bare arc. The flat side faces down, so the lower half of
-            // the bounding square holds the value, item name, and the min/max end labels.
-            let diameter = max(min(geometry.size.width, geometry.size.height), 40)
-            let lineWidth = max(diameter * 0.09, 6)
+            // Zabbix's gauge is a thick filled arc, no needle: the value sector fills clockwise
+            // against a dark track, the bold value sits in the arc's mouth, the min/max labels sit
+            // at the arc's ends, and the description below in large text — all verified against the
+            // live frontend's SVG structure (value/empty arc sectors, left/right labels,
+            // value-and-units, description).
+            // Capped so the arc + value + description stack (which extends ~0.28·d below the arc's
+            // flat edge) still fits the card height without clipping the description.
+            let diameter = max(min(geometry.size.width, geometry.size.height * 1.15), 40)
+            let lineWidth = max(diameter * 0.13, 8)
 
             ZStack {
                 Circle()
                     .trim(from: 0, to: 0.5)
-                    .stroke(DashboardTheme.secondaryCardBackground, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
+                    .stroke(Self.zabbixEmptyArcColor, style: StrokeStyle(lineWidth: lineWidth, lineCap: .butt))
                     .rotationEffect(.degrees(180))
 
                 Circle()
                     .trim(from: 0, to: 0.5 * fraction)
-                    .stroke(gaugeTint, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
+                    .stroke(gaugeTint, style: StrokeStyle(lineWidth: lineWidth, lineCap: .butt))
                     .rotationEffect(.degrees(180))
 
-                // Needle points straight up at mid-scale; (fraction - 0.5) maps the 0…1 range onto
-                // -90°…+90°, so it swings to the left end at the minimum and the right at the maximum.
-                GaugeNeedle()
-                    .fill(DashboardTheme.primaryText)
-                    .rotationEffect(.degrees((fraction - 0.5) * 180))
-
-                Circle()
-                    .fill(DashboardTheme.primaryText)
-                    .frame(width: lineWidth, height: lineWidth)
-
                 Text(ZabbixValueFormatting.format(reading.minValue, units: reading.units))
-                    .font(.system(size: max(diameter * 0.07, 9), weight: .regular, design: .rounded))
-                    .foregroundStyle(DashboardTheme.secondaryText)
+                    .font(.system(size: max(diameter * 0.06, 9), weight: .regular, design: .rounded))
+                    .foregroundStyle(DashboardTheme.primaryText)
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
-                    .offset(x: -diameter * 0.4, y: diameter * 0.06)
+                    .offset(x: -(diameter / 2 - lineWidth / 2) + diameter * 0.02, y: lineWidth)
 
                 Text(ZabbixValueFormatting.format(reading.maxValue, units: reading.units))
-                    .font(.system(size: max(diameter * 0.07, 9), weight: .regular, design: .rounded))
-                    .foregroundStyle(DashboardTheme.secondaryText)
+                    .font(.system(size: max(diameter * 0.06, 9), weight: .regular, design: .rounded))
+                    .foregroundStyle(DashboardTheme.primaryText)
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
-                    .offset(x: diameter * 0.4, y: diameter * 0.06)
+                    .offset(x: (diameter / 2 - lineWidth / 2) - diameter * 0.02, y: lineWidth)
 
+                // The value in the arc's mouth — the open space under the arc's crown.
                 Text(centerText)
-                    .font(.system(size: diameter * 0.2, weight: .bold, design: .rounded))
+                    .font(.system(size: diameter * 0.14, weight: .bold, design: .rounded))
                     .foregroundStyle(DashboardTheme.primaryText)
                     .minimumScaleFactor(0.5)
                     .lineLimit(1)
                     .padding(.horizontal, 8)
-                    .offset(y: diameter * 0.2)
+                    .frame(width: diameter * 0.62)
+                    .offset(y: -diameter * 0.06)
 
                 Text(reading.name)
-                    .font(.system(size: max(diameter * 0.08, 10), weight: .regular, design: .rounded))
-                    .foregroundStyle(DashboardTheme.secondaryText)
+                    .font(.system(size: max(diameter * 0.1, 12), weight: .regular, design: .rounded))
+                    .foregroundStyle(DashboardTheme.primaryText)
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
-                    .frame(width: diameter * 0.7)
-                    .offset(y: diameter * 0.36)
+                    .frame(width: diameter * 0.9)
+                    .offset(y: diameter * 0.22)
             }
             .frame(width: diameter, height: diameter)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
@@ -712,25 +714,7 @@ struct GaugeWidgetContentView: View {
         if let fixedArcColorHex = reading.fixedArcColorHex, let color = Color(hex: fixedArcColorHex) {
             return color
         }
-        return DashboardTheme.accent
-    }
-}
-
-/// A slim triangular gauge needle that points straight up, pivoting at the bounding box's center
-/// (the gauge's arc center). `GaugeWidgetContentView` rotates it to the value's angle; the tip
-/// reaches near the top of the square, so at ±90° it lines up with the arc's left/right ends.
-private struct GaugeNeedle: Shape {
-    func path(in rect: CGRect) -> Path {
-        let center = CGPoint(x: rect.midX, y: rect.midY)
-        let tipY = rect.minY + rect.height * 0.08
-        let baseHalfWidth = max(rect.width * 0.02, 2)
-
-        var path = Path()
-        path.move(to: CGPoint(x: rect.midX, y: tipY))
-        path.addLine(to: CGPoint(x: center.x - baseHalfWidth, y: center.y))
-        path.addLine(to: CGPoint(x: center.x + baseHalfWidth, y: center.y))
-        path.closeSubpath()
-        return path
+        return Self.zabbixValueArcColor
     }
 }
 
@@ -889,27 +873,76 @@ struct TopHostsWidgetContentView: View {
 struct TriggerOverviewWidgetContentView: View {
     let rows: [TriggerOverviewRow]
 
+    /// One column per distinct trigger name — Zabbix's trigger overview is a host × trigger matrix,
+    /// not a per-host strip of chips.
+    private static let triggerColumnWidth: CGFloat = 64
+    private static let rotatedHeaderHeight: CGFloat = 130
+    private static let cellHeight: CGFloat = 27
+
+    /// Distinct trigger names across all hosts, in first-appearance order: the matrix's columns.
+    private var triggerColumns: [String] {
+        var seen = Set<String>()
+        var columns: [String] = []
+        for row in rows {
+            for trigger in row.triggers where !seen.contains(trigger.name) {
+                seen.insert(trigger.name)
+                columns.append(trigger.name)
+            }
+        }
+        return columns
+    }
+
     var body: some View {
         if rows.isEmpty {
             Text("No active triggers")
                 .font(.system(size: 16, weight: .regular, design: .rounded))
                 .foregroundStyle(DashboardTheme.secondaryText)
         } else {
+            let columns = triggerColumns
+            // Zabbix's layout: a "Hosts" column of host names, one column per trigger with its name
+            // rotated vertically in the header, and a full severity-colored cell where that host has
+            // that trigger in problem state (green when an OK trigger is shown via "Show: Any");
+            // blank where the host doesn't have the trigger.
             AutoScrollingContent {
-                VStack(alignment: .leading, spacing: 8) {
-                    ForEach(rows) { row in
-                        HStack(alignment: .top, spacing: 10) {
-                            Text(row.hostName)
-                                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                ScrollView(.horizontal, showsIndicators: false) {
+                    Grid(alignment: .leading, horizontalSpacing: 3, verticalSpacing: 3) {
+                        GridRow {
+                            Text("Hosts")
+                                .font(.system(size: 14, weight: .regular, design: .rounded))
                                 .foregroundStyle(DashboardTheme.secondaryText)
-                                .frame(width: 110, alignment: .leading)
-                                .lineLimit(1)
+                                .frame(maxHeight: .infinity, alignment: .bottom)
+                                .gridColumnAlignment(.leading)
 
-                            HStack(spacing: 4) {
-                                ForEach(row.triggers.prefix(20)) { trigger in
-                                    RoundedRectangle(cornerRadius: 3, style: .continuous)
-                                        .fill(trigger.isProblem ? severityIndicatorColor(for: trigger.severity) : Color.green)
-                                        .frame(width: 14, height: 14)
+                            ForEach(columns, id: \.self) { name in
+                                // Rotated header: lay the text out horizontally at the header's
+                                // height, then rotate it into the narrow column.
+                                Text(name)
+                                    .font(.system(size: 12, weight: .regular, design: .rounded))
+                                    .foregroundStyle(DashboardTheme.secondaryText)
+                                    .lineLimit(1)
+                                    .frame(width: Self.rotatedHeaderHeight - 10, alignment: .leading)
+                                    .rotationEffect(.degrees(-90))
+                                    .frame(width: Self.triggerColumnWidth, height: Self.rotatedHeaderHeight, alignment: .bottom)
+                            }
+                        }
+
+                        ForEach(rows) { row in
+                            GridRow {
+                                Text(row.hostName)
+                                    .font(.system(size: 15, weight: .regular, design: .rounded))
+                                    .foregroundStyle(DashboardTheme.primaryText)
+                                    .lineLimit(1)
+                                    .frame(minWidth: 150, alignment: .leading)
+
+                                ForEach(columns, id: \.self) { name in
+                                    if let trigger = row.triggers.first(where: { $0.name == name }) {
+                                        RoundedRectangle(cornerRadius: 2, style: .continuous)
+                                            .fill(trigger.isProblem ? severityIndicatorColor(for: trigger.severity) : Color.green)
+                                            .frame(width: Self.triggerColumnWidth, height: Self.cellHeight)
+                                    } else {
+                                        Color.clear
+                                            .frame(width: Self.triggerColumnWidth, height: Self.cellHeight)
+                                    }
                                 }
                             }
                         }
@@ -923,37 +956,61 @@ struct TriggerOverviewWidgetContentView: View {
 struct ProblemHostsWidgetContentView: View {
     let summaries: [HostGroupProblemSummary]
 
+    /// Severity columns left→right from Disaster (5) down to Not classified (0), matching Zabbix's
+    /// per-group problems table.
+    private static let severityColumns = Array((0...5).reversed())
+
+    private static let countColumnWidth: CGFloat = 78
+
     var body: some View {
         if summaries.isEmpty {
             Text("No host groups with active problems")
                 .font(.system(size: 16, weight: .regular, design: .rounded))
                 .foregroundStyle(DashboardTheme.secondaryText)
         } else {
+            // Zabbix's table: a "Host group" column of names, one column per severity, and a colored
+            // count cell only where that group has problems at that severity — blank otherwise.
             AutoScrollingContent {
-                VStack(alignment: .leading, spacing: 8) {
+                Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 6) {
+                    GridRow {
+                        Text("Host group")
+                            .font(.system(size: 14, weight: .regular, design: .rounded))
+                            .foregroundStyle(DashboardTheme.secondaryText)
+                            .gridColumnAlignment(.leading)
+
+                        ForEach(Self.severityColumns, id: \.self) { severity in
+                            Text(SeverityPalette.name(for: severity))
+                                .font(.system(size: 14, weight: .regular, design: .rounded))
+                                .foregroundStyle(DashboardTheme.secondaryText)
+                                .lineLimit(1)
+                                .frame(width: Self.countColumnWidth, alignment: .leading)
+                        }
+                    }
+
                     ForEach(summaries) { summary in
-                        HStack(spacing: 6) {
+                        GridRow {
                             Text(summary.groupName)
-                                .font(.system(size: 17, weight: .medium, design: .rounded))
+                                .font(.system(size: 16, weight: .medium, design: .rounded))
                                 .foregroundStyle(DashboardTheme.primaryText)
                                 .lineLimit(1)
+                                .frame(maxWidth: .infinity, alignment: .leading)
 
-                            Spacer(minLength: 6)
-
-                            // One colored cell per severity that has problem hosts, showing the count —
-                            // matching Zabbix's per-severity breakdown rather than a single total.
-                            ForEach(Array(summary.countsBySeverity.enumerated()), id: \.offset) { severity, count in
-                                if count > 0 {
-                                    Text("\(count)")
-                                        .font(.system(size: 15, weight: .bold, design: .rounded))
-                                        .foregroundStyle(.white)
-                                        .frame(minWidth: 26)
-                                        .padding(.vertical, 3)
-                                        .padding(.horizontal, 6)
-                                        .background(
-                                            RoundedRectangle(cornerRadius: 5, style: .continuous)
-                                                .fill(severityIndicatorColor(for: severity))
-                                        )
+                            ForEach(Self.severityColumns, id: \.self) { severity in
+                                let count = summary.countsBySeverity.indices.contains(severity) ? summary.countsBySeverity[severity] : 0
+                                Group {
+                                    if count > 0 {
+                                        Text("\(count)")
+                                            .font(.system(size: 15, weight: .semibold, design: .rounded))
+                                            .foregroundStyle(.black.opacity(0.87))
+                                            .padding(.horizontal, 6)
+                                            .frame(width: Self.countColumnWidth, height: 26, alignment: .leading)
+                                            .background(
+                                                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                                                    .fill(severityIndicatorColor(for: severity))
+                                            )
+                                    } else {
+                                        Color.clear.frame(width: Self.countColumnWidth, height: 26)
+                                    }
                                 }
                             }
                         }
@@ -1098,27 +1155,46 @@ struct WebMonitoringWidgetContentView: View {
 
 struct ItemHistoryWidgetContentView: View {
     let series: [ItemHistorySeries]
+    var showTimestamp: Bool = false
+
+    /// One rendered row: a reading tagged with its column's display name. Zabbix lists readings as
+    /// "Name | Value" rows (newest first, interleaved across columns by time), not per-item
+    /// sections — verified against the live widget, which repeats "Memory" on every row.
+    private struct Row: Identifiable {
+        let id: String
+        let name: String
+        let value: String
+        let date: Date
+    }
+
+    private var rows: [Row] {
+        series
+            .flatMap { line in line.values.map { Row(id: $0.id, name: line.itemName, value: $0.value, date: $0.date) } }
+            .sorted { $0.date > $1.date }
+    }
 
     var body: some View {
         AutoScrollingContent {
-            VStack(alignment: .leading, spacing: 10) {
-                ForEach(series) { item in
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(item.itemName)
-                            .font(.system(size: 15, weight: .semibold, design: .rounded))
+            Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 5) {
+                ForEach(rows) { row in
+                    GridRow {
+                        Text(row.name)
+                            .font(.system(size: 15, weight: .regular, design: .rounded))
                             .foregroundStyle(DashboardTheme.secondaryText)
                             .lineLimit(1)
 
-                        ForEach(item.values.prefix(3)) { point in
-                            HStack {
-                                Text(point.value)
-                                    .font(.system(size: 17, weight: .medium, design: .rounded))
-                                    .foregroundStyle(DashboardTheme.primaryText)
-                                Spacer()
-                                Text(point.date, style: .time)
-                                    .font(.system(size: 13, weight: .regular, design: .rounded))
-                                    .foregroundStyle(DashboardTheme.secondaryText)
-                            }
+                        Text(row.value)
+                            .font(.system(size: 15, weight: .medium, design: .rounded))
+                            .foregroundStyle(DashboardTheme.primaryText)
+                            .lineLimit(1)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+
+                        // The timestamp column only when the widget's show_timestamp asks for it —
+                        // Zabbix's default hides it.
+                        if showTimestamp {
+                            Text(row.date, style: .time)
+                                .font(.system(size: 13, weight: .regular, design: .rounded))
+                                .foregroundStyle(DashboardTheme.secondaryText)
                         }
                     }
                 }
@@ -1163,10 +1239,12 @@ struct DataOverviewWidgetContentView: View {
                                     .lineLimit(1)
                                     .frame(width: headerWidth, alignment: .leading)
 
+                                // Zabbix draws data-overview values in the plain foreground color,
+                                // not link-blue.
                                 ForEach(Array(row.cells.enumerated()), id: \.offset) { _, cell in
                                     Text(cell)
                                         .font(.system(size: 14, weight: .regular, design: .rounded))
-                                        .foregroundStyle(DashboardTheme.accent)
+                                        .foregroundStyle(DashboardTheme.primaryText)
                                         .lineLimit(1)
                                         .minimumScaleFactor(0.7)
                                         .frame(width: cellWidth, alignment: .leading)

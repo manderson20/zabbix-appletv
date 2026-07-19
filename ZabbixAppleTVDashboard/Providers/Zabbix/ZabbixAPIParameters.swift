@@ -349,17 +349,29 @@ nonisolated struct ZabbixHostGroupGetParameters: Encodable, Sendable {
     let groupids: [String]?
     let output: [String]
 
-    init(groupIDs: [String]? = nil, output: [String] = ["groupid", "name"]) {
+    /// When `true`, restricts to groups that contain hosts (`with_hosts`) — used when listing
+    /// groups for display (e.g. Problems by severity's group rows), where Zabbix's own widgets skip
+    /// host-less groups. Omitted (nil) for plain group-name lookups.
+    let withHosts: Bool?
+
+    init(groupIDs: [String]? = nil, output: [String] = ["groupid", "name"], withHosts: Bool? = nil) {
         self.groupids = groupIDs
         self.output = output
+        self.withHosts = withHosts
     }
 
-    private enum CodingKeys: String, CodingKey { case groupids, output }
+    private enum CodingKeys: String, CodingKey {
+        case groupids, output
+        case withHosts = "with_hosts"
+    }
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encodeIfPresent(groupids, forKey: .groupids)
         try container.encode(output, forKey: .output)
+        if withHosts == true {
+            try container.encode(true, forKey: .withHosts)
+        }
     }
 }
 
