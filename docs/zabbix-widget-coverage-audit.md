@@ -13,7 +13,7 @@ Sorted by worst impact (wrong-data first; renders-nothing / entirely-wrong-conte
 | Item history | partial | missing-detail | 2 | Now reads `columns.N.itemid`, `show_lines`, value maps, and honors `time_period`; still missing trend backfill (`columns.N.history`/`approximation`) and per-column thresholds |
 | Map navigation tree | rendered-only | wrong-data | 6 | Ignores entire `navtree`; lists every map on the server, not the configured tree |
 | SLA report | rendered-only | wrong-data | 5 | Shows static target SLO via `sla.get`, never the computed SLI (`sla.getsli`) |
-| Action log | rendered-only | wrong-data | 6 | Hardcoded 7-day window; all four content filters + statuses ignored |
+| Action log | partial | wrong-data | 4 | Now receives the widget and honors `show_lines` (default 25); still hardcodes the 7-day window and ignores content filters (recipients/severities/statuses) |
 | Problem hosts | rendered-only | wrong-data | 7 | Resolver takes no `widget`; all group/host/tag/severity scoping impossible |
 | Honeycomb | partial | wrong-data | 7 | Item selector reads bogus `itempatterns.N.itemname`; thresholds/coloring absent |
 | Item navigator | partial | wrong-data | 5 | Reads field `item`; Zabbix stores `items.N` → pattern never applied, lists all items |
@@ -67,7 +67,7 @@ Sorted by worst impact (wrong-data first; renders-nothing / entirely-wrong-conte
 
 ### Tier 2 — Missing configured detail (renders, but ignores a knob)
 
-- **`show_lines` / row caps ignored or wrong-defaulted.** Item history (hardcoded 5), Top hosts / Host nav / Item nav (hardcoded 100), Data overview (100), Honeycomb (60), Action log (50), Problems (default 20 vs Zabbix 25), Top triggers (20 vs 10) — read `show_lines` with the correct per-widget default.
+- **`show_lines` / row caps ignored or wrong-defaulted.** ~~Item history (hardcoded 5)~~ (done, default 25), Top hosts (done, default 10) / Host nav / Item nav (hardcoded 100), Data overview (100), Honeycomb (60), ~~Action log (50)~~ (done, default 25), Problems (default 20 vs Zabbix 25), Top triggers (20 vs 10) — read `show_lines` with the correct per-widget default. Data overview / Honeycomb `prefix(N)` are safety caps with no corresponding Zabbix field, left as-is.
 - **Grouping/tree structure flattened.** `group_by` (Host/Item navigator), `show_type=GROUPS` (Problems by severity), per-severity columns (Problem hosts), hosts×items matrix (Data overview), and the `navtree` hierarchy are all rendered as flat lists.
 - **`time_period.to` and non-relative expressions ignored.** Classic/svg graphs, Item history, Action log always end at `now()` and drop `now/d`/absolute windows.
 - **Units + decimal formatting.** `units`/`units_show` overrides and `decimal_places` ignored in Item value, Gauge, Honeycomb, Top hosts, Pie chart — raw `lastvalue` string shown.
