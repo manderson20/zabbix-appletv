@@ -326,6 +326,10 @@ nonisolated struct ZabbixItemSearchParameters: Encodable, Sendable {
     /// Requests each item's host.
     let selectHosts: [String]
 
+    /// Requests each item's value map, so widgets on this search path (data overview, top hosts,
+    /// honeycomb, item navigator) can show mapped labels instead of raw codes.
+    let selectValueMap: [String]
+
     /// Wildcard name search, e.g. "CPU load" or "CPU*".
     let search: ZabbixItemNameSearch?
 
@@ -337,12 +341,14 @@ nonisolated struct ZabbixItemSearchParameters: Encodable, Sendable {
         hostIDs: [String]? = nil,
         namePattern: String? = nil,
         output: [String] = ["itemid", "name", "lastvalue", "units", "value_type"],
-        selectHosts: [String] = ["hostid", "name"]
+        selectHosts: [String] = ["hostid", "name"],
+        selectValueMap: [String] = ["mappings"]
     ) {
         self.groupids = groupIDs
         self.hostids = hostIDs
         self.output = output
         self.selectHosts = selectHosts
+        self.selectValueMap = selectValueMap
         self.search = namePattern.map(ZabbixItemNameSearch.init)
         self.searchWildcardsEnabled = namePattern != nil ? true : nil
     }

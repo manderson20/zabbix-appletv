@@ -26,6 +26,10 @@ nonisolated struct ZabbixItemWithHost: Decodable, Sendable {
     /// Zabbix value type: 0 = float, 1 = character, 2 = log, 3 = unsigned, 4 = text.
     let value_type: ZabbixNumericString?
 
+    /// The item's value map, when configured (requested via `selectValueMap`), so a raw reading is
+    /// shown as its label — the same handling the item-value and gauge widgets already apply.
+    let valuemap: ZabbixValueMapField?
+
     /// Hosts the item belongs to (an item belongs to exactly one host).
     let hosts: [ZabbixHostReference]
 }
