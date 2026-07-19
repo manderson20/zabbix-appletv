@@ -271,12 +271,30 @@ extension DashboardManager {
             return .hostAvailability(rows)
 
         case "systeminfo":
-            // Zabbix's own frontend determines "server is running" via a direct socket check to
-            // the zabbix_server trapper port, which isn't reachable from this app. Reaching this
-            // point at all means the API call just succeeded, so a live, authenticated session is
-            // the closest available proxy for "the environment is up."
             let serverVersion = try await zabbixAPIClient.apiVersion(serverBaseURL: serverBaseURL)
-            return .systemInformation(serverVersion: serverVersion, isRunning: true)
+
+            // "info_type": 0 = server stats, 1 = high-availability nodes. hanode.get (6.0+) both
+            // populates the HA-nodes list and gives a real running signal (some node active). It's
+            // best-effort: a standalone server returns no nodes, and older servers error — either
+            // way we fall back to the API-success proxy below.
+            let infoType = Self.fieldValue(widget.fields, name: "info_type").flatMap(Int.init) ?? 0
+            let nodes = (try? await zabbixAPIClient.haNodes(serverBaseURL: serverBaseURL, authToken: authToken)) ?? []
+
+            // Zabbix's frontend checks "server is running" via a direct socket to the trapper port,
+            // unreachable here. When HA nodes are known, an active node means the server is up;
+            // otherwise a live authenticated session is the closest available proxy.
+            let isRunning = Self.isServerRunning(fromHANodeStatuses: nodes.map { $0.status.intValue }) ?? true
+
+            let haNodes = infoType == 1 ? nodes.enumerated().map { index, node -> SystemHANode in
+                SystemHANode(
+                    id: node.name.isEmpty ? "node-\(index)" : node.name,
+                    name: node.name.isEmpty ? "Standalone" : node.name,
+                    statusLabel: Self.haNodeStatusLabel(node.status.intValue),
+                    isActive: node.status.intValue == 3
+                )
+            } : []
+
+            return .systemInformation(serverVersion: serverVersion, isRunning: isRunning, haNodes: haNodes)
 
         case "gauge":
             return try await resolveGauge(widget, serverBaseURL: serverBaseURL, authToken: authToken)
@@ -2140,6 +2158,25 @@ extension DashboardManager {
     /// its And/Or default). `field` defaults to "evaltype"; host widgets use "host_tags_evaltype".
     static func tagEvalType(from fields: [ZabbixWidgetField], field: String = "evaltype") -> Int? {
         fieldValue(fields, name: field).flatMap(Int.init)
+    }
+
+    /// Human-readable label for an HA node status (0 = standby, 1 = stopped, 2 = unavailable,
+    /// 3 = active).
+    static func haNodeStatusLabel(_ status: Int) -> String {
+        switch status {
+        case 0: return "Standby"
+        case 1: return "Stopped"
+        case 2: return "Unavailable"
+        case 3: return "Active"
+        default: return "Unknown"
+        }
+    }
+
+    /// Whether the Zabbix server is running, inferred from HA node statuses: up when any node is
+    /// active (3). Returns nil when there are no nodes (standalone/older server), so the caller can
+    /// fall back to the API-success proxy rather than reporting the server down.
+    static func isServerRunning(fromHANodeStatuses statuses: [Int]) -> Bool? {
+        statuses.isEmpty ? nil : statuses.contains(3)
     }
 
     /// The Clock widget's configured display timezone (`tzone_timezone`), or nil to use the device's

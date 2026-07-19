@@ -128,8 +128,8 @@ private struct DashboardWidgetCardView: View {
             ProblemsBySeverityWidgetContentView(counts: counts)
         case let .hostAvailability(breakdown):
             HostAvailabilityWidgetContentView(breakdown: breakdown)
-        case let .systemInformation(serverVersion, isRunning):
-            SystemInformationWidgetContentView(serverVersion: serverVersion, isRunning: isRunning)
+        case let .systemInformation(serverVersion, isRunning, haNodes):
+            SystemInformationWidgetContentView(serverVersion: serverVersion, isRunning: isRunning, haNodes: haNodes)
         case let .gauge(reading):
             GaugeWidgetContentView(reading: reading)
         case let .honeycomb(cells):
@@ -556,11 +556,19 @@ private struct HostAvailabilityWidgetContentView: View {
 private struct SystemInformationWidgetContentView: View {
     let serverVersion: String
     let isRunning: Bool
+    let haNodes: [SystemHANode]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            statusRow(label: "Zabbix server is running", value: isRunning ? "Yes" : "No", color: isRunning ? .green : .red)
-            statusRow(label: "Zabbix server version", value: serverVersion, color: DashboardTheme.secondaryText)
+            if haNodes.isEmpty {
+                statusRow(label: "Zabbix server is running", value: isRunning ? "Yes" : "No", color: isRunning ? .green : .red)
+                statusRow(label: "Zabbix server version", value: serverVersion, color: DashboardTheme.secondaryText)
+            } else {
+                // "High availability nodes" mode: one row per cluster node with its status.
+                ForEach(haNodes) { node in
+                    statusRow(label: node.name, value: node.statusLabel, color: node.isActive ? .green : DashboardTheme.secondaryText)
+                }
+            }
         }
     }
 

@@ -537,6 +537,18 @@ actor ZabbixAPIClient {
         )
     }
 
+    /// Fetches the Zabbix HA cluster nodes (`hanode.get`, Zabbix 6.0+). Returns an empty list on a
+    /// standalone server with no HA frontend configured.
+    func haNodes(serverBaseURL: URL, authToken: String) async throws -> [ZabbixHANode] {
+        try await send(
+            method: "hanode.get",
+            params: ZabbixHANodeGetParameters(),
+            serverBaseURL: serverBaseURL,
+            authToken: authToken,
+            resultType: [ZabbixHANode].self
+        )
+    }
+
     /// Fetches an uploaded image's base64-encoded content, e.g. a map's background image.
     func image(serverBaseURL: URL, authToken: String, imageID: String) async throws -> ZabbixImage? {
         let images = try await send(

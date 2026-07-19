@@ -11,7 +11,7 @@
 
 Coverage is broad and, since the original audit, materially deeper. Every widget renders
 *something*, and the count of widgets whose worst realistic-config behavior is **wrong-data** has
-dropped from 25/26 to **9/26**, with the other 17 down to **missing-detail** (renders correctly
+dropped from 25/26 to **8/26**, with the other 18 down to **missing-detail** (renders correctly
 but ignores a display or layout knob). The improvement came almost entirely from the cross-cutting
 helpers the original audit predicted would each fix a class of widgets:
 
@@ -60,7 +60,7 @@ cosmetic-leaning last).
 | Problems | partial | missing-detail | 1 | `groupids`/tags/suppression/acknowledgement all honored; only `show_lines` default (20 vs 25) remains |
 | Problems by severity | partial | missing-detail | 1 | `groupids`/tags/`ext_ack` acknowledgement now honored; only `show_type=GROUPS` (collapsed to a flat tally) remains |
 | Action log | partial | wrong-data | 4 | Hardcoded 7-day window; content filters (recipients/severities/statuses) ignored — now receives widget + honors `show_lines` |
-| System information | partial | wrong-data | 2 | `info_type` ignored (HA-nodes mode wrong); `isRunning` hardcoded true |
+| System information | partial | missing-detail | 1 | `info_type=1` shows HA nodes and `isRunning` is derived from them (`hanode.get`); standalone still uses the API-success proxy for running |
 | Clock | partial | missing-detail | 1 | `time_type=host` (via `system.localtime` offset) and `tzone_timezone` now honored; server-time mode still falls back to local |
 | Map | full | wrong-data | 1 | Non-host elements (submap/group/trigger) always colored OK/green |
 | Item value | partial | missing-detail | 4 | units/`units_show`/`decimal_places`/`description` overrides ignored — aggregation + `thresholds` alert color now honored |
@@ -84,6 +84,7 @@ cosmetic-leaning last).
 - ~~**Top triggers — wrong metric.**~~ **Done** — ranks by problem-event count over `time_period` (`event.get` grouped by trigger, busiest-first) with a count column, replacing the current-problems-by-severity list.
 - ~~**Acknowledgement filtering dropped.**~~ **Done** — Problems (`acknowledgement_status`) and Problems by severity (`ext_ack`) map to `problem.get`'s `acknowledged` filter, so "unacknowledged only" no longer counts acked problems.
 - ~~**Clock — `time_type=host` / `tzone_timezone` ignored.**~~ **Done** — host time is derived from the host's `system.localtime` item (reported-minus-collected offset) and the configured timezone is applied to both faces; server-time mode still falls back to local.
+- ~~**System information — `isRunning` hardcoded true + `info_type` ignored.**~~ **Done** — `info_type=1` lists HA nodes via `hanode.get`, and `isRunning` is inferred from an active node; standalone servers (no HA nodes) keep the API-success proxy.
 - ~~**Item value — thresholds ignored.**~~ **Done** — reads `thresholds.N` (shared `thresholdColorHex` helper) so a value crossing a band repaints the background with its alert color.
 - ~~**Honeycomb — thresholds/cell coloring absent.**~~ **Done** — each cell is tinted by the threshold band its reading meets (same `thresholdColorHex` helper).
 - ~~**Geomap — marker severity ignores widget `tags`.**~~ **Done** — `maxSeverityByHostID` now takes the widget's tag + severity filter, so a marker's color reflects only the problems the widget shows.
@@ -117,8 +118,6 @@ cosmetic-leaning last).
 - **Web monitoring — `exclude_groupids` + tags dropped.** Status is now derived; the remaining gap
   is scope — a widget with an exclude/tag filter still shows a superset of scenarios.
 - **Map — non-host elements always OK.** Compute status for submap/host-group/trigger elements.
-- **System information — `isRunning` hardcoded true + `info_type` ignored.** Support the HA-nodes
-  mode and reflect actual server-running state.
 
 ### Tier 2 — Missing configured detail (renders, but ignores a knob)
 
@@ -212,8 +211,8 @@ These were the leverage points, and most have now been built. Status is marked i
   is right.
 - **State/enum modeling gaps.** Action log doesn't model status `2` (Failed) → failed alerts
   mislabeled as sent; Host availability can't represent active-check availability (`active_available`
-  never fetched); System info hardcodes `isRunning=true`; multi-host triggers are attributed to
-  `hosts.first` only.
+  never fetched); multi-host triggers are attributed to `hosts.first` only. (System info's
+  `isRunning` is now derived from HA node status where available.)
 - **Stale-value semantics.** Widgets keyed on `lastvalue` (Item value non-aggregated, Honeycomb,
   navigators) keep showing a stale last sample for items that stopped reporting.
 - **Not applicable (correctly).** History/trends, value maps, `value_type`, and aggregation don't

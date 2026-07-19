@@ -904,6 +904,15 @@ nonisolated struct ZabbixSLIGetParameters: Encodable, Sendable {
     }
 }
 
+/// Parameters for `hanode.get` when listing HA cluster nodes for the System information widget.
+nonisolated struct ZabbixHANodeGetParameters: Encodable, Sendable {
+    let output: [String]
+
+    init(output: [String] = ["name", "status"]) {
+        self.output = output
+    }
+}
+
 /// Parameters for `service.get` when resolving service names by ID for SLA report labels.
 nonisolated struct ZabbixServiceGetParameters: Encodable, Sendable {
     let serviceids: [String]

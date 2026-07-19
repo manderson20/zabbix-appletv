@@ -392,6 +392,23 @@ struct ZabbixAppleTVDashboardTests {
         #expect(triggers.first?.hosts.first?.hostid == "10461")
     }
 
+    @Test func serverRunningInferredFromHANodeStatuses() throws {
+        // An active node (3) means the server is up.
+        #expect(DashboardManager.isServerRunning(fromHANodeStatuses: [0, 3]) == true)
+        // Nodes exist but none active → down.
+        #expect(DashboardManager.isServerRunning(fromHANodeStatuses: [0, 1, 2]) == false)
+        // No nodes (standalone/older server) → unknown, caller falls back to the proxy.
+        #expect(DashboardManager.isServerRunning(fromHANodeStatuses: []) == nil)
+    }
+
+    @Test func haNodeStatusLabelsCoverAllStates() throws {
+        #expect(DashboardManager.haNodeStatusLabel(0) == "Standby")
+        #expect(DashboardManager.haNodeStatusLabel(1) == "Stopped")
+        #expect(DashboardManager.haNodeStatusLabel(2) == "Unavailable")
+        #expect(DashboardManager.haNodeStatusLabel(3) == "Active")
+        #expect(DashboardManager.haNodeStatusLabel(99) == "Unknown")
+    }
+
     @Test func clockTimeZoneIdentifierIgnoresLocalSentinels() throws {
         func identifier(_ value: String?) -> String? {
             DashboardManager.clockTimeZoneIdentifier(from: value.map { [ZabbixWidgetField(name: "tzone_timezone", value: $0)] } ?? [])

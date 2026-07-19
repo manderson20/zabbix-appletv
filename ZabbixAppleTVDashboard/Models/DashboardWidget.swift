@@ -128,7 +128,7 @@ nonisolated enum DashboardWidgetKind: Sendable {
     case problems([DashboardProblem])
     case problemsBySeverity([SeverityCount])
     case hostAvailability([HostInterfaceAvailability])
-    case systemInformation(serverVersion: String, isRunning: Bool)
+    case systemInformation(serverVersion: String, isRunning: Bool, haNodes: [SystemHANode])
     case gauge(GaugeReading)
     case honeycomb([HoneycombCell])
     case topHosts(columns: [String], rows: [TopHostsRow])
@@ -635,6 +635,21 @@ nonisolated struct ItemListEntry: Identifiable, Sendable {
 }
 
 /// A single SLA's configured target, shown in an SLA report widget.
+/// One HA cluster node row in the System information widget's "High availability nodes" mode.
+nonisolated struct SystemHANode: Identifiable, Sendable {
+    /// Stable row identifier.
+    let id: String
+
+    /// Node display name ("Standalone" for the implicit unnamed node).
+    let name: String
+
+    /// Human-readable status ("Active", "Standby", "Stopped", "Unavailable").
+    let statusLabel: String
+
+    /// Whether the node is currently active — drives its status color.
+    let isActive: Bool
+}
+
 nonisolated struct SLAReportEntry: Identifiable, Sendable {
     /// Stable entry identifier.
     let id: String
