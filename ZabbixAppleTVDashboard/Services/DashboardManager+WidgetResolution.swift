@@ -261,10 +261,12 @@ extension DashboardManager {
             )
             let problems = try await problemsExcludingGroups(allProblems, excludedGroupIDs: excludedGroupIDs, serverBaseURL: serverBaseURL, authToken: authToken)
 
-            // "show_type" = 1 breaks the tally out by host group (a table of groups × severities);
-            // the default (0 / absent) is the single totals column. Groups mode resolves each
-            // problem's host and counts it in every group that host belongs to.
-            if Self.fieldValue(widget.fields, name: "show_type").flatMap(Int.init) == 1 {
+            // "show_type" ("Show"): 0 / absent = Host groups (the default — a table of groups ×
+            // severities, verified against the live widget: a config with show_type 0 renders the
+            // groups table in Zabbix), 1 = Totals (the single row of severity blocks). The earlier
+            // mapping had these swapped. Groups mode resolves each problem's host and counts it in
+            // every group that host belongs to.
+            if Self.fieldValue(widget.fields, name: "show_type").flatMap(Int.init) != 1 {
                 let triggerHosts = try await zabbixAPIClient.triggerHosts(serverBaseURL: serverBaseURL, authToken: authToken, triggerIDs: Array(Set(problems.map(\.objectid))))
                 let hostIDByTriggerID = Dictionary(uniqueKeysWithValues: triggerHosts.compactMap { entry in entry.hosts.first.map { (entry.triggerid, $0.hostid) } })
                 let hostGroups = try await zabbixAPIClient.hostGroups(serverBaseURL: serverBaseURL, authToken: authToken, hostIDs: Array(Set(hostIDByTriggerID.values)))
@@ -281,10 +283,22 @@ extension DashboardManager {
                     }
                 }
 
+                // Zabbix lists every in-scope group that actually contains hosts — including ones
+                // with no problems — unless "hide_empty_groups" is on, and sorts the table by group
+                // name. `withHosts` keeps host-less groups (e.g. template-organization groups) out,
+                // as Zabbix's own widget does.
+                if Self.fieldValue(widget.fields, name: "hide_empty_groups") != "1" {
+                    let scoped = try await scopedGroupIDs(from: widget, serverBaseURL: serverBaseURL, authToken: authToken)
+                    let visibleGroups = (try? await zabbixAPIClient.hostGroupNames(serverBaseURL: serverBaseURL, authToken: authToken, groupIDs: scoped, withHosts: true)) ?? []
+                    for group in visibleGroups where byGroup[group.groupid] == nil && !excludedGroupIDs.contains(group.groupid) {
+                        byGroup[group.groupid] = (name: group.name, counts: Array(repeating: 0, count: 6))
+                    }
+                }
+
                 return .problemsByHostGroup(
                     byGroup.map { groupID, entry in
                         HostGroupProblemSummary(id: groupID, groupName: entry.name, countsBySeverity: entry.counts)
-                    }.sorted { $0.maxSeverity == $1.maxSeverity ? $0.count > $1.count : $0.maxSeverity > $1.maxSeverity }
+                    }.sorted { $0.groupName.localizedCaseInsensitiveCompare($1.groupName) == .orderedAscending }
                 )
             }
 
@@ -306,7 +320,7 @@ extension DashboardManager {
             let hosts = try await zabbixAPIClient.hostsWithInterfaces(serverBaseURL: serverBaseURL, authToken: authToken, groupIDs: try await scopedGroupIDs(from: widget, serverBaseURL: serverBaseURL, authToken: authToken))
 
             var rows: [HostInterfaceAvailability] = [
-                Self.hostAvailabilityRow(name: "Total hosts", interfacesByHost: hosts.map(\.interfaces))
+                Self.hostAvailabilityRow(name: "Total Hosts", interfacesByHost: hosts.map(\.interfaces))
             ]
             rows.append(
                 contentsOf: requestedTypes.sorted().map { type in
@@ -1517,10 +1531,16 @@ extension DashboardManager {
         // The Item history widget stores its items as columns (`columns.N.itemid`), not a flat
         // `itemids` array — reading the wrong field left the guard below always failing, so the
         // widget rendered nothing for every real 7.0 configuration.
-        let itemIDs = Self.indexedFieldGroups(widget.fields, prefix: "columns").compactMap { $0["itemid"] }.filter { !$0.isEmpty }
+        let columnGroups = Self.indexedFieldGroups(widget.fields, prefix: "columns")
+        let itemIDs = columnGroups.compactMap { $0["itemid"] }.filter { !$0.isEmpty }
         guard !itemIDs.isEmpty else {
             return .unsupported(rawType: widget.type)
         }
+        // A column's own display name ("Memory") overrides the item's name, per column config.
+        let columnNameByItemID = Dictionary(uniqueKeysWithValues: columnGroups.compactMap { group -> (String, String)? in
+            guard let itemID = group["itemid"], let name = group["name"], !name.isEmpty else { return nil }
+            return (itemID, name)
+        })
 
         // "Show lines" controls how many recent values per item are listed (Zabbix's default is 25),
         // rather than the hardcoded 5.
@@ -1559,7 +1579,7 @@ extension DashboardManager {
             series.append(
                 ItemHistorySeries(
                     id: item.itemid,
-                    itemName: item.name,
+                    itemName: columnNameByItemID[item.itemid] ?? item.name,
                     values: windowed.map { value in
                         ItemHistoryPoint(
                             id: "\(item.itemid).\(value.clock)",
@@ -1571,7 +1591,9 @@ extension DashboardManager {
             )
         }
 
-        return .itemHistory(series)
+        // Zabbix's widget hides timestamps unless "show_timestamp" is enabled (verified live: the
+        // default config carries show_timestamp 0 and renders name/value rows only).
+        return .itemHistory(series, showTimestamp: Self.fieldValue(widget.fields, name: "show_timestamp") == "1")
     }
 
     // MARK: - Data overview
@@ -2391,9 +2413,13 @@ extension DashboardManager {
             .trimmingCharacters(in: .whitespaces)
     }
 
+    /// Row labels matching Zabbix's own host-availability widget. Interface type 1 is the passive
+    /// Zabbix agent — Zabbix labels it "Agent (passive)" (its "Agent (active)" row tracks active
+    /// checks, which aren't interface-based; surfacing that row needs the hosts' active_available
+    /// field, still an audit gap).
     private static func interfaceTypeName(_ type: Int) -> String {
         switch type {
-        case 1: "Zabbix Agent"
+        case 1: "Agent (passive)"
         case 2: "SNMP"
         case 3: "IPMI"
         case 4: "JMX"

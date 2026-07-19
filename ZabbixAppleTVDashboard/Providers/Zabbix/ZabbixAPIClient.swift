@@ -210,10 +210,10 @@ actor ZabbixAPIClient {
 
     /// Resolves host groups by ID (or all groups when `groupIDs` is nil) via `hostgroup.get`, used
     /// to expand a widget's selected groups to their nested subgroups by name.
-    func hostGroupNames(serverBaseURL: URL, authToken: String, groupIDs: [String]?) async throws -> [ZabbixHostGroupReference] {
+    func hostGroupNames(serverBaseURL: URL, authToken: String, groupIDs: [String]?, withHosts: Bool? = nil) async throws -> [ZabbixHostGroupReference] {
         try await send(
             method: "hostgroup.get",
-            params: ZabbixHostGroupGetParameters(groupIDs: groupIDs),
+            params: ZabbixHostGroupGetParameters(groupIDs: groupIDs, withHosts: withHosts),
             serverBaseURL: serverBaseURL,
             authToken: authToken,
             resultType: [ZabbixHostGroupReference].self

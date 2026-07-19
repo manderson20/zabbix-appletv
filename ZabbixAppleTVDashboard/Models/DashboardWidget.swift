@@ -138,7 +138,7 @@ nonisolated enum DashboardWidgetKind: Sendable {
     case actionLog([ActionLogEntry])
     case discoveryStatus([DiscoveryRuleStatus])
     case webMonitoring([WebScenarioSummary])
-    case itemHistory([ItemHistorySeries])
+    case itemHistory([ItemHistorySeries], showTimestamp: Bool)
     case dataOverview(DataOverviewMatrix)
     case lineChart(series: [ChartSeries], window: ChartTimeWindow, stacked: Bool, showLegend: Bool, yMin: Double?, yMax: Double?)
     case pieChart([ChartSlice])

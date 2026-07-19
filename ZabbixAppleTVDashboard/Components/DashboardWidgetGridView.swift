@@ -203,8 +203,8 @@ private struct DashboardWidgetCardView: View {
             DiscoveryStatusWidgetContentView(rules: rules)
         case let .webMonitoring(scenarios):
             WebMonitoringWidgetContentView(scenarios: scenarios)
-        case let .itemHistory(series):
-            ItemHistoryWidgetContentView(series: series)
+        case let .itemHistory(series, showTimestamp):
+            ItemHistoryWidgetContentView(series: series, showTimestamp: showTimestamp)
         case let .dataOverview(matrix):
             DataOverviewWidgetContentView(matrix: matrix)
         case let .lineChart(series, window, stacked, showLegend, yMin, yMax):
@@ -386,20 +386,22 @@ private struct ItemValueWidgetContentView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        // Zabbix's item-value layout is a centered stack — time on top, the bold value (with its
+        // trend arrow beside it) in the middle, the description at the bottom — not left-aligned.
+        VStack(spacing: 4) {
             if let formattedTimestamp {
                 Text(formattedTimestamp)
-                    .font(.system(size: 11, weight: .regular, design: .rounded))
-                    .foregroundStyle(DashboardTheme.secondaryText)
+                    .font(.system(size: 15, weight: .regular, design: .rounded))
+                    .foregroundStyle(DashboardTheme.primaryText)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
             }
 
             Spacer(minLength: 0)
 
-            HStack(spacing: 6) {
+            HStack(spacing: 8) {
                 Text(displayValue)
-                    .font(.system(size: 40, weight: .bold, design: .rounded))
+                    .font(.system(size: 44, weight: .bold, design: .rounded))
                     .foregroundStyle(DashboardTheme.primaryText)
                     .lineLimit(1)
                     .minimumScaleFactor(0.5)
@@ -408,11 +410,11 @@ private struct ItemValueWidgetContentView: View {
                     switch trend {
                     case .up:
                         Image(systemName: "arrow.up")
-                            .font(.system(size: 22, weight: .bold))
+                            .font(.system(size: 30, weight: .bold))
                             .foregroundStyle(trendColor)
                     case .down:
                         Image(systemName: "arrow.down")
-                            .font(.system(size: 22, weight: .bold))
+                            .font(.system(size: 30, weight: .bold))
                             .foregroundStyle(trendColor)
                     }
                 }
@@ -421,11 +423,12 @@ private struct ItemValueWidgetContentView: View {
             Spacer(minLength: 0)
 
             Text(name)
-                .font(.system(size: 18, weight: .regular, design: .rounded))
-                .foregroundStyle(DashboardTheme.secondaryText)
+                .font(.system(size: 20, weight: .regular, design: .rounded))
+                .foregroundStyle(DashboardTheme.primaryText)
                 .lineLimit(1)
+                .minimumScaleFactor(0.7)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
     }
 }
 
@@ -592,9 +595,15 @@ private struct HostAvailabilityWidgetContentView: View {
             GridRow {
                 Text("")
                     .frame(width: Self.nameColumnWidth, alignment: .leading)
+                // Zabbix's header cells are filled color blocks (green/red/orange/gray) with dark
+                // text, not colored text on the card background.
                 ForEach(Self.columns, id: \.title) { column in
                     Text(column.title)
-                        .foregroundStyle(column.color)
+                        .foregroundStyle(.black.opacity(0.8))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(RoundedRectangle(cornerRadius: 3, style: .continuous).fill(column.color))
                 }
                 Text("Total")
                     .foregroundStyle(DashboardTheme.secondaryText)
