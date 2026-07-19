@@ -586,6 +586,73 @@ nonisolated struct ZabbixDiscoveryRuleStatusFilter: Encodable, Sendable {
     let status = 0
 }
 
+/// Parameters for `event.get` when ranking triggers by problem-event frequency over a window.
+///
+/// Restricts to trigger problem events (`source`/`object` 0, `value` 1) in `[time_from, time_till]`,
+/// scoped by the widget's severities / host groups / tags. The events are counted per `objectid`
+/// (trigger) by the caller, so the ranking is "how many times did each trigger fire", which is what
+/// Zabbix's Top triggers widget shows — not the current problem list sorted by severity.
+nonisolated struct ZabbixProblemEventGetParameters: Encodable, Sendable {
+    let output: [String]
+    let source = 0
+    let object = 0
+    let value = 1
+    let severities: [Int]?
+    let groupids: [String]?
+    let time_from: Int
+    let time_till: Int
+    let tags: [ZabbixTagFilter]?
+    let evaltype: Int?
+    let sortfield: [String]
+    let sortorder: String
+    let limit: Int
+
+    init(
+        timeFrom: Int,
+        timeTill: Int,
+        severities: [Int]? = nil,
+        groupIDs: [String]? = nil,
+        tags: [ZabbixTagFilter]? = nil,
+        evaltype: Int? = nil,
+        output: [String] = ["eventid", "objectid", "severity", "name", "clock"],
+        sortfield: [String] = ["clock"],
+        sortorder: String = "DESC",
+        limit: Int = 5000
+    ) {
+        self.output = output
+        self.time_from = timeFrom
+        self.time_till = timeTill
+        self.severities = severities
+        self.groupids = (groupIDs?.isEmpty == false) ? groupIDs : nil
+        self.tags = (tags?.isEmpty == false) ? tags : nil
+        self.evaltype = (tags?.isEmpty == false) ? evaltype : nil
+        self.sortfield = sortfield
+        self.sortorder = sortorder
+        self.limit = limit
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case output, source, object, value, severities, groupids, time_from, time_till, tags, evaltype, sortfield, sortorder, limit
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(output, forKey: .output)
+        try container.encode(source, forKey: .source)
+        try container.encode(object, forKey: .object)
+        try container.encode(value, forKey: .value)
+        try container.encodeIfPresent(severities, forKey: .severities)
+        try container.encodeIfPresent(groupids, forKey: .groupids)
+        try container.encode(time_from, forKey: .time_from)
+        try container.encode(time_till, forKey: .time_till)
+        try container.encodeIfPresent(tags, forKey: .tags)
+        try container.encodeIfPresent(evaltype, forKey: .evaltype)
+        try container.encode(sortfield, forKey: .sortfield)
+        try container.encode(sortorder, forKey: .sortorder)
+        try container.encode(limit, forKey: .limit)
+    }
+}
+
 /// Parameters for `dhost.get` when counting discovered hosts per rule.
 nonisolated struct ZabbixDiscoveredHostGetParameters: Encodable, Sendable {
     /// Discovery rule identifiers to fetch discovered hosts for.

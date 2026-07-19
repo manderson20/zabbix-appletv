@@ -306,6 +306,34 @@ actor ZabbixAPIClient {
         )
     }
 
+    /// Fetches trigger problem events in a time window, for ranking triggers by how often they
+    /// fired (the Top triggers widget). The caller counts events per trigger.
+    func problemEvents(
+        serverBaseURL: URL,
+        authToken: String,
+        timeFrom: Int,
+        timeTill: Int,
+        severities: [Int]? = nil,
+        groupIDs: [String]? = nil,
+        tags: [ZabbixTagFilter]? = nil,
+        evalType: Int? = nil
+    ) async throws -> [ZabbixEventSummary] {
+        try await send(
+            method: "event.get",
+            params: ZabbixProblemEventGetParameters(
+                timeFrom: timeFrom,
+                timeTill: timeTill,
+                severities: severities,
+                groupIDs: groupIDs,
+                tags: tags,
+                evaltype: evalType
+            ),
+            serverBaseURL: serverBaseURL,
+            authToken: authToken,
+            resultType: [ZabbixEventSummary].self
+        )
+    }
+
     /// Fetches network discovery rules.
     func discoveryRules(serverBaseURL: URL, authToken: String) async throws -> [ZabbixDiscoveryRule] {
         try await send(

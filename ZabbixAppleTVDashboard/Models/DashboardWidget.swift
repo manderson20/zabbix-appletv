@@ -138,8 +138,30 @@ nonisolated struct DashboardProblem: Identifiable, Sendable {
     /// Host the problem was raised on, if known.
     let host: String?
 
-    /// Date the problem started.
+    /// Date the problem started (for Top triggers, the most recent time the trigger fired).
     let since: Date
+
+    /// Number of times the trigger fired over the widget's window — set only for the Top triggers
+    /// frequency ranking, nil for the live Problems list.
+    var problemCount: Int? = nil
+}
+
+/// One trigger's problem-event frequency over a window, used to rank the Top triggers widget.
+nonisolated struct TriggerFrequency: Sendable, Equatable {
+    /// The trigger's ID.
+    let triggerID: String
+
+    /// How many times the trigger fired in the window.
+    let count: Int
+
+    /// Display name, taken from the trigger's most recent event.
+    let name: String
+
+    /// Worst severity seen across the trigger's events in the window.
+    let severity: Int
+
+    /// Unix time of the trigger's most recent event in the window.
+    let latest: Double
 }
 
 /// Number of active problems at a given severity, shown in a problems-by-severity widget.

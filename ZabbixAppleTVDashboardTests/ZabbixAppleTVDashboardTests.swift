@@ -392,6 +392,36 @@ struct ZabbixAppleTVDashboardTests {
         #expect(triggers.first?.hosts.first?.hostid == "10461")
     }
 
+    @Test func rankTriggersByFrequencyCountsAndOrders() throws {
+        let events = [
+            ZabbixEventSummary(eventid: "1", objectid: "T1", severity: ZabbixNumericString(intValue: 3), name: "T1 v1", clock: "100"),
+            ZabbixEventSummary(eventid: "2", objectid: "T1", severity: ZabbixNumericString(intValue: 4), name: "T1 v2", clock: "300"),
+            ZabbixEventSummary(eventid: "3", objectid: "T1", severity: ZabbixNumericString(intValue: 2), name: "T1 v3", clock: "200"),
+            ZabbixEventSummary(eventid: "4", objectid: "T2", severity: ZabbixNumericString(intValue: 5), name: "T2", clock: "250")
+        ]
+
+        let ranked = DashboardManager.rankTriggersByFrequency(events)
+
+        // T1 fired 3× → ranks above T2 (1×) despite T2's higher severity.
+        #expect(ranked.map(\.triggerID) == ["T1", "T2"])
+        #expect(ranked[0].count == 3)
+        #expect(ranked[1].count == 1)
+        // Name comes from the most recent event (clock 300), severity is the worst seen (4).
+        #expect(ranked[0].name == "T1 v2")
+        #expect(ranked[0].severity == 4)
+        #expect(ranked[0].latest == 300)
+    }
+
+    @Test func rankTriggersBreaksCountTiesBySeverity() throws {
+        let events = [
+            ZabbixEventSummary(eventid: "1", objectid: "low", severity: ZabbixNumericString(intValue: 1), name: "low", clock: "100"),
+            ZabbixEventSummary(eventid: "2", objectid: "high", severity: ZabbixNumericString(intValue: 5), name: "high", clock: "100")
+        ]
+
+        // Both fired once → the worse-severity trigger ranks first.
+        #expect(DashboardManager.rankTriggersByFrequency(events).map(\.triggerID) == ["high", "low"])
+    }
+
     @Test func webScenarioStatusDerivesFromFailValue() throws {
         // 0 → Ok, > 0 → Failed (the failed step), missing/non-numeric → Unknown.
         #expect(DashboardManager.webScenarioStatus(fromFailValue: "0") == .ok)
