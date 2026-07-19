@@ -709,7 +709,17 @@ extension DashboardManager {
             hostIDs: hostIDs.isEmpty ? nil : hostIDs
         )
 
-        let severityByHostID = try await maxSeverityByHostID(serverBaseURL: serverBaseURL, authToken: authToken)
+        // A marker's color must reflect only the problems the widget's own filter shows — its
+        // severity floor and problem-tag filter — not every problem on the host. The lookup is
+        // keyed by host ID, so problems on hosts without a marker simply don't contribute.
+        let severities = Self.indexedValues(widget.fields, name: "severities").compactMap(Int.init)
+        let severityByHostID = try await maxSeverityByHostID(
+            serverBaseURL: serverBaseURL,
+            authToken: authToken,
+            severities: severities.isEmpty ? nil : severities,
+            tags: Self.tagFilters(from: widget.fields),
+            evalType: Self.tagEvalType(from: widget.fields)
+        )
 
         let markers = hosts.compactMap { host -> GeoMapMarker? in
             guard let latitude = host.inventory.locationLatitude.flatMap(Double.init),
@@ -1746,8 +1756,20 @@ extension DashboardManager {
     }
 
     /// Computes the highest active-problem severity per host.
-    private func maxSeverityByHostID(serverBaseURL: URL, authToken: String) async throws -> [String: Int] {
-        let resolved = try await activeProblemsWithHostID(serverBaseURL: serverBaseURL, authToken: authToken)
+    private func maxSeverityByHostID(
+        serverBaseURL: URL,
+        authToken: String,
+        severities: [Int]? = nil,
+        tags: [ZabbixTagFilter]? = nil,
+        evalType: Int? = nil
+    ) async throws -> [String: Int] {
+        let resolved = try await activeProblemsWithHostID(
+            serverBaseURL: serverBaseURL,
+            authToken: authToken,
+            severities: severities,
+            tags: tags,
+            evalType: evalType
+        )
         var result: [String: Int] = [:]
         for entry in resolved {
             result[entry.hostID] = max(result[entry.hostID] ?? 0, entry.problem.severity.intValue)
