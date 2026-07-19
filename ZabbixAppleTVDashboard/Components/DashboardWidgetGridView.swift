@@ -31,6 +31,16 @@ struct DashboardWidgetGridView: View {
     /// page's content grows taller than the screen and auto-scrolls instead (see below).
     private static let minimumRowHeight: CGFloat = 60
 
+    /// Zabbix's dashboard grid is always 72 columns wide, with a fixed 70px row height (measured
+    /// live: a full-width widget spans 1620px on the reference browser → 22.5px columns; a 5-row
+    /// widget is 350px tall). Widgets therefore keep a fixed row-to-column proportion regardless of
+    /// how tall the page gets — the page scrolls instead of squashing. Reproducing that proportion
+    /// (row height = columnWidth × 70 / 22.5) is what keeps every widget the same *shape* as the
+    /// frontend's, which matters beyond looks: aspect-driven layouts (the honeycomb's row packing)
+    /// pick the same arrangement as Zabbix only when the box has Zabbix's proportions.
+    private static let zabbixGridColumns = 72
+    private static let zabbixRowHeightPerColumnWidth: CGFloat = 70.0 / 22.5
+
     /// How fast an overflowing page auto-scrolls, in points per second — an unattended kiosk display
     /// has no one at the remote, so this is the only way every widget on a page like that actually
     /// gets seen during its time on screen rather than just the first screenful.
@@ -68,12 +78,16 @@ struct DashboardWidgetGridView: View {
     }
 
     var body: some View {
-        let (columnCount, rowCount) = Self.gridExtent(for: widgets)
+        let (extentColumns, rowCount) = Self.gridExtent(for: widgets)
 
         GeometryReader { geometry in
+            // Zabbix's fixed 72-column grid: a page that doesn't span the full width leaves the
+            // same trailing space it leaves in the frontend, rather than stretching to fill.
+            let columnCount = max(extentColumns, Self.zabbixGridColumns)
             let columnWidth = geometry.size.width / CGFloat(columnCount)
-            let naturalRowHeight = geometry.size.height / CGFloat(rowCount)
-            let rowHeight = max(naturalRowHeight, Self.minimumRowHeight)
+            // Fixed Zabbix-proportional row height (the page auto-scrolls when it doesn't fit),
+            // so every widget keeps the frontend's shape at any page length.
+            let rowHeight = max(columnWidth * Self.zabbixRowHeightPerColumnWidth, Self.minimumRowHeight)
             let contentHeight = rowHeight * CGFloat(rowCount)
             let overflow = (contentHeight - geometry.size.height).rounded()
 
