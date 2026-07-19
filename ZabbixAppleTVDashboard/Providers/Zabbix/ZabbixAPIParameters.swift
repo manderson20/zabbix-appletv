@@ -66,10 +66,15 @@ nonisolated struct ZabbixItemGetParameters: Encodable, Sendable {
     /// (e.g. "Up (1)") the way Zabbix's own item-value and gauge widgets do.
     let selectValueMap: [String]
 
-    init(itemIDs: [String], output: [String] = ["itemid", "name", "lastvalue", "prevvalue", "lastclock", "units", "value_type"], selectValueMap: [String] = ["mappings"]) {
+    /// Requests each item's host, so label-macro templates like "{HOST.NAME}" (item value / gauge
+    /// `description`) can resolve.
+    let selectHosts: [String]
+
+    init(itemIDs: [String], output: [String] = ["itemid", "name", "lastvalue", "prevvalue", "lastclock", "units", "value_type"], selectValueMap: [String] = ["mappings"], selectHosts: [String] = ["hostid", "name"]) {
         self.itemids = itemIDs
         self.output = output
         self.selectValueMap = selectValueMap
+        self.selectHosts = selectHosts
     }
 }
 
