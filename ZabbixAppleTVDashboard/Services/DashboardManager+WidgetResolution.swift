@@ -867,10 +867,17 @@ extension DashboardManager {
         serverBaseURL: URL,
         authToken: String
     ) async throws -> DashboardWidgetKind {
-        let itemIDs = Self.indexedValues(widget.fields, name: "itemids")
+        // The Item history widget stores its items as columns (`columns.N.itemid`), not a flat
+        // `itemids` array — reading the wrong field left the guard below always failing, so the
+        // widget rendered nothing for every real 7.0 configuration.
+        let itemIDs = Self.indexedFieldGroups(widget.fields, prefix: "columns").compactMap { $0["itemid"] }.filter { !$0.isEmpty }
         guard !itemIDs.isEmpty else {
             return .unsupported(rawType: widget.type)
         }
+
+        // "Show lines" controls how many recent values per item are listed (Zabbix's default is 25),
+        // rather than the hardcoded 5.
+        let showLines = Self.fieldValue(widget.fields, name: "show_lines").flatMap(Int.init) ?? 25
 
         let items = try await zabbixAPIClient.items(serverBaseURL: serverBaseURL, authToken: authToken, itemIDs: itemIDs)
 
@@ -883,7 +890,7 @@ extension DashboardManager {
                 itemID: item.itemid,
                 historyValueType: historyValueType,
                 sinceUnixTime: Int(Date().timeIntervalSince1970) - Self.defaultHistoryWindowSeconds,
-                limit: 5
+                limit: showLines
             )
 
             series.append(
@@ -894,7 +901,7 @@ extension DashboardManager {
                     values: values.map { value in
                         ItemHistoryPoint(
                             id: "\(item.itemid).\(value.clock)",
-                            value: value.value,
+                            value: Self.mappedItemValue(rawValue: value.value, valueMap: item.valuemap?.valueMap),
                             date: Date(timeIntervalSince1970: TimeInterval(value.clock) ?? 0)
                         )
                     }
