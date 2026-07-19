@@ -419,6 +419,30 @@ struct ZabbixAppleTVDashboardTests {
         #expect(tree.first(where: { $0.name == "Overview" })?.linksToMap == true)
     }
 
+    @Test func applyNavTreeSeveritiesRollsUpToParents() throws {
+        // Root folder "A" (no map) with two map-linked children; folder "B" with a healthy child.
+        let fields = [
+            ZabbixWidgetField(name: "navtree.1.name", value: "A"), ZabbixWidgetField(name: "navtree.1.parent", value: "0"), ZabbixWidgetField(name: "navtree.1.order", value: "0"),
+            ZabbixWidgetField(name: "navtree.2.name", value: "A-map1"), ZabbixWidgetField(name: "navtree.2.parent", value: "1"), ZabbixWidgetField(name: "navtree.2.order", value: "0"), ZabbixWidgetField(name: "navtree.2.sysmapid", value: "10"),
+            ZabbixWidgetField(name: "navtree.3.name", value: "A-map2"), ZabbixWidgetField(name: "navtree.3.parent", value: "1"), ZabbixWidgetField(name: "navtree.3.order", value: "1"), ZabbixWidgetField(name: "navtree.3.sysmapid", value: "11"),
+            ZabbixWidgetField(name: "navtree.4.name", value: "B"), ZabbixWidgetField(name: "navtree.4.parent", value: "0"), ZabbixWidgetField(name: "navtree.4.order", value: "1"),
+            ZabbixWidgetField(name: "navtree.5.name", value: "B-map"), ZabbixWidgetField(name: "navtree.5.parent", value: "4"), ZabbixWidgetField(name: "navtree.5.order", value: "0"), ZabbixWidgetField(name: "navtree.5.sysmapid", value: "12")
+        ]
+        let tree = DashboardManager.buildNavTree(from: fields)
+
+        // map 10 = warning(2), map 11 = disaster(5), map 12 = OK(0).
+        let severities = DashboardManager.applyNavTreeSeverities(tree, severityBySysmapID: ["10": 2, "11": 5, "12": 0])
+        let byName = Dictionary(uniqueKeysWithValues: severities.map { ($0.name, $0.severity) })
+
+        #expect(byName["A-map1"] == 2)
+        #expect(byName["A-map2"] == 5)
+        // Folder A rolls up to its worst child (disaster 5).
+        #expect(byName["A"] == 5)
+        // Folder B and its healthy child stay OK.
+        #expect(byName["B"] == 0)
+        #expect(byName["B-map"] == 0)
+    }
+
     @Test func buildNavTreeHandlesOrphansAndCycles() throws {
         // Node 5's parent (9) doesn't exist → emitted at top level. Nodes 1↔2 form a cycle.
         let fields = [

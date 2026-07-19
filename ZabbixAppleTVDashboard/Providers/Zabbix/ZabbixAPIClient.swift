@@ -505,6 +505,18 @@ actor ZabbixAPIClient {
     }
 
     /// Fetches a single network map's full topology (elements and links).
+    /// Fetches several maps' elements in one call, for computing Map navigation-tree node severity.
+    func mapHostElements(serverBaseURL: URL, authToken: String, sysmapIDs: [String]) async throws -> [ZabbixMapHostElements] {
+        guard !sysmapIDs.isEmpty else { return [] }
+        return try await send(
+            method: "map.get",
+            params: ZabbixMapElementsGetParameters(sysmapIDs: sysmapIDs),
+            serverBaseURL: serverBaseURL,
+            authToken: authToken,
+            resultType: [ZabbixMapHostElements].self
+        )
+    }
+
     func networkMap(serverBaseURL: URL, authToken: String, mapID: String) async throws -> ZabbixNetworkMap? {
         let maps = try await send(
             method: "map.get",

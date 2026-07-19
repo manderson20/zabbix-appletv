@@ -180,6 +180,15 @@ struct NavigationTreeWidgetContentView: View {
                                 .font(.system(size: 16, weight: node.depth == 0 ? .semibold : .regular, design: .rounded))
                                 .foregroundStyle(DashboardTheme.primaryText)
                                 .lineLimit(1)
+
+                            // Worst-problem severity for the node's map (or its subtree). No dot when
+                            // everything is OK, so a healthy tree stays visually quiet.
+                            if node.severity > 0 {
+                                Spacer(minLength: 4)
+                                Circle()
+                                    .fill(severityIndicatorColor(for: node.severity))
+                                    .frame(width: 10, height: 10)
+                            }
                         }
                         // Indent by depth so the hierarchy reads as a tree.
                         .padding(.leading, CGFloat(node.depth) * 18)
