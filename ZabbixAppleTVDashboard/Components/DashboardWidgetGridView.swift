@@ -156,8 +156,8 @@ private struct DashboardWidgetCardView: View {
             LineChartWidgetContentView(series: series, window: window, stacked: stacked)
         case let .pieChart(slices):
             PieChartWidgetContentView(slices: slices)
-        case let .geomap(markers):
-            GeomapWidgetContentView(markers: markers)
+        case let .geomap(markers, defaultView):
+            GeomapWidgetContentView(markers: markers, defaultView: defaultView)
         case let .networkMap(diagram):
             NetworkMapWidgetContentView(diagram: diagram)
         case let .mapList(maps):

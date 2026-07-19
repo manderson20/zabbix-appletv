@@ -504,6 +504,20 @@ struct ZabbixAppleTVDashboardTests {
         #expect(DashboardManager.haNodeStatusLabel(99) == "Unknown")
     }
 
+    @Test func geoMapDefaultViewParsesLatLngZoom() throws {
+        let view = try #require(DashboardManager.parseGeoMapDefaultView("42.3601,-71.0589,10"))
+        #expect(view.latitude == 42.3601)
+        #expect(view.longitude == -71.0589)
+        #expect(view.zoom == 10)
+        // Whitespace tolerated.
+        #expect(DashboardManager.parseGeoMapDefaultView(" 1.0 , 2.0 , 3 ")?.zoom == 3)
+        // Malformed / empty / absent → nil (caller auto-fits).
+        #expect(DashboardManager.parseGeoMapDefaultView("42.0,-71.0") == nil)
+        #expect(DashboardManager.parseGeoMapDefaultView("abc,def,ghi") == nil)
+        #expect(DashboardManager.parseGeoMapDefaultView("") == nil)
+        #expect(DashboardManager.parseGeoMapDefaultView(nil) == nil)
+    }
+
     @Test func clockTimeZoneIdentifierIgnoresLocalSentinels() throws {
         func identifier(_ value: String?) -> String? {
             DashboardManager.clockTimeZoneIdentifier(from: value.map { [ZabbixWidgetField(name: "tzone_timezone", value: $0)] } ?? [])
