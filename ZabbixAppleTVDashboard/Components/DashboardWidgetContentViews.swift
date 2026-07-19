@@ -747,21 +747,30 @@ struct ProblemHostsWidgetContentView: View {
             AutoScrollingContent {
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(summaries) { summary in
-                        HStack(spacing: 10) {
-                            Circle()
-                                .fill(severityIndicatorColor(for: summary.maxSeverity))
-                                .frame(width: 12, height: 12)
-
+                        HStack(spacing: 6) {
                             Text(summary.groupName)
                                 .font(.system(size: 17, weight: .medium, design: .rounded))
                                 .foregroundStyle(DashboardTheme.primaryText)
                                 .lineLimit(1)
 
-                            Spacer()
+                            Spacer(minLength: 6)
 
-                            Text("\(summary.count)")
-                                .font(.system(size: 17, weight: .bold, design: .rounded))
-                                .foregroundStyle(DashboardTheme.secondaryText)
+                            // One colored cell per severity that has problem hosts, showing the count —
+                            // matching Zabbix's per-severity breakdown rather than a single total.
+                            ForEach(Array(summary.countsBySeverity.enumerated()), id: \.offset) { severity, count in
+                                if count > 0 {
+                                    Text("\(count)")
+                                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                                        .foregroundStyle(.white)
+                                        .frame(minWidth: 26)
+                                        .padding(.vertical, 3)
+                                        .padding(.horizontal, 6)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                                .fill(severityIndicatorColor(for: severity))
+                                        )
+                                }
+                            }
                         }
                     }
                 }

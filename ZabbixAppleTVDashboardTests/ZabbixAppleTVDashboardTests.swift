@@ -690,6 +690,20 @@ struct ZabbixAppleTVDashboardTests {
         #expect(items.first?.hostid == "10461")
     }
 
+    @Test func severityCountsBucketsWorstSeverities() throws {
+        // Hosts whose worst severities are 5, 5, 2, 0 → two disasters, one warning, one not-classified.
+        let counts = DashboardManager.severityCounts(fromWorstSeverities: [5, 5, 2, 0])
+        #expect(counts == [1, 0, 1, 0, 0, 2])
+        // Total equals the host count; max severity is the top non-empty band.
+        let summary = HostGroupProblemSummary(id: "1", groupName: "G", countsBySeverity: counts)
+        #expect(summary.count == 4)
+        #expect(summary.maxSeverity == 5)
+        // Out-of-range severities are clamped into the 0…5 band (no crash).
+        #expect(DashboardManager.severityCounts(fromWorstSeverities: [-1, 9]) == [1, 0, 0, 0, 0, 1])
+        // No problem hosts → all zero, maxSeverity 0.
+        #expect(HostGroupProblemSummary(id: "2", groupName: "G", countsBySeverity: [0, 0, 0, 0, 0, 0]).maxSeverity == 0)
+    }
+
     @Test func buildDataOverviewMatrixGroupsHostsAndItems() throws {
         // host1 has CPU+Mem; host2 has only CPU → host2's Mem cell is blank.
         let entries = [

@@ -800,27 +800,36 @@ extension DashboardManager {
         let hostGroups = try await zabbixAPIClient.hostGroups(serverBaseURL: serverBaseURL, authToken: authToken, hostIDs: hostIDs)
         let groupsByHostID = Dictionary(uniqueKeysWithValues: hostGroups.map { ($0.hostid, $0.hostgroups) })
 
-        // "Problem hosts" counts distinct HOSTS with an active problem per group, matching
-        // Zabbix's own widget (not the total number of problems — a single host with 5 open
-        // problems is still 1 problem host, not 5).
-        var hostIDsByGroup: [String: (name: String, hostIDs: Set<String>, maxSeverity: Int)] = [:]
+        // "Problem hosts" counts distinct HOSTS with an active problem per group, matching Zabbix's
+        // own widget (not the total number of problems). Per group, track each host's WORST severity
+        // so the counts can be broken out into per-severity columns while a host still counts once.
+        var worstSeverityByGroup: [String: (name: String, worstByHost: [String: Int])] = [:]
 
         for entry in resolved {
             guard let groups = groupsByHostID[entry.hostID] else { continue }
 
             for group in groups {
-                var summary = hostIDsByGroup[group.groupid] ?? (name: group.name, hostIDs: [], maxSeverity: 0)
-                summary.hostIDs.insert(entry.hostID)
-                summary.maxSeverity = max(summary.maxSeverity, entry.problem.severity.intValue)
-                hostIDsByGroup[group.groupid] = summary
+                var summary = worstSeverityByGroup[group.groupid] ?? (name: group.name, worstByHost: [:])
+                summary.worstByHost[entry.hostID] = max(summary.worstByHost[entry.hostID] ?? 0, entry.problem.severity.intValue)
+                worstSeverityByGroup[group.groupid] = summary
             }
         }
 
         return .problemsByHostGroup(
-            hostIDsByGroup.map { groupID, summary in
-                HostGroupProblemSummary(id: groupID, groupName: summary.name, count: summary.hostIDs.count, maxSeverity: summary.maxSeverity)
+            worstSeverityByGroup.map { groupID, summary in
+                HostGroupProblemSummary(id: groupID, groupName: summary.name, countsBySeverity: Self.severityCounts(fromWorstSeverities: Array(summary.worstByHost.values)))
             }.sorted { $0.maxSeverity == $1.maxSeverity ? $0.count > $1.count : $0.maxSeverity > $1.maxSeverity }
         )
+    }
+
+    /// Buckets each host's worst severity into a 6-slot per-severity count array (index 0…5),
+    /// clamping out-of-range severities into the valid band.
+    static func severityCounts(fromWorstSeverities severities: [Int]) -> [Int] {
+        var counts = Array(repeating: 0, count: 6)
+        for severity in severities {
+            counts[min(max(severity, 0), 5)] += 1
+        }
+        return counts
     }
 
     // MARK: - Geomap

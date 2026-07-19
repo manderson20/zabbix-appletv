@@ -341,12 +341,16 @@ nonisolated struct HostGroupProblemSummary: Identifiable, Sendable {
     /// Host group display name.
     let groupName: String
 
-    /// Number of distinct hosts in this group with at least one active problem (not the total
-    /// number of problems — a host with several open problems still counts once).
-    let count: Int
+    /// Per-severity problem-host counts (index 0…5 = Not classified…Disaster): each distinct host is
+    /// counted once, in the column of its worst active problem in this group. The row total is thus
+    /// the number of distinct problem hosts — a host with several open problems still counts once.
+    let countsBySeverity: [Int]
 
-    /// Highest severity among this group's active problems.
-    let maxSeverity: Int
+    /// Total distinct hosts with an active problem in this group.
+    var count: Int { countsBySeverity.reduce(0, +) }
+
+    /// Highest severity with any problem host in this group.
+    var maxSeverity: Int { countsBySeverity.lastIndex(where: { $0 > 0 }) ?? 0 }
 }
 
 /// A single sent notification or executed remote command, shown in an action log widget.
