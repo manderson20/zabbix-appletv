@@ -646,4 +646,20 @@ struct ZabbixAppleTVDashboardTests {
         #expect(DashboardManager.mappedItemValue(rawValue: nil, valueMap: map) == "\u{2014}")
     }
 
+    @Test func aggregateComputesEachFunction() throws {
+        let points: [(clock: Double, value: Double)] = [(100, 10), (300, 20), (200, 30)]
+
+        #expect(DashboardManager.aggregate(points, function: 1) == 10)   // min
+        #expect(DashboardManager.aggregate(points, function: 2) == 30)   // max
+        #expect(DashboardManager.aggregate(points, function: 3) == 20)   // avg (60/3)
+        #expect(DashboardManager.aggregate(points, function: 4) == 3)    // count
+        #expect(DashboardManager.aggregate(points, function: 5) == 60)   // sum
+        #expect(DashboardManager.aggregate(points, function: 6) == 10)   // first (earliest clock 100)
+        #expect(DashboardManager.aggregate(points, function: 7) == 20)   // last (latest clock 300)
+
+        // No data, and the "none"/unknown function, both yield nil (caller shows the raw value).
+        #expect(DashboardManager.aggregate([], function: 3) == nil)
+        #expect(DashboardManager.aggregate(points, function: 0) == nil)
+    }
+
 }
