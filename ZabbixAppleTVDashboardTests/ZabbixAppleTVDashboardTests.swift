@@ -473,6 +473,39 @@ struct ZabbixAppleTVDashboardTests {
         #expect(filter(nil) == nil)    // field absent → no filter
     }
 
+    @Test func durationSecondsParsesUnitsAndSign() throws {
+        #expect(DashboardManager.durationSeconds(from: "3600") == 3600)   // plain seconds
+        #expect(DashboardManager.durationSeconds(from: "30s") == 30)
+        #expect(DashboardManager.durationSeconds(from: "5m") == 300)      // m = minutes
+        #expect(DashboardManager.durationSeconds(from: "2h") == 7200)
+        #expect(DashboardManager.durationSeconds(from: "1d") == 86400)
+        #expect(DashboardManager.durationSeconds(from: "1w") == 604800)
+        #expect(DashboardManager.durationSeconds(from: "-1h") == -3600)   // signed
+        #expect(DashboardManager.durationSeconds(from: "") == nil)
+        #expect(DashboardManager.durationSeconds(from: "abc") == nil)
+    }
+
+    @Test func aggregatedByIntervalBucketsWithFunction() throws {
+        let start = Date(timeIntervalSince1970: 1_000_000)
+        func at(_ offset: Double, _ value: Double) -> (date: Date, value: Double) {
+            (date: start.addingTimeInterval(offset), value: value)
+        }
+        // Two 60s buckets: [10,20,30] then [100].
+        let points = [at(0, 10), at(20, 20), at(50, 30), at(70, 100)]
+
+        // Avg (3): bucket 0 → 20, bucket 1 → 100; placed at each bucket's midpoint (+30s, +90s).
+        let avg = DashboardManager.aggregatedByInterval(points, function: 3, intervalSeconds: 60, windowStart: start)
+        #expect(avg.map(\.value) == [20, 100])
+        #expect(avg.first?.date == start.addingTimeInterval(30))
+
+        // Max (2): bucket 0 → 30, bucket 1 → 100.
+        #expect(DashboardManager.aggregatedByInterval(points, function: 2, intervalSeconds: 60, windowStart: start).map(\.value) == [30, 100])
+
+        // Function 0 or non-positive interval → points unchanged.
+        #expect(DashboardManager.aggregatedByInterval(points, function: 0, intervalSeconds: 60, windowStart: start).count == 4)
+        #expect(DashboardManager.aggregatedByInterval(points, function: 3, intervalSeconds: 0, windowStart: start).count == 4)
+    }
+
     @Test func trendApproximationSelectsMinAvgMax() throws {
         let full = ZabbixTrendValue(clock: "1700000000", value_avg: "50", value_min: "10", value_max: "90")
 

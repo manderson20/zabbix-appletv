@@ -11,7 +11,7 @@
 
 Coverage is broad and, since the original audit, materially deeper. Every widget renders
 *something*, and the count of widgets whose worst realistic-config behavior is **wrong-data** has
-dropped from 25/26 to **5/26**, with the other 21 down to **missing-detail** (renders correctly
+dropped from 25/26 to **4/26**, with the other 22 down to **missing-detail** (renders correctly
 but ignores a display or layout knob). The improvement came almost entirely from the cross-cutting
 helpers the original audit predicted would each fix a class of widgets:
 
@@ -34,10 +34,10 @@ helpers the original audit predicted would each fix a class of widgets:
   do (and honor their scope/`show_lines`). **Map navigation tree still does not.**
 
 The genuine strengths are unchanged: everything fetches under the session token, so server-side
-permissions hold and nothing leaks. The wrong-data set is down to 5 and is now concentrated in a
-handful of genuinely-unbuilt features — the navtree hierarchy (Map navigation tree), svggraph
-per-dataset aggregation/`timeshift`, Action log's fixed window & content filters, and the
-Data-overview / Honeycomb row caps — rather than a systemic scope/filter drop. The scope, tag, aggregation, value-map, status-derivation, and time-period themes the original
+permissions hold and nothing leaks. The wrong-data set is down to 4 and is now concentrated in a
+handful of genuinely-unbuilt features — the navtree hierarchy (Map navigation tree), Action log's
+fixed window & content filters, and the Data-overview / Honeycomb row caps — rather than a systemic
+scope/filter drop. The scope, tag, aggregation, value-map, status-derivation, and time-period themes the original
 audit opened with are all closed.
 
 ## 2. Coverage matrix
@@ -51,7 +51,7 @@ cosmetic-leaning last).
 | SLA report | partial | missing-detail | 2 | Computes achieved SLI per service (`sla.getsli`) vs target with pass/fail color; shows only the latest period, and `serviceid` field name assumed (unverified live) |
 | Web monitoring | partial | missing-detail | 1 | Status (`web.test.fail`) + full scope (`groupids`/`hostids`/tags/`exclude_groupids`) honored; only the 15-row view cap remains |
 | Top triggers | partial | missing-detail | 1 | Now ranks by problem-event frequency over `time_period` with a count column; only acknowledgement filtering remains |
-| Graph (svggraph) | partial | wrong-data | 7 | Per-dataset aggregation/`timeshift`/`axisy` ignored — `approximation` (min/avg/max trend backfill) now honored |
+| Graph (svggraph) | partial | missing-detail | 1 | Per-dataset `aggregate_function`/`aggregate_interval`, `timeshift`, and `approximation` all honored; only left/right `axisy` assignment remains |
 | Graph (classic) | partial | missing-detail | 1 | Pie/exploded-pie graphs render as a pie and Simple-graph (`itemid`) mode is supported; stacked graphs draw as overlaid lines (data correct, visual stacking pending) |
 | Honeycomb | partial | wrong-data | 3 | Hardcoded 60-cell cap; units/label templates dropped — `items.N` + value maps + item-tag filter + threshold cell coloring now applied |
 | Item navigator | partial | missing-detail | 2 | `group_by` flattened; `show_lines` default 100 — `items.N` + value maps + item-tag filter now applied |
@@ -88,6 +88,7 @@ cosmetic-leaning last).
 - ~~**Web monitoring — `exclude_groupids` + tags dropped.**~~ **Done** — tags filter `httptest.get` server-side and `exclude_groupids` drops scenarios whose host is in an excluded group (client-side), so the widget's full scope is honored.
 - ~~**Map — non-host elements always OK.**~~ **Done** — trigger elements take the worst severity of their referenced triggers and host-group elements the worst across the group's hosts; only submap elements (needing a recursive child-map rollup) stay OK.
 - ~~**Graph (classic) — graph type lost + Simple-graph unsupported.**~~ **Done** — pie/exploded-pie graphs (`graphtype` 2/3) render as a pie of each item's latest value, and Simple-graph mode (`itemid`, no `graphid`) plots the single item; stacked graphs (type 1) still draw as overlaid lines (correct data, visual stacking pending).
+- ~~**Graph (svggraph) — per-dataset aggregation + timeshift.**~~ **Done** — each dataset's `aggregate_function` is applied over `aggregate_interval` buckets, and `timeshift` moves the data window and re-aligns it on the current axis for overlays (reusing the shared `aggregate`/duration helpers).
 - ~~**Item value — thresholds ignored.**~~ **Done** — reads `thresholds.N` (shared `thresholdColorHex` helper) so a value crossing a band repaints the background with its alert color.
 - ~~**Honeycomb — thresholds/cell coloring absent.**~~ **Done** — each cell is tinted by the threshold band its reading meets (same `thresholdColorHex` helper).
 - ~~**Geomap — marker severity ignores widget `tags`.**~~ **Done** — `maxSeverityByHostID` now takes the widget's tag + severity filter, so a marker's color reflects only the problems the widget shows.
@@ -95,7 +96,7 @@ cosmetic-leaning last).
 - ~~**Item history — item selector reads the wrong field.**~~ **Done** — reads `columns.N.itemid`, honors `show_lines` (default 25), applies value maps, bounds to `time_period`.
 - ~~**Positive `groupids` scoping dropped.**~~ **Done** — a shared `scopedGroupIDs` (nested-aware) is applied in Problems, Problems by severity, Problem hosts, Top triggers, Top hosts, Host availability, and the navigators; the `problem.get`/`host.get` param structs carry `groupids`.
 - ~~**Tag filtering (`tags`+`evaltype`) unimplemented everywhere.**~~ **Done** — a shared `tagFilters`/`tagEvalType` builder is wired into every widget with a tag filter: Problems, Problems by severity, Problem hosts, Trigger overview, Top triggers, Top hosts, Host navigator, the item-search path (Data overview, Honeycomb, Item navigator), Web monitoring, and Geomap.
-- ~~**Aggregation over a window ignored.**~~ **Mostly done** — Item value, Top hosts, and Pie chart compute `aggregate_function` over `time_period`. Graph (svg) now honors `approximation` for its trend backfill; only its per-dataset `aggregate_function` remains.
+- ~~**Aggregation over a window ignored.**~~ **Done** — Item value, Top hosts, and Pie chart compute `aggregate_function` over `time_period`, and Graph (svg) applies its per-dataset `aggregate_function`/`aggregate_interval` (plus `timeshift` and `approximation`).
 - ~~**Top hosts — ranking unimplemented.**~~ **Done** — ranks up to 50 candidate hosts by the configured column (Top/Bottom N), limited to `show_lines`; per-column aggregation over `time_period`.
 - ~~**Trigger overview — only PROBLEM state fetched.**~~ **Done** — `show: Any` fetches all triggers and renders OK cells green; tags + nested scope applied.
 - ~~**Discovery — no `status=active` filter.**~~ **Done** — filters to `status: 0`, sorted by name.
@@ -113,9 +114,9 @@ cosmetic-leaning last).
   `ZabbixWidget`, then render the authored `navtree` hierarchy instead of listing every server map.
 - **Host availability — `maintenance` not honored.** Add the `maintenance_status` filter (default
   excludes maintenance); also fetch `active_available` for active-check availability.
-- **Graph (svggraph) — per-dataset aggregation/`timeshift`/`axisy`.** Reuse the aggregation engine
-  for `aggregate_function`; apply `timeshift` to the window and honor left/right `axisy`.
-  (`approximation` min/avg/max trend backfill is now done.)
+- **Graph (svggraph) — left/right `axisy` assignment.** Datasets can plot against a left or right Y
+  axis; both currently share one scale. (`aggregate_function`/`aggregate_interval`, `timeshift`, and
+  `approximation` are all done.)
 
 ### Tier 2 — Missing configured detail (renders, but ignores a knob)
 
@@ -170,8 +171,8 @@ These were the leverage points, and most have now been built. Status is marked i
   aggregation widgets and Item history. Classic/svg graphs and Action log still don't apply `.to`;
   the dashboard-level foreign-reference default is still unresolved.
 - **Unified aggregation engine.** ✅ **Built** — `aggregate`/`aggregatedValue` used by Item value,
-  Top hosts, Pie chart. Graph (svg)'s per-dataset `aggregate_function` not yet wired in (its
-  `approximation` trend selection is).
+  Top hosts, Pie chart, and Graph (svg)'s per-dataset `aggregate_function`/`aggregate_interval`
+  (plus its `timeshift` and `approximation`).
 - **History-vs-trends reuse.** ◐ **Partly** — svggraph/classic graph backfill history from trends
   (peak-preserving); svggraph now honors `approximation` (min/avg/max), classic still uses `avg`.
   Item history honors `time_period` but not
