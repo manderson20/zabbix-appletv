@@ -865,6 +865,33 @@ struct ZabbixAppleTVDashboardTests {
         #expect(emptyTags["evaltype"] == nil)
     }
 
+    @Test func problemParamsRequestTagsAndDecodeThem() throws {
+        // problem.get always requests selectTags so the Problems widget can show them.
+        let data = try JSONEncoder().encode(ZabbixProblemGetParameters())
+        let params = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        #expect((params["selectTags"] as? [String]) == ["tag", "value"])
+
+        // The response's tags decode (and are optional — absent decodes to nil).
+        let responseData = try #require(
+            """
+            {
+              "jsonrpc": "2.0",
+              "result": [
+                { "eventid": "9", "name": "Link down", "severity": "3", "clock": "1700000000", "objectid": "47", "tags": [ { "tag": "Application", "value": "Interface 0/1" }, { "tag": "scope", "value": "" } ] }
+              ],
+              "id": 1
+            }
+            """.data(using: .utf8)
+        )
+        let problems = try JSONDecoder().decode(ZabbixAPIResponse<[ZabbixProblemSummary]>.self, from: responseData).resolvedResult()
+        #expect(problems.first?.tags?.count == 2)
+        #expect(problems.first?.tags?.first?.tag == "Application")
+        #expect(problems.first?.tags?.first?.value == "Interface 0/1")
+        // A tag with no value shows just the tag name in the UI label.
+        #expect(ProblemTag(tag: "scope", value: "").label == "scope")
+        #expect(ProblemTag(tag: "Application", value: "web").label == "Application: web")
+    }
+
     @Test func alertParamsForwardContentFiltersWhenPresent() throws {
         func encoded(_ params: ZabbixAlertGetParameters) throws -> [String: Any] {
             let data = try JSONEncoder().encode(params)

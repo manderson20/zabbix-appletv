@@ -167,8 +167,12 @@ nonisolated struct ZabbixProblemGetParameters: Encodable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case output, severities, groupids, sortfield, sortorder, limit, suppressed, tags, evaltype, acknowledged
+        case output, severities, groupids, sortfield, sortorder, limit, suppressed, tags, evaltype, acknowledged, selectTags
     }
+
+    /// Always request each problem's event tags, so the problems widget can show them per its
+    /// `show_tags` option. Other callers (severity tallies, counts) simply ignore them.
+    private static let selectTagsFields = ["tag", "value"]
 
     // Custom encoding so a `nil` optional is omitted entirely rather than sent as JSON `null`:
     // omitting `suppressed`/`acknowledged` is how "return problems regardless of that status" is
@@ -185,6 +189,7 @@ nonisolated struct ZabbixProblemGetParameters: Encodable, Sendable {
         try container.encodeIfPresent(tags, forKey: .tags)
         try container.encodeIfPresent(evaltype, forKey: .evaltype)
         try container.encodeIfPresent(acknowledged, forKey: .acknowledged)
+        try container.encode(Self.selectTagsFields, forKey: .selectTags)
     }
 }
 

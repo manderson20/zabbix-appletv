@@ -152,6 +152,10 @@ extension DashboardManager {
                 }
             }
 
+            // "show_tags" caps how many event tags are shown per problem (Zabbix's default is 3);
+            // 0 hides them.
+            let showTags = Self.fieldValue(widget.fields, name: "show_tags").flatMap(Int.init) ?? 3
+
             return .problems(
                 visibleProblems.prefix(showLines).map { problem in
                     DashboardProblem(
@@ -159,7 +163,8 @@ extension DashboardManager {
                         name: problem.name,
                         severity: problem.severity.intValue,
                         host: hostByTriggerID[problem.objectid]?.name,
-                        since: Date(timeIntervalSince1970: TimeInterval(problem.clock) ?? 0)
+                        since: Date(timeIntervalSince1970: TimeInterval(problem.clock) ?? 0),
+                        tags: showTags > 0 ? (problem.tags ?? []).prefix(showTags).map { ProblemTag(tag: $0.tag, value: $0.value) } : []
                     )
                 }
             )

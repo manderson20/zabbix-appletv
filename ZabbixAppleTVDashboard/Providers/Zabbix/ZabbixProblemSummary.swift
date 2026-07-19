@@ -27,6 +27,15 @@ nonisolated struct ZabbixProblemSummary: Decodable, Sendable {
 
     /// Identifier of the underlying trigger, used to resolve the host via `trigger.get`.
     let objectid: String
+
+    /// Event tags (requested via `selectTags`), shown on the problems widget per its `show_tags`.
+    let tags: [ZabbixEventTag]?
+}
+
+/// A single event tag (name + value), as returned by `problem.get` with `selectTags`.
+nonisolated struct ZabbixEventTag: Decodable, Sendable {
+    let tag: String
+    let value: String
 }
 
 /// A trigger's associated hosts, as returned by `trigger.get` with `selectHosts`.
