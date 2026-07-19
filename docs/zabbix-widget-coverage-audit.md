@@ -145,7 +145,9 @@ cosmetic-leaning last).
   block unimplemented.
 - **Display styles.** `display` (bar/indicators), per-column `thresholds`/`base_color` (Top hosts,
   Item history), svg draw `type`/`fill`/`axisy`, problem overlays and percentile lines. (Classic
-  stacked graphs now render as a stacked area chart; svg per-dataset stacking is still a follow-up.)
+  stacked graphs now render as a stacked area chart, the graph legend `legend` toggle is honored,
+  and a fixed left Y-axis range `lefty_min`/`lefty_max` is applied — verified live against a
+  2.5 Gbps-pinned graph. svg per-dataset stacking and right-axis `axisy` are still follow-ups.)
 - **`only_totals`, `maintenance`, `hide_empty_groups`, `show`/`show_tags`/`show_opdata`** knobs
   ignored across the problem/availability widgets.
 

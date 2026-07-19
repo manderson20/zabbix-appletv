@@ -352,12 +352,27 @@ struct LineChartWidgetContentView: View {
     let window: ChartTimeWindow
     var stacked: Bool = false
     var showLegend: Bool = true
+    var yMin: Double? = nil
+    var yMax: Double? = nil
 
     private var units: String { series.first?.units ?? "" }
 
+    /// The widget's fixed left Y-axis range (`lefty_min`/`lefty_max`), when either bound is set:
+    /// an unset lower bound defaults to 0, an unset upper bound to the data's own max, so a graph
+    /// that pins only a maximum still starts at 0 like Zabbix.
+    private var yScaleDomain: ClosedRange<Double>? {
+        guard yMin != nil || yMax != nil else { return nil }
+        let dataMax = series.flatMap(\.points).compactMap(\.value).max() ?? 0
+        let lower = yMin ?? 0
+        let upper = yMax ?? max(dataMax, lower)
+        return lower <= upper ? lower...upper : lower...(lower + 1)
+    }
+
     private var yAxisScale: ZabbixValueFormatting.Scale {
-        let maxValue = series.flatMap(\.points).compactMap(\.value).max() ?? 0
-        return ZabbixValueFormatting.scale(forMaxMagnitude: maxValue, units: units)
+        // Scale labels to the fixed axis max when one is set, so a pinned 2.5 Gbps axis reads in G
+        // rather than being scaled from the data's own (smaller) peak.
+        let dataMax = series.flatMap(\.points).compactMap(\.value).max() ?? 0
+        return ZabbixValueFormatting.scale(forMaxMagnitude: max(dataMax, yMax ?? 0), units: units)
     }
 
     /// One drawable run of a series between the `nil` breaks that mark gaps in its data. Each
@@ -491,6 +506,9 @@ struct LineChartWidgetContentView: View {
                     }
                 }
             }
+            // Pin the Y-axis to the widget's configured lefty_min/lefty_max when set; otherwise
+            // Swift Charts auto-scales to the data.
+            .chartYScaleIfSet(yScaleDomain)
     }
 
     var body: some View {
@@ -510,6 +528,18 @@ struct LineChartWidgetContentView: View {
                     ChartLegendView(series: series)
                 }
             }
+        }
+    }
+}
+
+private extension View {
+    /// Applies a fixed Y-axis domain when one is provided; otherwise leaves the chart to auto-scale.
+    @ViewBuilder
+    func chartYScaleIfSet(_ domain: ClosedRange<Double>?) -> some View {
+        if let domain {
+            chartYScale(domain: domain)
+        } else {
+            self
         }
     }
 }
