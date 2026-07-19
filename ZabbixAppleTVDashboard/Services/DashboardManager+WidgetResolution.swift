@@ -1179,12 +1179,19 @@ extension DashboardManager {
         return Self.bucketedChartPoints(points, itemID: itemID, windowStart: windowStart, windowEnd: endDate, bucketCount: Self.chartBucketCount)
     }
 
-    /// Downsamples an item's raw, chronological history into at most ~`2 * bucketCount` points that
-    /// still span `windowStart...windowEnd`. The window is split into fixed time buckets; each
-    /// bucket with data contributes its minimum and maximum sample (in chronological order) so
-    /// short spikes survive instead of being averaged away, and each run of empty buckets
-    /// contributes one `nil`-valued break so a stretch the item reported nothing for renders as a
-    /// blank gap rather than a line drawn straight across it. Points already sorted ascending.
+    /// Reduces an item's raw, chronological samples to a render-friendly set of points, keeping the
+    /// line continuous and only breaking it where the item genuinely reported nothing.
+    ///
+    /// Two things happen here:
+    /// 1. **Downsample when dense.** Only when there are far more samples than we need to draw is the
+    ///    window split into time buckets, each contributing its minimum and maximum (peak-preserving,
+    ///    so spikes survive). A slowly-sampled item (e.g. a 5-minute ticket count) keeps every point.
+    /// 2. **Break only at real gaps.** The break is derived from the data's own median spacing, not a
+    ///    fixed bucket size — a nil point is inserted only where consecutive samples are farther apart
+    ///    than a few times the normal interval (a genuine outage). The old fixed-bucket break shattered
+    ///    any item sampled slower than the bucket width into disconnected dots instead of a line.
+    ///
+    /// Points are assumed sorted ascending.
     static func bucketedChartPoints(
         _ points: [(date: Date, value: Double)],
         itemID: String,
@@ -1192,11 +1199,48 @@ extension DashboardManager {
         windowEnd: Date,
         bucketCount: Int
     ) -> [ChartPoint] {
+        guard !points.isEmpty else { return [] }
+
+        let working: [(date: Date, value: Double)]
         let totalSeconds = windowEnd.timeIntervalSince(windowStart)
-        guard totalSeconds > 0, bucketCount > 0 else {
-            return points.map { ChartPoint(id: "\(itemID).\($0.date.timeIntervalSince1970)", date: $0.date, value: $0.value) }
+        if points.count > 2 * bucketCount, totalSeconds > 0, bucketCount > 0 {
+            working = minMaxDownsampled(points, windowStart: windowStart, totalSeconds: totalSeconds, bucketCount: bucketCount)
+        } else {
+            working = points
         }
 
+        // A line should break only where the item reported nothing for far longer than its own
+        // sampling interval — not between every pair of a slowly-sampled item's points. Derive the
+        // threshold from the data's median spacing (with a floor) so a 1-second series and a
+        // 5-minute series are both drawn continuous, and only a true outage gaps.
+        let deltas = zip(working, working.dropFirst()).map { $1.date.timeIntervalSince($0.date) }.filter { $0 > 0 }.sorted()
+        let medianDelta = deltas.isEmpty ? 0 : deltas[deltas.count / 2]
+        let gapThreshold = max(medianDelta * 3, Self.minimumGapSeconds)
+
+        var result: [ChartPoint] = []
+        result.reserveCapacity(working.count + 8)
+        for (index, point) in working.enumerated() {
+            if index > 0 {
+                let gap = point.date.timeIntervalSince(working[index - 1].date)
+                if gap > gapThreshold {
+                    let breakDate = working[index - 1].date.addingTimeInterval(gap / 2)
+                    result.append(ChartPoint(id: "\(itemID).gap.\(index)", date: breakDate, value: nil))
+                }
+            }
+            result.append(ChartPoint(id: "\(itemID).\(index)", date: point.date, value: point.value))
+        }
+        return result
+    }
+
+    /// Buckets dense samples into `bucketCount` time buckets, emitting each non-empty bucket's min
+    /// and max (in chronological order, with their original timestamps). Empty buckets emit nothing —
+    /// gap breaks are decided by the caller from the data's spacing, not bucket emptiness.
+    private static func minMaxDownsampled(
+        _ points: [(date: Date, value: Double)],
+        windowStart: Date,
+        totalSeconds: TimeInterval,
+        bucketCount: Int
+    ) -> [(date: Date, value: Double)] {
         let bucketSeconds = totalSeconds / Double(bucketCount)
         var buckets: [[(date: Date, value: Double)]] = Array(repeating: [], count: bucketCount)
         for point in points {
@@ -1206,32 +1250,17 @@ extension DashboardManager {
             buckets[index].append(point)
         }
 
-        var result: [ChartPoint] = []
-        result.reserveCapacity(bucketCount)
-        var previousBucketHadData = false
-
-        for (index, bucket) in buckets.enumerated() {
+        var result: [(date: Date, value: Double)] = []
+        result.reserveCapacity(bucketCount * 2)
+        for bucket in buckets {
             guard let minPoint = bucket.min(by: { $0.value < $1.value }),
-                  let maxPoint = bucket.max(by: { $0.value < $1.value }) else {
-                // One break at the first empty bucket after data is enough for Swift Charts to
-                // break the line across however many empty buckets follow it.
-                if previousBucketHadData {
-                    let breakDate = windowStart.addingTimeInterval(bucketSeconds * (Double(index) + 0.5))
-                    result.append(ChartPoint(id: "\(itemID).gap.\(index)", date: breakDate, value: nil))
-                    previousBucketHadData = false
-                }
-                continue
-            }
-
-            previousBucketHadData = true
+                  let maxPoint = bucket.max(by: { $0.value < $1.value }) else { continue }
             let ordered = minPoint.date <= maxPoint.date ? [minPoint, maxPoint] : [maxPoint, minPoint]
-            for (position, point) in ordered.enumerated() {
-                // Skip the duplicate when a bucket's min and max are the same sample.
-                if position == 1, point.date == ordered[0].date, point.value == ordered[0].value { continue }
-                result.append(ChartPoint(id: "\(itemID).\(index).\(position)", date: point.date, value: point.value))
+            result.append(ordered[0])
+            if ordered[1].date != ordered[0].date || ordered[1].value != ordered[0].value {
+                result.append(ordered[1])
             }
         }
-
         return result
     }
 
@@ -1260,6 +1289,12 @@ extension DashboardManager {
     /// to one hour (trends are hourly, so a sub-hour gap isn't worth an extra request), so a graph
     /// whose history covers its whole window skips the trend fetch entirely.
     private static let trendFillMinimumGapSeconds: TimeInterval = 3600
+
+    /// Floor for the "real outage" gap threshold when breaking a chart line. A stretch shorter than
+    /// this is never treated as a gap even for a fast-sampled item, so brief collection hiccups
+    /// don't fragment the line; longer stretches gap only if they also exceed a few sampling
+    /// intervals (see `bucketedChartPoints`).
+    private static let minimumGapSeconds: TimeInterval = 900
 
     /// The widget's own configured graph time range ("time_period.from"), matching what a Zabbix
     /// graph widget's name usually spells out (e.g. "Internet Usage Last Hour" is itself configured

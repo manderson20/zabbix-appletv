@@ -536,36 +536,34 @@ struct ZabbixAppleTVDashboardTests {
 
     @Test func bucketedChartPointsPreservesPeaksAndMarksGaps() throws {
         let start = Date(timeIntervalSince1970: 0)
-        let end = Date(timeIntervalSince1970: 1000)
+        let end = Date(timeIntervalSince1970: 12000)
 
-        // Ten 100-second buckets. Data sits only in the first and last bucket, with a sharp spike
-        // in the first — the eight empty buckets between them stand in for a stretch of no data.
+        // A cluster of closely-spaced samples (300s apart, well under the outage threshold), with a
+        // sharp spike, then a long stretch of no data, then one more sample. The cluster must stay a
+        // continuous line; only the long empty stretch is a real gap.
         let points: [(date: Date, value: Double)] = [
-            (Date(timeIntervalSince1970: 10), 5),
-            (Date(timeIntervalSince1970: 40), 100),   // spike
-            (Date(timeIntervalSince1970: 70), 6),
-            (Date(timeIntervalSince1970: 950), 7)
+            (Date(timeIntervalSince1970: 300), 5),
+            (Date(timeIntervalSince1970: 600), 100),   // spike
+            (Date(timeIntervalSince1970: 900), 6),
+            (Date(timeIntervalSince1970: 11000), 7)    // after a ~2.8h outage
         ]
 
         let result = DashboardManager.bucketedChartPoints(points, itemID: "1", windowStart: start, windowEnd: end, bucketCount: 10)
 
-        // The spike survives downsampling — a bucket keeps its maximum, not just an average.
+        // The spike survives.
         #expect(result.compactMap(\.value).contains(100))
 
-        // Exactly one gap break marks the empty middle, sitting between the two data clusters.
+        // The 300s-spaced cluster is NOT broken — only the long outage inserts exactly one gap,
+        // sitting between the cluster and the trailing sample.
         let gaps = result.filter { $0.value == nil }
         #expect(gaps.count == 1)
         if let gap = gaps.first {
-            #expect(gap.date > Date(timeIntervalSince1970: 70))
-            #expect(gap.date < Date(timeIntervalSince1970: 950))
+            #expect(gap.date > Date(timeIntervalSince1970: 900))
+            #expect(gap.date < Date(timeIntervalSince1970: 11000))
         }
 
-        // The final bucket's value stays at its real time near the end of the window rather than
-        // collapsing toward the start — this is what keeps the axis spanning the full period.
-        #expect(result.contains { $0.value == 7 && $0.date == Date(timeIntervalSince1970: 950) })
-
-        // Bounded output: at most the min and max of each bucket.
-        #expect(result.count <= 2 * 10)
+        // The trailing sample stays at its real time near the end of the window.
+        #expect(result.contains { $0.value == 7 && $0.date == Date(timeIntervalSince1970: 11000) })
     }
 
     @Test func valueMapResolvesRawReadingsToLabels() throws {
