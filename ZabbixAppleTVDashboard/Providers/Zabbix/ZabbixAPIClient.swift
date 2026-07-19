@@ -352,6 +352,26 @@ actor ZabbixAPIClient {
         )
     }
 
+    /// Fetches hosts scoped by name pattern, status, and host tags — for the host navigator widget,
+    /// whose status is not restricted to enabled-only.
+    func hostsMatching(
+        serverBaseURL: URL,
+        authToken: String,
+        groupIDs: [String]?,
+        namePatterns: [String],
+        status: Int?,
+        tags: [ZabbixTagFilter]?,
+        evalType: Int?
+    ) async throws -> [ZabbixHostListEntry] {
+        try await send(
+            method: "host.get",
+            params: ZabbixHostScopedParameters(groupIDs: groupIDs, namePatterns: namePatterns, status: status, tags: tags, evalType: evalType),
+            serverBaseURL: serverBaseURL,
+            authToken: authToken,
+            resultType: [ZabbixHostListEntry].self
+        )
+    }
+
     /// Resolves hosts by their exact technical name.
     func hostsByName(serverBaseURL: URL, authToken: String, names: [String]) async throws -> [ZabbixHostListEntry] {
         guard !names.isEmpty else {
