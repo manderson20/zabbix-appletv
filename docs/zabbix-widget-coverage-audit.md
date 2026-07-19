@@ -20,7 +20,7 @@ Sorted by worst impact (wrong-data first; renders-nothing / entirely-wrong-conte
 | Host navigator | partial | wrong-data | 7 | Reads non-existent `hostids` (real field `hosts`); `status` hardcoded enabled-only |
 | Top triggers | partial | wrong-data | 5 | Wrong metric — current problems by severity, not event-frequency over `time_period` |
 | Top hosts | partial | missing-detail | 3 | Ranking (`order`/`column`/`show_lines`) + per-column `aggregate_function` over `time_period` now honored; still missing tag/maintenance scope, exact-item match, units/thresholds |
-| Trigger overview | partial | wrong-data | 6 | `show` hardcoded to PROBLEM-only; no OK/green cells, ignores `show_suppressed` |
+| Trigger overview | partial | missing-detail | 3 | `show` (Any→OK/green cells), tags, and nested group scope now honored; still missing `show_suppressed` (needs event-level suppression on trigger.get) and Recent-vs-Problems recovery recency |
 | Item value | partial | wrong-data | 6 | `aggregate_function`+`time_period` and `thresholds` ignored → wrong number, no alert color |
 | Pie chart | partial | missing-detail | 5 | Pattern datasets now expand to one slice per item (correct proportions) + per-dataset `aggregate_function`/`dataset_aggregation` over `time_period` honored; still missing merge/center-total, units, value maps |
 | Graph (svggraph) | partial | wrong-data | 8 | Per-dataset aggregation/`timeshift`/`approximation`/`axisy` all ignored |
@@ -52,7 +52,7 @@ Sorted by worst impact (wrong-data first; renders-nothing / entirely-wrong-conte
 - **Aggregation over a window ignored.** ~~Item value, Pie chart, ~~Graph (svg)~~, Top hosts~~ must compute `aggregate_function` over `time_period` (via history/trends) instead of showing `lastvalue`. **Item value, Top hosts, Pie chart done**; Graph (svg) still hardcodes `avg` backfill regardless of `approximation`.
 - **Top triggers — wrong metric.** Rank by problem-event count over `time_period` (`event.get` grouped by `objectid`, ordered by count DESC) and surface the count column; currently sorts current problems by severity.
 - ~~**Top hosts — ranking unimplemented.** Honor `column` (order-by), `order` (Top/Bottom N), and `show_lines` instead of default hostid order capped at 25.~~ **Done** — ranks up to 50 candidate hosts by the configured column (Top/Bottom N), limited to `show_lines` (default 10); per-column `aggregate_function` computed over `time_period`.
-- **Trigger overview — only PROBLEM state fetched.** Honor `show` (Recent/Problems/Any) so OK/green cells render, and apply `show_suppressed`.
+- ~~**Trigger overview — only PROBLEM state fetched.** Honor `show` (Recent/Problems/Any) so OK/green cells render~~ **Done** (`show: Any` now fetches all triggers and renders OK cells green), and apply `show_suppressed` (still pending — trigger.get lacks problem.get's suppression filter).
 - **Item value — thresholds ignored.** Read `thresholds` (the gauge resolver already does) so the value-driven background alert color fires.
 - **Host availability — `maintenance` inverted + multi-interface classification bug.** Add the `maintenance_status` filter (default excludes maintenance) and fix `{available,unknown}`/`{unavailable,unknown}` categorization to match Zabbix's unknown/mixed rules.
 - **Acknowledgement filtering dropped.** Problems (`acknowledgement_status`) and Problems by severity (`ext_ack`) over-count acknowledged problems.

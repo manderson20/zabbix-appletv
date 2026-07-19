@@ -596,14 +596,22 @@ extension DashboardManager {
         serverBaseURL: URL,
         authToken: String
     ) async throws -> DashboardWidgetKind {
-        let groupIDs = Self.indexedValues(widget.fields, name: "groupids")
         let hostIDs = Self.indexedValues(widget.fields, name: "hostids")
+
+        // "Show": 1 = Recent problems (default), 2 = Problems, 3 = Any. Only "Any" renders OK cells,
+        // so it's the one case where every trigger is fetched rather than just PROBLEM-state ones.
+        // Recent-vs-Problems differ only by recovery recency, which needs event history; both are
+        // treated here as current PROBLEM state.
+        let showAny = Self.fieldValue(widget.fields, name: "show").flatMap(Int.init) == 3
 
         let triggers = try await zabbixAPIClient.activeTriggers(
             serverBaseURL: serverBaseURL,
             authToken: authToken,
-            groupIDs: groupIDs.isEmpty ? nil : groupIDs,
-            hostIDs: hostIDs.isEmpty ? nil : hostIDs
+            groupIDs: try await scopedGroupIDs(from: widget, serverBaseURL: serverBaseURL, authToken: authToken),
+            hostIDs: hostIDs.isEmpty ? nil : hostIDs,
+            onlyProblems: !showAny,
+            tags: Self.tagFilters(from: widget.fields),
+            evalType: Self.tagEvalType(from: widget.fields)
         )
 
         var rowsByHostID: [String: TriggerOverviewRow] = [:]
@@ -611,7 +619,10 @@ extension DashboardManager {
 
         for trigger in triggers {
             guard let host = trigger.hosts.first else { continue }
-            let indicator = TriggerIndicator(id: trigger.triggerid, name: trigger.description, severity: trigger.priority.intValue)
+            // When only PROBLEM-state triggers were fetched, `value` is unrequested, so every
+            // trigger here is in problem state; otherwise read the trigger's actual current state.
+            let isProblem = showAny ? (trigger.value?.intValue ?? 1) == 1 : true
+            let indicator = TriggerIndicator(id: trigger.triggerid, name: trigger.description, severity: trigger.priority.intValue, isProblem: isProblem)
 
             if let existing = rowsByHostID[host.hostid] {
                 rowsByHostID[host.hostid] = TriggerOverviewRow(id: existing.id, hostName: existing.hostName, triggers: existing.triggers + [indicator])

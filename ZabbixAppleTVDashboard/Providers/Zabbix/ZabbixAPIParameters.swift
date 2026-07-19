@@ -245,25 +245,58 @@ nonisolated struct ZabbixActiveTriggerGetParameters: Encodable, Sendable {
     /// Restricts to these hosts, when the widget filters by specific hosts.
     let hostids: [String]?
 
-    /// 1 = only triggers currently in the PROBLEM state.
-    let filter: ZabbixTriggerValueFilter
+    /// When `true`, restricts to triggers currently in the PROBLEM state (`filter: {value: 1}`).
+    /// When `false`, every trigger is returned so the overview can render OK (green) cells too,
+    /// which the widget's "Show: Any" option calls for.
+    let onlyProblems: Bool
+
+    /// The widget's own tag filter (from its `tags.N.*` fields); omitted when empty.
+    let tags: [ZabbixTagFilter]?
+
+    /// Tag evaluation type (`evaltype`): 0 = And/Or, 2 = Or. Only sent alongside a non-empty `tags`.
+    let evaltype: Int?
 
     /// Maximum number of triggers to return.
     let limit: Int
 
     init(
-        output: [String] = ["triggerid", "description", "priority"],
+        output: [String] = ["triggerid", "description", "priority", "value"],
         selectHosts: [String] = ["name"],
         groupids: [String]? = nil,
         hostids: [String]? = nil,
+        onlyProblems: Bool = true,
+        tags: [ZabbixTagFilter]? = nil,
+        evaltype: Int? = nil,
         limit: Int = 100
     ) {
         self.output = output
         self.selectHosts = selectHosts
         self.groupids = groupids
         self.hostids = hostids
-        self.filter = ZabbixTriggerValueFilter()
+        self.onlyProblems = onlyProblems
+        self.tags = (tags?.isEmpty == false) ? tags : nil
+        self.evaltype = (tags?.isEmpty == false) ? evaltype : nil
         self.limit = limit
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case output, selectHosts, groupids, hostids, filter, tags, evaltype, limit
+    }
+
+    // Custom encoding so the PROBLEM-state filter is present only when `onlyProblems` is set, and a
+    // nil `groupids`/`hostids`/`tags` is omitted rather than sent as JSON `null`.
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(output, forKey: .output)
+        try container.encode(selectHosts, forKey: .selectHosts)
+        try container.encodeIfPresent(groupids, forKey: .groupids)
+        try container.encodeIfPresent(hostids, forKey: .hostids)
+        if onlyProblems {
+            try container.encode(ZabbixTriggerValueFilter(), forKey: .filter)
+        }
+        try container.encodeIfPresent(tags, forKey: .tags)
+        try container.encodeIfPresent(evaltype, forKey: .evaltype)
+        try container.encode(limit, forKey: .limit)
     }
 }
 

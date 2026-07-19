@@ -265,6 +265,10 @@ nonisolated struct TriggerIndicator: Identifiable, Sendable {
 
     /// Severity, from 0 (not classified) to 5 (disaster).
     let severity: Int
+
+    /// Whether the trigger is currently in the PROBLEM state. `false` renders an OK (green) cell,
+    /// which appears only when the widget's "Show" option includes non-problem triggers.
+    let isProblem: Bool
 }
 
 /// Problem count and worst severity for one host group, shown in a problem hosts widget.

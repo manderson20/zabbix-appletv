@@ -392,6 +392,31 @@ struct ZabbixAppleTVDashboardTests {
         #expect(triggers.first?.hosts.first?.hostid == "10461")
     }
 
+    @Test func triggerOverviewParamsIncludeProblemFilterOnlyWhenRequested() throws {
+        func encoded(_ params: ZabbixActiveTriggerGetParameters) throws -> [String: Any] {
+            let data = try JSONEncoder().encode(params)
+            return try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        }
+
+        // "Problems"/"Recent problems" — restrict to PROBLEM-state triggers.
+        let problemsOnly = try encoded(ZabbixActiveTriggerGetParameters(onlyProblems: true))
+        let filter = try #require(problemsOnly["filter"] as? [String: Any])
+        #expect(filter["value"] as? Int == 1)
+
+        // "Any" — no state filter, so OK triggers come back too.
+        let any = try encoded(ZabbixActiveTriggerGetParameters(onlyProblems: false))
+        #expect(any["filter"] == nil)
+
+        // Tag filter is forwarded with its evaltype when present.
+        let tagged = try encoded(ZabbixActiveTriggerGetParameters(
+            onlyProblems: false,
+            tags: [ZabbixTagFilter(tag: "service", value: "web", operator: 1)],
+            evaltype: 2
+        ))
+        #expect((tagged["tags"] as? [[String: Any]])?.count == 1)
+        #expect(tagged["evaltype"] as? Int == 2)
+    }
+
     @Test func zabbixAPIResponseDecodesGraphDefinitionGitemsKey() throws {
         // graph.get's selectGraphItems response key is "gitems" (verified against a live Zabbix
         // 7.0 server), not "graphitems".
