@@ -11,7 +11,7 @@
 
 Coverage is broad and, since the original audit, materially deeper. Every widget renders
 *something*, and the count of widgets whose worst realistic-config behavior is **wrong-data** has
-dropped from 25/26 to **13/26**, with the other 13 down to **missing-detail** (renders correctly
+dropped from 25/26 to **12/26**, with the other 14 down to **missing-detail** (renders correctly
 but ignores a display or layout knob). The improvement came almost entirely from the cross-cutting
 helpers the original audit predicted would each fix a class of widgets:
 
@@ -48,7 +48,7 @@ cosmetic-leaning last).
 | Widget | Support | Worst impact | # gaps | Headline gap |
 |---|---|---|---|---|
 | Map navigation tree | rendered-only | wrong-data | 6 | Resolver takes no `widget`; ignores entire `navtree`, lists every map on the server |
-| SLA report | rendered-only | wrong-data | 1 | Shows static target SLO via `sla.get`, never the computed SLI (`sla.getsli`) — `slaid` mis-key now fixed |
+| SLA report | partial | missing-detail | 2 | Computes achieved SLI per service (`sla.getsli`) vs target with pass/fail color; shows only the latest period, and `serviceid` field name assumed (unverified live) |
 | Web monitoring | partial | wrong-data | 2 | `exclude_groupids` + tags ignored → shows a superset of scenarios; Ok/Failed/Unknown status now derived from `web.test.fail` |
 | Top triggers | partial | missing-detail | 1 | Now ranks by problem-event frequency over `time_period` with a count column; only acknowledgement filtering remains |
 | Graph (svggraph) | partial | wrong-data | 8 | Per-dataset aggregation/`timeshift`/`approximation`/`axisy` all ignored |
@@ -98,14 +98,13 @@ cosmetic-leaning last).
 - ~~**Host availability — multi-interface classification bug.**~~ **Done** — available/unavailable/mixed/unknown categorization matches Zabbix; `groupids` scoping applied.
 - ~~**Host navigator / Item navigator / Honeycomb — indexed-field reads.**~~ **Done** — read `hosts.N` / `items.N`; Host navigator honors `status` (Any/Enabled/Disabled).
 - ~~**Value maps dropped on the "search" fetch path.**~~ **Done** — `ZabbixItemSearchParameters` requests `selectValueMap`; Data overview / Honeycomb / Item navigator / Item history apply `mappedText`.
-- ~~**SLA report — mis-keyed `slaid`.**~~ **Done** — read with `firstIndexedValue`; no longer returns every SLA on the server. (The `sla.getsli` computation is still pending — see below.)
+- ~~**SLA report — mis-keyed `slaid`.**~~ **Done** — read with `firstIndexedValue`; no longer returns every SLA on the server.
+- ~~**SLA report — wrong API.**~~ **Done** — computes achieved SLI per service via `sla.getsli` (latest period), labels rows via `service.get`, and colors each pass/fail against the target SLO. Only the latest period is shown; multi-period history is a follow-up.
 
 **Still open:**
 
 - **Map navigation tree — resolver doesn't receive the widget.** Change the signature to accept
   `ZabbixWidget`, then render the authored `navtree` hierarchy instead of listing every server map.
-- **SLA report — wrong API.** Compute the report with `sla.getsli(serviceids, periods)` instead of
-  returning the static target from `sla.get`.
 - **Acknowledgement filtering dropped.** Problems (`acknowledgement_status`) and Problems by severity
   (`ext_ack`) still over-count acknowledged problems.
 - **Host availability — `maintenance` not honored.** Add the `maintenance_status` filter (default

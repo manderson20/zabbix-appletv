@@ -509,6 +509,34 @@ actor ZabbixAPIClient {
         )
     }
 
+    /// Computes achieved SLI for an SLA over its most recent period(s) via `sla.getsli`.
+    func sli(
+        serverBaseURL: URL,
+        authToken: String,
+        slaID: String,
+        serviceIDs: [String]? = nil,
+        periods: Int = 1
+    ) async throws -> ZabbixSLI {
+        try await send(
+            method: "sla.getsli",
+            params: ZabbixSLIGetParameters(slaID: slaID, serviceIDs: serviceIDs, periods: periods),
+            serverBaseURL: serverBaseURL,
+            authToken: authToken,
+            resultType: ZabbixSLI.self
+        )
+    }
+
+    /// Resolves service names by ID for SLA report row labels.
+    func services(serverBaseURL: URL, authToken: String, serviceIDs: [String]) async throws -> [ZabbixService] {
+        try await send(
+            method: "service.get",
+            params: ZabbixServiceGetParameters(serviceIDs: serviceIDs),
+            serverBaseURL: serverBaseURL,
+            authToken: authToken,
+            resultType: [ZabbixService].self
+        )
+    }
+
     /// Fetches an uploaded image's base64-encoded content, e.g. a map's background image.
     func image(serverBaseURL: URL, authToken: String, imageID: String) async throws -> ZabbixImage? {
         let images = try await send(

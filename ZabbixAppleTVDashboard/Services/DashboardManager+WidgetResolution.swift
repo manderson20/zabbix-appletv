@@ -988,12 +988,64 @@ extension DashboardManager {
     ) async throws -> DashboardWidgetKind {
         let slaID = Self.firstIndexedValue(widget.fields, name: "slaid")
         let slas = try await zabbixAPIClient.slas(serverBaseURL: serverBaseURL, authToken: authToken, slaIDs: slaID.map { [$0] })
+        guard let sla = slas.first else {
+            return .slaReport([])
+        }
 
-        return .slaReport(
-            slas.map { sla in
-                SLAReportEntry(id: sla.slaid, name: sla.name, targetSLO: "\(sla.slo)%")
-            }
+        let targetSLO = Double(sla.slo)
+        let serviceIDs = Self.indexedValues(widget.fields, name: "serviceid")
+
+        // Compute the achieved SLI for the latest period via sla.getsli. If it fails or returns
+        // nothing (e.g. no services attached), fall back to just the SLA's configured target so the
+        // widget still renders rather than going blank.
+        let report = try? await zabbixAPIClient.sli(
+            serverBaseURL: serverBaseURL,
+            authToken: authToken,
+            slaID: sla.slaid,
+            serviceIDs: serviceIDs.isEmpty ? nil : serviceIDs,
+            periods: 1
         )
+
+        guard let report, let latestPeriod = report.sli.first, !report.serviceids.isEmpty else {
+            return .slaReport([
+                SLAReportEntry(id: sla.slaid, name: sla.name, targetSLO: Self.formatSLOPercent(sla.slo), achievedSLI: nil, meetsTarget: nil)
+            ])
+        }
+
+        // Label each reported service by name (service.get), falling back to the SLA name.
+        let serviceNames = try await zabbixAPIClient.services(serverBaseURL: serverBaseURL, authToken: authToken, serviceIDs: report.serviceids)
+        let nameByServiceID = Dictionary(uniqueKeysWithValues: serviceNames.map { ($0.serviceid, $0.name) })
+
+        let entries = report.serviceids.enumerated().map { index, serviceID -> SLAReportEntry in
+            let achieved = index < latestPeriod.count ? latestPeriod[index].sli : nil
+            return SLAReportEntry(
+                id: "\(sla.slaid).\(serviceID)",
+                name: nameByServiceID[serviceID] ?? sla.name,
+                targetSLO: Self.formatSLOPercent(sla.slo),
+                achievedSLI: achieved.map { Self.formatSLIPercent($0) },
+                meetsTarget: (achieved != nil && targetSLO != nil) ? achieved! >= targetSLO! : nil
+            )
+        }
+
+        return .slaReport(entries)
+    }
+
+    /// Formats a configured SLO string ("99.9000") as a trimmed percentage ("99.9%").
+    static func formatSLOPercent(_ slo: String) -> String {
+        guard let value = Double(slo) else { return "\(slo)%" }
+        return "\(formatSLIPercent(value))"
+    }
+
+    /// Formats an SLI/SLO percentage with up to four decimals, trailing zeros trimmed ("99.95%").
+    static func formatSLIPercent(_ value: Double) -> String {
+        let rounded = (value * 10000).rounded() / 10000
+        if rounded == rounded.rounded() {
+            return "\(Int(rounded))%"
+        }
+        var text = String(format: "%.4f", rounded)
+        while text.hasSuffix("0") { text.removeLast() }
+        if text.hasSuffix(".") { text.removeLast() }
+        return "\(text)%"
     }
 
     // MARK: - Action log

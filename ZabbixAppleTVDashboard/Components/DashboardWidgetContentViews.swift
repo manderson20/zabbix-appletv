@@ -232,6 +232,14 @@ struct ItemListWidgetContentView: View {
 struct SLAReportWidgetContentView: View {
     let entries: [SLAReportEntry]
 
+    private func sliColor(for meetsTarget: Bool?) -> Color {
+        switch meetsTarget {
+        case true: .green
+        case false: .red
+        case nil: DashboardTheme.primaryText
+        }
+    }
+
     var body: some View {
         if entries.isEmpty {
             Text("No SLA selected, or no SLAs configured")
@@ -240,15 +248,23 @@ struct SLAReportWidgetContentView: View {
         } else {
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(entries) { entry in
-                    HStack {
+                    HStack(spacing: 10) {
                         Text(entry.name)
                             .font(.system(size: 17, weight: .medium, design: .rounded))
                             .foregroundStyle(DashboardTheme.primaryText)
                             .lineLimit(1)
-                        Spacer()
+
+                        Spacer(minLength: 4)
+
+                        if let sli = entry.achievedSLI {
+                            Text(sli)
+                                .font(.system(size: 17, weight: .bold, design: .rounded))
+                                .foregroundStyle(sliColor(for: entry.meetsTarget))
+                        }
+
                         Text("Target \(entry.targetSLO)")
-                            .font(.system(size: 15, weight: .semibold, design: .rounded))
-                            .foregroundStyle(DashboardTheme.accent)
+                            .font(.system(size: 14, weight: .semibold, design: .rounded))
+                            .foregroundStyle(DashboardTheme.secondaryText)
                     }
                 }
             }
