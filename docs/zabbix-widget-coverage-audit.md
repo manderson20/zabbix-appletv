@@ -74,7 +74,7 @@ cosmetic-leaning last).
 | Problem hosts | partial | missing-detail | 1 | Per-severity count columns now rendered (host counted in its worst-severity column); groups(nested)/tags/severity/suppression/exclude all applied — only explicit `hostids` scoping remains |
 | Top hosts | partial | missing-detail | 2 | Ranking + per-column aggregation + per-column units/decimals honored; still missing tag/maintenance scope and exact-item match |
 | Trigger overview | partial | missing-detail | 3 | `show`(Any→OK cells)/tags/nested-scope honored; still missing `show_suppressed` and Recent-vs-Problems recency |
-| Item history | partial | missing-detail | 2 | Reads `columns.N.itemid`/`show_lines`/value maps/`time_period`; still missing trend backfill + per-column thresholds |
+| Item history | partial | missing-detail | 2 | Reads `columns.N.itemid`/`show_lines`/value maps/`time_period`, and numeric readings are now unit-scaled ("4.93 GB", not "4928110592 B") via the shared value formatter — verified on-device; still missing trend backfill + per-column thresholds |
 | Discovery status | full | missing-detail | 1 | Filters to enabled rules, sorted by name; only a no-permission/empty distinction remains |
 
 ## 3. Prioritized fix list
@@ -99,6 +99,7 @@ cosmetic-leaning last).
 - ~~**Geomap — marker severity ignores widget `tags`.**~~ **Done** — `maxSeverityByHostID` now takes the widget's tag + severity filter, so a marker's color reflects only the problems the widget shows.
 - ~~**Tag filtering on the item-search path.**~~ **Done** — `ZabbixItemSearchParameters` now carries `tags`/`evaltype` (forwarded to `item.get`); Data overview, Honeycomb, and Item navigator apply the widget's item-tag filter.
 - ~~**Item history — item selector reads the wrong field.**~~ **Done** — reads `columns.N.itemid`, honors `show_lines` (default 25), applies value maps, bounds to `time_period`.
+- ~~**Item history — numeric readings shown raw (`4928110592 B`).**~~ **Done** — each reading now goes through the shared `formattedItemValue` helper (value map wins, else numeric scaling + unit suffix), so a byte/bps count renders "4.93 GB" like every other value widget instead of an unscaled row-overflowing number. **Verified on-device** against the QA dashboard.
 - ~~**Positive `groupids` scoping dropped.**~~ **Done** — a shared `scopedGroupIDs` (nested-aware) is applied in Problems, Problems by severity, Problem hosts, Top triggers, Top hosts, Host availability, and the navigators; the `problem.get`/`host.get` param structs carry `groupids`.
 - ~~**Tag filtering (`tags`+`evaltype`) unimplemented everywhere.**~~ **Done** — a shared `tagFilters`/`tagEvalType` builder is wired into every widget with a tag filter: Problems, Problems by severity, Problem hosts, Trigger overview, Top triggers, Top hosts, Host navigator, the item-search path (Data overview, Honeycomb, Item navigator), Web monitoring, and Geomap.
 - ~~**Aggregation over a window ignored.**~~ **Done** — Item value, Top hosts, and Pie chart compute `aggregate_function` over `time_period`, and Graph (svg) applies its per-dataset `aggregate_function`/`aggregate_interval` (plus `timeshift` and `approximation`).
