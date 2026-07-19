@@ -11,7 +11,7 @@
 
 Coverage is broad and, since the original audit, materially deeper. Every widget renders
 *something*, and the count of widgets whose worst realistic-config behavior is **wrong-data** has
-dropped from 25/26 to **15/26**, with the other 11 down to **missing-detail** (renders correctly
+dropped from 25/26 to **14/26**, with the other 12 down to **missing-detail** (renders correctly
 but ignores a display or layout knob). The improvement came almost entirely from the cross-cutting
 helpers the original audit predicted would each fix a class of widgets:
 
@@ -56,7 +56,7 @@ cosmetic-leaning last).
 | Honeycomb | partial | wrong-data | 4 | No thresholds/cell coloring; hardcoded 60-cell cap; units/label templates dropped — `items.N` + value maps + item-tag filter now applied |
 | Item navigator | partial | missing-detail | 2 | `group_by` flattened; `show_lines` default 100 — `items.N` + value maps + item-tag filter now applied |
 | Data overview | partial | wrong-data | 3 | Arbitrary 100-item cap; hosts×items matrix flattened — `tags` + value maps now applied |
-| Geomap | partial | wrong-data | 3 | Marker severity uses server-wide problems, ignoring the widget's tag (and group) filter |
+| Geomap | partial | missing-detail | 2 | Marker severity now scoped to the widget's tag + severity filter; only `default_view` center/zoom and group-scoped severity remain |
 | Problems | partial | wrong-data | 2 | Acknowledgement filtering dropped (over-counts acked); `show_lines` default 20 vs 25 — `groupids`/tags/suppression now honored |
 | Problems by severity | partial | wrong-data | 2 | `ext_ack` still inflates counts; `show_type=GROUPS` collapsed to flat tally — `groupids`/tags now honored |
 | Action log | partial | wrong-data | 4 | Hardcoded 7-day window; content filters (recipients/severities/statuses) ignored — now receives widget + honors `show_lines` |
@@ -80,6 +80,7 @@ cosmetic-leaning last).
 
 **Landed since the original audit:**
 
+- ~~**Geomap — marker severity ignores widget `tags`.**~~ **Done** — `maxSeverityByHostID` now takes the widget's tag + severity filter, so a marker's color reflects only the problems the widget shows.
 - ~~**Tag filtering on the item-search path.**~~ **Done** — `ZabbixItemSearchParameters` now carries `tags`/`evaltype` (forwarded to `item.get`); Data overview, Honeycomb, and Item navigator apply the widget's item-tag filter.
 - ~~**Item history — item selector reads the wrong field.**~~ **Done** — reads `columns.N.itemid`, honors `show_lines` (default 25), applies value maps, bounds to `time_period`.
 - ~~**Positive `groupids` scoping dropped.**~~ **Done** — a shared `scopedGroupIDs` (nested-aware) is applied in Problems, Problems by severity, Problem hosts, Top triggers, Top hosts, Host availability, and the navigators; the `problem.get`/`host.get` param structs carry `groupids`.
@@ -119,8 +120,6 @@ cosmetic-leaning last).
 - **Map — non-host elements always OK.** Compute status for submap/host-group/trigger elements.
 - **Clock — `time_type=host` and `tzone_timezone` ignored.** Fetch the item's `lastclock` for
   host-time mode and honor the configured timezone.
-- **Geomap — marker severity ignores widget `tags`.** Scope `maxSeverityByHostID` to the configured
-  tag (and group) filter instead of the server-wide problem set.
 - **System information — `isRunning` hardcoded true + `info_type` ignored.** Support the HA-nodes
   mode and reflect actual server-running state.
 
@@ -168,7 +167,8 @@ These were the leverage points, and most have now been built. Status is marked i
 - **Tag-filter builder (`tags` + `evaltype`).** ✅ **Built** — `tagFilters`/`tagEvalType` wired into
   the problem/trigger family, Top hosts, Host navigator, and the item-search path
   (`ZabbixItemSearchParameters` now forwards `tags` to `item.get`; Data overview / Honeycomb / Item
-  navigator scoped). Only **Geomap** (marker severity) and **Web monitoring** remain tag-unfiltered.
+  navigator scoped; Geomap marker severity now tag-scoped too). Only **Web monitoring** remains
+  tag-unfiltered.
 - **Suppression + maintenance handling.** ◐ **Partly** — `show_suppressed` honored in Problems,
   Problems by severity, Problem hosts; Trigger overview still can't (trigger.get lacks the filter).
   `maintenance` still ignored in Host availability, Honeycomb, Top hosts, Web, Host navigator.
@@ -201,8 +201,7 @@ These were the leverage points, and most have now been built. Status is marked i
 
 - **Under-filtering, narrowing.** Every widget still fetches under the session token, so no leaks.
   The scope gap has shrunk further: group scoping and tag filtering (including the item-search path)
-  are now applied. The residual over-broad cases are **Geomap** (server-wide marker severity) and
-  **Web** (no exclude/tags).
+  are now applied. The residual over-broad case is **Web** (no exclude/tags).
 - **Hard caps + arbitrary ordering.** Data overview `prefix(100)` and Honeycomb `prefix(60)` are
   intentional safety caps (no Zabbix field). Item history, Action log, and Top hosts now bound by
   the configured count. `problem.get limit:5000` remains a coarse ceiling for very busy servers.
