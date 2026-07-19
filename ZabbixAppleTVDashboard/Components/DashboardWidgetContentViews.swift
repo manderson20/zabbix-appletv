@@ -780,60 +780,85 @@ struct GaugeWidgetContentView: View {
     /// The unfilled remainder of the arc (`.svg-gauge-empty-arc-sector`: rgb(56, 56, 56)).
     private static let zabbixEmptyArcColor = Color(red: 56 / 255, green: 56 / 255, blue: 56 / 255)
 
+    /// Zabbix's default needle fill (`.svg-gauge-needle` computed fill: rgb(242, 242, 242)).
+    private static let zabbixNeedleColor = Color(red: 242 / 255, green: 242 / 255, blue: 242 / 255)
+
     var body: some View {
         GeometryReader { geometry in
-            // Zabbix's gauge is a thick filled arc, no needle: the value sector fills clockwise
-            // against a dark track, the bold value sits in the arc's mouth, the min/max labels sit
-            // at the arc's ends, and the description below in large text — all verified against the
-            // live frontend's SVG structure (value/empty arc sectors, left/right labels,
-            // value-and-units, description).
+            // Zabbix's gauge, honoring the widget's "Show" checkboxes (verified against the live
+            // edit form + SVG): the value sector filling against the dark track (Value arc), a
+            // needle pivoting at the arc center (Needle — off on a fresh widget), min/max labels
+            // at the arc ends (Scale), the bold value in the arc's mouth (moved below the base
+            // line when the needle occupies it, as Zabbix reflows), and the description below.
+            // `angle` opens the sweep to 180° or 270°.
             // Capped so the arc + value + description stack (which extends ~0.28·d below the arc's
             // flat edge) still fits the card height without clipping the description.
             let diameter = max(min(geometry.size.width, geometry.size.height * 1.15), 40)
             let lineWidth = max(diameter * 0.13, 8)
+            let angle = reading.angleDegrees.clamped(to: 90...359)
+            let sweep = angle / 360
+            // Rotate so the sweep sits symmetrically over the top: 180° gives the flat-based
+            // semicircle, 270° leaves its gap centered at the bottom.
+            let arcRotation = 90 + (360 - angle) / 2
 
             ZStack {
-                Circle()
-                    .trim(from: 0, to: 0.5)
-                    .stroke(Self.zabbixEmptyArcColor, style: StrokeStyle(lineWidth: lineWidth, lineCap: .butt))
-                    .rotationEffect(.degrees(180))
+                if reading.showValueArc {
+                    Circle()
+                        .trim(from: 0, to: sweep)
+                        .stroke(reading.emptyColorHex.flatMap { Color(hex: $0) } ?? Self.zabbixEmptyArcColor, style: StrokeStyle(lineWidth: lineWidth, lineCap: .butt))
+                        .rotationEffect(.degrees(arcRotation))
 
-                Circle()
-                    .trim(from: 0, to: 0.5 * fraction)
-                    .stroke(gaugeTint, style: StrokeStyle(lineWidth: lineWidth, lineCap: .butt))
-                    .rotationEffect(.degrees(180))
+                    Circle()
+                        .trim(from: 0, to: sweep * fraction)
+                        .stroke(gaugeTint, style: StrokeStyle(lineWidth: lineWidth, lineCap: .butt))
+                        .rotationEffect(.degrees(arcRotation))
+                }
 
-                Text(ZabbixValueFormatting.format(reading.minValue, units: reading.units))
-                    .font(.system(size: max(diameter * 0.06, 9), weight: .regular, design: .rounded))
-                    .foregroundStyle(DashboardTheme.primaryText)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.6)
-                    .offset(x: -(diameter / 2 - lineWidth / 2) + diameter * 0.02, y: lineWidth)
+                if reading.showNeedle {
+                    // Zabbix's needle: a rounded pivot base tapering to a point (path sampled from
+                    // the live SVG), swinging across the configured sweep.
+                    GaugeNeedleShape()
+                        .fill(reading.needleColorHex.flatMap { Color(hex: $0) } ?? Self.zabbixNeedleColor)
+                        .rotationEffect(.degrees((fraction - 0.5) * angle))
+                }
 
-                Text(ZabbixValueFormatting.format(reading.maxValue, units: reading.units))
-                    .font(.system(size: max(diameter * 0.06, 9), weight: .regular, design: .rounded))
-                    .foregroundStyle(DashboardTheme.primaryText)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.6)
-                    .offset(x: (diameter / 2 - lineWidth / 2) - diameter * 0.02, y: lineWidth)
+                if reading.showScale {
+                    Text(ZabbixValueFormatting.format(reading.minValue, units: reading.units))
+                        .font(.system(size: max(diameter * 0.06, 9), weight: .regular, design: .rounded))
+                        .foregroundStyle(DashboardTheme.primaryText)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
+                        .offset(x: -(diameter / 2 - lineWidth / 2) + diameter * 0.02, y: lineWidth)
 
-                // The value in the arc's mouth — the open space under the arc's crown.
-                Text(centerText)
-                    .font(.system(size: diameter * 0.14, weight: .bold, design: .rounded))
-                    .foregroundStyle(DashboardTheme.primaryText)
-                    .minimumScaleFactor(0.5)
-                    .lineLimit(1)
-                    .padding(.horizontal, 8)
-                    .frame(width: diameter * 0.62)
-                    .offset(y: -diameter * 0.06)
+                    Text(ZabbixValueFormatting.format(reading.maxValue, units: reading.units))
+                        .font(.system(size: max(diameter * 0.06, 9), weight: .regular, design: .rounded))
+                        .foregroundStyle(DashboardTheme.primaryText)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
+                        .offset(x: (diameter / 2 - lineWidth / 2) - diameter * 0.02, y: lineWidth)
+                }
 
-                Text(reading.name)
-                    .font(.system(size: max(diameter * 0.1, 12), weight: .regular, design: .rounded))
-                    .foregroundStyle(DashboardTheme.primaryText)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.6)
-                    .frame(width: diameter * 0.9)
-                    .offset(y: diameter * 0.22)
+                if reading.showValue {
+                    // In the arc's mouth normally; below the pivot when the needle occupies it.
+                    Text(centerText)
+                        .font(.system(size: diameter * 0.14, weight: .bold, design: .rounded))
+                        .foregroundStyle(reading.valueColorHex.flatMap { Color(hex: $0) } ?? DashboardTheme.primaryText)
+                        .minimumScaleFactor(0.5)
+                        .lineLimit(1)
+                        .padding(.horizontal, 8)
+                        .frame(width: diameter * 0.62)
+                        .offset(y: reading.showNeedle ? diameter * 0.09 : -diameter * 0.06)
+                }
+
+                if reading.showDescription {
+                    Text(reading.name)
+                        .font(.system(size: max(diameter * 0.1, 12), weight: .regular, design: .rounded))
+                        .foregroundStyle(reading.descriptionColorHex.flatMap { Color(hex: $0) } ?? DashboardTheme.primaryText)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
+                        .frame(width: diameter * 0.9)
+                        .offset(y: diameter * 0.22)
+                }
             }
             .frame(width: diameter, height: diameter)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
@@ -849,6 +874,28 @@ struct GaugeWidgetContentView: View {
             return color
         }
         return Self.zabbixValueArcColor
+    }
+}
+
+/// Zabbix's gauge needle, translated from the live frontend's SVG path
+/// ("M 0.065 1 A 0.065 0.065 0 0 1 -0.065 1 L 0 0.1 Z" in a unit space where 1 is the gauge
+/// radius): a rounded pivot base of radius 6.5% of the gauge radius at the arc center, tapering to
+/// a sharp point 90% of the way to the rim. Drawn pointing straight up in its bounding square (the
+/// square's center is the pivot); the gauge view rotates it to the value's angle.
+private struct GaugeNeedleShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let radius = min(rect.width, rect.height) / 2
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        let baseRadius = radius * 0.065
+        let tip = CGPoint(x: center.x, y: center.y - radius * 0.9)
+
+        var path = Path()
+        path.move(to: CGPoint(x: center.x + baseRadius, y: center.y))
+        // The rounded pivot: the half-circle bulging away from the tip.
+        path.addArc(center: center, radius: baseRadius, startAngle: .degrees(0), endAngle: .degrees(180), clockwise: false)
+        path.addLine(to: tip)
+        path.closeSubpath()
+        return path
     }
 }
 

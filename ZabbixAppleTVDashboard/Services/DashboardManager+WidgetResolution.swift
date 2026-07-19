@@ -488,6 +488,12 @@ extension DashboardManager {
             decimalPlaces: decimalPlaces
         )
 
+        // "Show" checkboxes (verified against the live edit form): 1 = Description, 2 = Value,
+        // 3 = Needle, 4 = Value arc, 5 = Scale. An absent field means a freshly-created widget's
+        // defaults — everything but the needle.
+        let showFlags = Set(Self.indexedValues(widget.fields, name: "show").compactMap(Int.init))
+        let effectiveShow = showFlags.isEmpty ? [1, 2, 4, 5] : showFlags
+
         // Zabbix's default gauge header is "HOST: item name".
         pendingDefaultTitle = Self.hostPrefixedTitle(host: item.hosts?.first?.name, name: item.name)
         return .gauge(
@@ -500,7 +506,17 @@ extension DashboardManager {
                 decimalPlaces: decimalPlaces,
                 thresholds: thresholds,
                 fixedArcColorHex: Self.fieldValue(widget.fields, name: "value_arc_color"),
-                mappedText: item.lastvalue.flatMap { item.valuemap?.valueMap?.mappedText(for: $0) }
+                mappedText: item.lastvalue.flatMap { item.valuemap?.valueMap?.mappedText(for: $0) },
+                showDescription: effectiveShow.contains(1),
+                showValue: effectiveShow.contains(2),
+                showNeedle: effectiveShow.contains(3),
+                showValueArc: effectiveShow.contains(4),
+                showScale: effectiveShow.contains(5),
+                needleColorHex: Self.fieldValue(widget.fields, name: "needle_color").flatMap { $0.isEmpty ? nil : $0 },
+                angleDegrees: Self.fieldValue(widget.fields, name: "angle").flatMap(Double.init) ?? 180,
+                valueColorHex: Self.fieldValue(widget.fields, name: "value_color").flatMap { $0.isEmpty ? nil : $0 },
+                descriptionColorHex: Self.fieldValue(widget.fields, name: "desc_color").flatMap { $0.isEmpty ? nil : $0 },
+                emptyColorHex: Self.fieldValue(widget.fields, name: "empty_color").flatMap { $0.isEmpty ? nil : $0 }
             )
         )
     }
