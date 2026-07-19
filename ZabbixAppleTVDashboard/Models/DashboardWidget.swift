@@ -436,10 +436,8 @@ nonisolated struct ItemHistorySeries: Identifiable, Sendable {
     /// Item display name.
     let itemName: String
 
-    /// Unit label, e.g. "%" or "°F".
-    let units: String
-
-    /// Recent values, most recent first.
+    /// Recent values, most recent first. Each `value` is already fully formatted for display —
+    /// value-mapped or unit-scaled (e.g. "4.93 GB") — so the view renders it verbatim.
     let values: [ItemHistoryPoint]
 }
 

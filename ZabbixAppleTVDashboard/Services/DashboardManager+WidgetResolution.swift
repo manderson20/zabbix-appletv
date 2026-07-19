@@ -1504,6 +1504,11 @@ extension DashboardManager {
 
     // MARK: - Item history
 
+    /// Decimal precision for numeric item-history readings. Zabbix's Item history widget has no
+    /// per-column decimal setting (unlike Item value / Gauge), so this mirrors the Item value
+    /// widget's default of 2 for consistency across the app's value displays.
+    static let itemHistoryDecimalPlaces = 2
+
     private func resolveItemHistory(
         _ widget: ZabbixWidget,
         serverBaseURL: URL,
@@ -1546,15 +1551,19 @@ extension DashboardManager {
                 .filter { (TimeInterval($0.clock) ?? 0) <= toEpoch }
                 .prefix(showLines)
 
+            // Format each reading the way the value widgets (Item value, Honeycomb) do: a value map
+            // wins, an unmapped numeric reading is scaled and unit-suffixed ("4.93 GB", not
+            // "4928110592 B"), and text/log readings pass through. Zabbix's own history widget applies
+            // the item's units the same way, so a raw byte/bps count no longer overflows the row.
+            let units = item.units ?? ""
             series.append(
                 ItemHistorySeries(
                     id: item.itemid,
                     itemName: item.name,
-                    units: item.units ?? "",
                     values: windowed.map { value in
                         ItemHistoryPoint(
                             id: "\(item.itemid).\(value.clock)",
-                            value: Self.mappedItemValue(rawValue: value.value, valueMap: item.valuemap?.valueMap),
+                            value: Self.formattedItemValue(rawValue: value.value, units: units, valueMap: item.valuemap?.valueMap, decimalPlaces: Self.itemHistoryDecimalPlaces),
                             date: Date(timeIntervalSince1970: TimeInterval(value.clock) ?? 0)
                         )
                     }

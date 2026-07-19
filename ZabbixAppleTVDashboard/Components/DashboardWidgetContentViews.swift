@@ -1065,7 +1065,7 @@ struct ItemHistoryWidgetContentView: View {
 
                         ForEach(item.values.prefix(3)) { point in
                             HStack {
-                                Text(item.units.isEmpty ? point.value : "\(point.value) \(item.units)")
+                                Text(point.value)
                                     .font(.system(size: 17, weight: .medium, design: .rounded))
                                     .foregroundStyle(DashboardTheme.primaryText)
                                 Spacer()

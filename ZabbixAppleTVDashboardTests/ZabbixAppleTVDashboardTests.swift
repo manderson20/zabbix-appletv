@@ -815,6 +815,9 @@ struct ZabbixAppleTVDashboardTests {
 
         // Numeric, unmapped → formatted with units + precision.
         #expect(DashboardManager.formattedItemValue(rawValue: "42", units: "%", valueMap: nil, decimalPlaces: 1) == "42.0 %")
+        // A large byte reading is scaled + unit-suffixed, not shown raw — the Item history fix, which
+        // renders each reading through this helper at `itemHistoryDecimalPlaces` precision.
+        #expect(DashboardManager.formattedItemValue(rawValue: "4928110592", units: "B", valueMap: nil, decimalPlaces: DashboardManager.itemHistoryDecimalPlaces) == "4.93 GB")
         // Value-mapped → "Label (raw)", unchanged regardless of precision.
         #expect(DashboardManager.formattedItemValue(rawValue: "1", units: "", valueMap: map, decimalPlaces: 2) == "Up (1)")
         // Non-numeric text → passed through as-is.
