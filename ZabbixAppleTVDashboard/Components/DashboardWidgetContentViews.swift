@@ -493,6 +493,14 @@ struct PieChartWidgetContentView: View {
                                 .font(.system(size: 13, weight: .regular, design: .rounded))
                                 .foregroundStyle(DashboardTheme.secondaryText)
                                 .lineLimit(1)
+
+                            if let valueLabel = slice.valueLabel {
+                                Spacer(minLength: 4)
+                                Text(valueLabel)
+                                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                    .foregroundStyle(DashboardTheme.primaryText)
+                                    .lineLimit(1)
+                            }
                         }
                     }
                 }

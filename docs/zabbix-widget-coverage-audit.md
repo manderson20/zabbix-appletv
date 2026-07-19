@@ -56,7 +56,7 @@ cosmetic-leaning last).
 | Top triggers | partial | missing-detail | 1 | Now ranks by problem-event frequency over `time_period` with a count column; only acknowledgement filtering remains |
 | Graph (svggraph) | partial | missing-detail | 1 | Per-dataset `aggregate_function`/`aggregate_interval`, `timeshift`, and `approximation` all honored; only left/right `axisy` assignment remains |
 | Graph (classic) | partial | missing-detail | 1 | Pie/exploded-pie graphs render as a pie and Simple-graph (`itemid`) mode is supported; stacked graphs draw as overlaid lines (data correct, visual stacking pending) |
-| Honeycomb | partial | wrong-data | 3 | Hardcoded 60-cell cap; units/label templates dropped — `items.N` + value maps + item-tag filter + threshold cell coloring now applied |
+| Honeycomb | partial | wrong-data | 2 | Hardcoded 60-cell cap; label-macro templates dropped — `items.N` + value maps + item-tag filter + threshold coloring + value units/decimals now applied |
 | Item navigator | partial | missing-detail | 2 | `group_by` flattened; `show_lines` default 100 — `items.N` + value maps + item-tag filter now applied |
 | Data overview | partial | wrong-data | 3 | Arbitrary 100-item cap; hosts×items matrix flattened — `tags` + value maps now applied |
 | Geomap | partial | missing-detail | 1 | Marker severity scoped to the widget's tag + severity filter; only `default_view` initial center/zoom (cosmetic) remains |
@@ -68,11 +68,11 @@ cosmetic-leaning last).
 | Map | full | missing-detail | 1 | Trigger + host-group elements now colored by their real severity; only submap (map-type) elements — needing recursive child-map rollup — stay OK |
 | Item value | partial | missing-detail | 2 | `units`/`units_show`/`decimal_places` overrides now applied — aggregation, `thresholds`, and formatting done; only the `description` label-macro template remains (plus `min`/`max`/position knobs) |
 | Gauge | partial | missing-detail | 5 | `units`/`units_show`/`decimal_places` now applied (shared `formatItemValue`); only the `description` label-macro template and cosmetic color/size knobs remain |
-| Pie chart | partial | missing-detail | 5 | Pattern datasets expand correctly + per-dataset aggregation honored; still missing merge/center-total, units, value maps |
+| Pie chart | partial | missing-detail | 4 | Pattern expansion + per-dataset aggregation + legend value labels (units/decimals) honored; still missing merge/center-total and value maps |
 | Host availability | partial | missing-detail | 3 | Ignores maintenance, active-check availability (`active_available`), and layout — `groupids` + multi-interface classification now correct |
 | Host navigator | partial | missing-detail | 2 | `group_by` flattened; `show_lines` default 100 — `hosts.N`/`status`/host-tags now honored |
 | Problem hosts | partial | missing-detail | 2 | Per-severity-column layout + explicit host scoping missing — now receives widget; groups(nested)/tags/severity/suppression/exclude all applied |
-| Top hosts | partial | missing-detail | 3 | Ranking + per-column aggregation honored; still missing tag/maintenance scope, exact-item match, units/thresholds |
+| Top hosts | partial | missing-detail | 2 | Ranking + per-column aggregation + per-column units/decimals honored; still missing tag/maintenance scope and exact-item match |
 | Trigger overview | partial | missing-detail | 3 | `show`(Any→OK cells)/tags/nested-scope honored; still missing `show_suppressed` and Recent-vs-Problems recency |
 | Item history | partial | missing-detail | 2 | Reads `columns.N.itemid`/`show_lines`/value maps/`time_period`; still missing trend backfill + per-column thresholds |
 | Discovery status | full | missing-detail | 1 | Filters to enabled rules, sorted by name; only a no-permission/empty distinction remains |
@@ -131,9 +131,10 @@ cosmetic-leaning last).
   overview) are rendered as flat lists. (The `navtree` hierarchy is now rendered indented by depth.)
 - **`time_period.to` and non-relative expressions.** ~~Item history~~ (done). Classic/svg graphs and
   Action log still always end at `now()` and drop `now/d`/absolute windows.
-- **Units + decimal formatting.** ~~Item value~~, ~~Gauge~~ **done** (`units`/`units_show`/
-  `decimal_places` via the shared `formatItemValue` helper). Still ignored in Honeycomb, Top hosts,
-  Pie chart — raw value string shown; the same helper should be wired into those next.
+- ~~**Units + decimal formatting.**~~ **Done** — `units`/`units_show`/`decimal_places` applied in
+  Item value and Gauge, and value units/precision in Honeycomb cells, Top hosts columns (per-column
+  `decimal_places`), and Pie chart legend labels, all via the shared `formatItemValue` /
+  `formattedItemValue` helpers.
 - **Label/description templates.** `description`/`primary_label`/`secondary_label` macro templates
   ignored (Gauge, Item value, Honeycomb).
 - **Pie chart merge + center total.** `merge`/`merge_percent` and the `total_show`/center-value

@@ -666,6 +666,19 @@ struct ZabbixAppleTVDashboardTests {
         #expect(items.first?.hostid == "10461")
     }
 
+    @Test func formattedItemValueFormatsNumericButPreservesMappedAndText() throws {
+        let map = ZabbixValueMap(mappings: [ZabbixValueMapping(type: nil, value: "1", newvalue: "Up")])
+
+        // Numeric, unmapped → formatted with units + precision.
+        #expect(DashboardManager.formattedItemValue(rawValue: "42", units: "%", valueMap: nil, decimalPlaces: 1) == "42.0 %")
+        // Value-mapped → "Label (raw)", unchanged regardless of precision.
+        #expect(DashboardManager.formattedItemValue(rawValue: "1", units: "", valueMap: map, decimalPlaces: 2) == "Up (1)")
+        // Non-numeric text → passed through as-is.
+        #expect(DashboardManager.formattedItemValue(rawValue: "running", units: "", valueMap: nil, decimalPlaces: 2) == "running")
+        // Absent → em dash.
+        #expect(DashboardManager.formattedItemValue(rawValue: nil, units: "%", valueMap: nil, decimalPlaces: 2) == "\u{2014}")
+    }
+
     @Test func itemValueFormattingHonorsDecimalPlacesAndUnits() throws {
         // Default 2 decimals with a unit suffix.
         #expect(ZabbixValueFormatting.formatItemValue(1, units: "%") == "1.00 %")

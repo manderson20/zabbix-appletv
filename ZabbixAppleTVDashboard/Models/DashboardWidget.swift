@@ -516,8 +516,11 @@ nonisolated struct ChartSlice: Identifiable, Sendable {
     /// Slice color as a "RRGGBB" hex string.
     let colorHex: String
 
-    /// Latest value.
+    /// Latest value (drives the sector angle).
     let value: Double
+
+    /// The value formatted for the legend with its units + precision, e.g. "1.5 Mbps"; nil hides it.
+    var valueLabel: String? = nil
 }
 
 /// A host marker on a geomap widget.
