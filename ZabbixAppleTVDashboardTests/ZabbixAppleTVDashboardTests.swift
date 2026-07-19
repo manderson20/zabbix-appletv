@@ -715,6 +715,26 @@ struct ZabbixAppleTVDashboardTests {
 
         #expect(graphs.first?.gitems.first?.itemid == "22187")
         #expect(graphs.first?.gitems.first?.color == "00C800")
+        // graphtype is absent here → decodes to nil (treated as normal/line).
+        #expect(graphs.first?.graphtype == nil)
+    }
+
+    @Test func graphDefinitionDecodesPieGraphType() throws {
+        let responseData = try #require(
+            """
+            {
+              "jsonrpc": "2.0",
+              "result": [
+                { "graphid": "7", "name": "Disk usage", "graphtype": "2", "gitems": [ { "itemid": "9", "color": "FF0000" } ] }
+              ],
+              "id": 1
+            }
+            """.data(using: .utf8)
+        )
+
+        let graphs = try JSONDecoder().decode(ZabbixAPIResponse<[ZabbixGraphDefinition]>.self, from: responseData).resolvedResult()
+        // graphtype 2 = pie, so the resolver renders slices rather than lines.
+        #expect(graphs.first?.graphtype?.intValue == 2)
     }
 
     @Test func widgetFieldHelpersGroupNestedDatasetFields() throws {
