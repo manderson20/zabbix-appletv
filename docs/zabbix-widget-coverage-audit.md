@@ -23,8 +23,8 @@ helpers the original audit predicted would each fix a class of widgets:
   `tags`, feeding `item.get`), so Data overview, Honeycomb, and Item navigator are scoped too. It
   remains absent only on Geomap and Web.
 - **Aggregation over a window** (`aggregate_function` + `time_period`) is implemented for Item value,
-  Top hosts, and Pie chart via a shared engine. **Still missing** in Graph (svg), which hardcodes
-  `avg` trend backfill regardless of `approximation`.
+  Top hosts, and Pie chart via a shared engine. **Still missing** the per-dataset `aggregate_function`
+  in Graph (svg) — though its `approximation` (min/avg/max trend backfill) is now honored.
 - **Value maps** now come through the item-search path (`selectValueMap` added), so Data overview,
   Honeycomb, Item navigator, and Item history render labels, not raw codes.
 - **Indexed-field reads** were corrected: Item history (`columns.N.itemid`), Honeycomb / Item
@@ -51,7 +51,7 @@ cosmetic-leaning last).
 | SLA report | partial | missing-detail | 2 | Computes achieved SLI per service (`sla.getsli`) vs target with pass/fail color; shows only the latest period, and `serviceid` field name assumed (unverified live) |
 | Web monitoring | partial | wrong-data | 2 | `exclude_groupids` + tags ignored → shows a superset of scenarios; Ok/Failed/Unknown status now derived from `web.test.fail` |
 | Top triggers | partial | missing-detail | 1 | Now ranks by problem-event frequency over `time_period` with a count column; only acknowledgement filtering remains |
-| Graph (svggraph) | partial | wrong-data | 8 | Per-dataset aggregation/`timeshift`/`approximation`/`axisy` all ignored |
+| Graph (svggraph) | partial | wrong-data | 7 | Per-dataset aggregation/`timeshift`/`axisy` ignored — `approximation` (min/avg/max trend backfill) now honored |
 | Graph (classic) | partial | wrong-data | 7 | Graph type (stacked/pie) lost; Simple-graph mode (`itemid`) unsupported |
 | Honeycomb | partial | wrong-data | 3 | Hardcoded 60-cell cap; units/label templates dropped — `items.N` + value maps + item-tag filter + threshold cell coloring now applied |
 | Item navigator | partial | missing-detail | 2 | `group_by` flattened; `show_lines` default 100 — `items.N` + value maps + item-tag filter now applied |
@@ -89,7 +89,7 @@ cosmetic-leaning last).
 - ~~**Item history — item selector reads the wrong field.**~~ **Done** — reads `columns.N.itemid`, honors `show_lines` (default 25), applies value maps, bounds to `time_period`.
 - ~~**Positive `groupids` scoping dropped.**~~ **Done** — a shared `scopedGroupIDs` (nested-aware) is applied in Problems, Problems by severity, Problem hosts, Top triggers, Top hosts, Host availability, and the navigators; the `problem.get`/`host.get` param structs carry `groupids`.
 - ~~**Tag filtering (`tags`+`evaltype`) unimplemented everywhere.**~~ **Partly done** — a shared `tagFilters`/`tagEvalType` builder is wired into Problems, Problems by severity, Problem hosts, Trigger overview, Top triggers, Top hosts, and Host navigator. **Still missing** on the item-search path (Data overview, Honeycomb, Item navigator) and Geomap/Web.
-- ~~**Aggregation over a window ignored.**~~ **Mostly done** — Item value, Top hosts, and Pie chart compute `aggregate_function` over `time_period`. Graph (svg) still hardcodes `avg` backfill.
+- ~~**Aggregation over a window ignored.**~~ **Mostly done** — Item value, Top hosts, and Pie chart compute `aggregate_function` over `time_period`. Graph (svg) now honors `approximation` for its trend backfill; only its per-dataset `aggregate_function` remains.
 - ~~**Top hosts — ranking unimplemented.**~~ **Done** — ranks up to 50 candidate hosts by the configured column (Top/Bottom N), limited to `show_lines`; per-column aggregation over `time_period`.
 - ~~**Trigger overview — only PROBLEM state fetched.**~~ **Done** — `show: Any` fetches all triggers and renders OK cells green; tags + nested scope applied.
 - ~~**Discovery — no `status=active` filter.**~~ **Done** — filters to `status: 0`, sorted by name.
@@ -109,8 +109,9 @@ cosmetic-leaning last).
   (`ext_ack`) still over-count acknowledged problems.
 - **Host availability — `maintenance` not honored.** Add the `maintenance_status` filter (default
   excludes maintenance); also fetch `active_available` for active-check availability.
-- **Graph (svggraph) — per-dataset aggregation/`timeshift`/`approximation`/`axisy`.** Reuse the
-  aggregation engine; honor `approximation` (min/avg/max) instead of hardcoding `value_avg`.
+- **Graph (svggraph) — per-dataset aggregation/`timeshift`/`axisy`.** Reuse the aggregation engine
+  for `aggregate_function`; apply `timeshift` to the window and honor left/right `axisy`.
+  (`approximation` min/avg/max trend backfill is now done.)
 - **Graph (classic) — graph type lost + Simple-graph unsupported.** Fetch `graphtype` and render
   stacked/pie; implement `source_type=1`/`itemid`.
 - **Web monitoring — `exclude_groupids` + tags dropped.** Status is now derived; the remaining gap
@@ -174,9 +175,11 @@ These were the leverage points, and most have now been built. Status is marked i
   aggregation widgets and Item history. Classic/svg graphs and Action log still don't apply `.to`;
   the dashboard-level foreign-reference default is still unresolved.
 - **Unified aggregation engine.** ✅ **Built** — `aggregate`/`aggregatedValue` used by Item value,
-  Top hosts, Pie chart. Graph (svg) not yet wired in; `approximation` still hardcoded to `avg`.
+  Top hosts, Pie chart. Graph (svg)'s per-dataset `aggregate_function` not yet wired in (its
+  `approximation` trend selection is).
 - **History-vs-trends reuse.** ◐ **Partly** — svggraph/classic graph backfill history from trends
-  (peak-preserving), but hardcode `value_avg`. Item history honors `time_period` but not
+  (peak-preserving); svggraph now honors `approximation` (min/avg/max), classic still uses `avg`.
+  Item history honors `time_period` but not
   `columns.N.history` / trend backfill for short-retention items.
 - **Value-map-aware item fetch.** ✅ **Built** — `ZabbixItemSearchParameters` now requests
   `selectValueMap`; `mappedItemValue` applies `mappedText` on the search path.

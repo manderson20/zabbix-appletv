@@ -1300,6 +1300,7 @@ extension DashboardManager {
             let hosts = try await zabbixAPIClient.hostsByName(serverBaseURL: serverBaseURL, authToken: authToken, names: hostNames)
             let baseColorHex = dataset["color"] ?? "3DC9B0"
             let fillOpacity = Self.fillOpacity(fromTransparencyField: dataset["transparency"])
+            let approximation = dataset["approximation"].flatMap(Int.init) ?? 2
 
             var matchIndex = 0
             for host in hosts {
@@ -1312,7 +1313,7 @@ extension DashboardManager {
                     )
 
                     for item in items {
-                        let points = try await recentPoints(for: item.itemid, valueType: item.value_type?.intValue ?? 0, windowStart: windowStart, windowEnd: windowEnd, serverBaseURL: serverBaseURL, authToken: authToken)
+                        let points = try await recentPoints(for: item.itemid, valueType: item.value_type?.intValue ?? 0, windowStart: windowStart, windowEnd: windowEnd, approximation: approximation, serverBaseURL: serverBaseURL, authToken: authToken)
 
                         series.append(
                             ChartSeries(
@@ -1344,7 +1345,8 @@ extension DashboardManager {
             )
             guard let item = items.first else { continue }
 
-            let points = try await recentPoints(for: item.itemid, valueType: item.value_type?.intValue ?? 0, windowStart: windowStart, windowEnd: windowEnd, serverBaseURL: serverBaseURL, authToken: authToken)
+            let approximation = override["approximation"].flatMap(Int.init) ?? 2
+            let points = try await recentPoints(for: item.itemid, valueType: item.value_type?.intValue ?? 0, windowStart: windowStart, windowEnd: windowEnd, approximation: approximation, serverBaseURL: serverBaseURL, authToken: authToken)
 
             series.append(
                 ChartSeries(
@@ -1561,11 +1563,23 @@ extension DashboardManager {
         return Self.aggregate(points, function: function)
     }
 
+    /// Picks the trend field a dataset's `approximation` calls for: 1 = min, 3 = max, everything else
+    /// (2 = avg, 0 = all, or absent) = avg — since a single rendered line can't draw the min/avg/max
+    /// band that "all" means, it falls back to the average Zabbix draws by default.
+    static func trendValue(from value: ZabbixTrendValue, approximation: Int) -> String? {
+        switch approximation {
+        case 1: return value.value_min ?? value.value_avg
+        case 3: return value.value_max ?? value.value_avg
+        default: return value.value_avg
+        }
+    }
+
     private func recentPoints(
         for itemID: String,
         valueType: Int,
         windowStart: Date,
         windowEnd: Date,
+        approximation: Int = 2,
         serverBaseURL: URL,
         authToken: String
     ) async throws -> [ChartPoint] {
@@ -1600,10 +1614,11 @@ extension DashboardManager {
                 untilUnixTime: Int(earliestHistory.timeIntervalSince1970)
             )
             let trendPoints = trendValues.compactMap { value -> (date: Date, value: Double)? in
-                guard let average = Double(value.value_avg), let timestamp = TimeInterval(value.clock) else {
+                guard let selected = Self.trendValue(from: value, approximation: approximation).flatMap(Double.init),
+                      let timestamp = TimeInterval(value.clock) else {
                     return nil
                 }
-                return (Date(timeIntervalSince1970: timestamp), average)
+                return (Date(timeIntervalSince1970: timestamp), selected)
             }.filter { $0.date < earliestHistory }
 
             points = (trendPoints + points).sorted { $0.date < $1.date }

@@ -464,7 +464,7 @@ nonisolated struct ZabbixTrendGetParameters: Encodable, Sendable {
     /// Maximum number of trend records to return.
     let limit: Int
 
-    init(itemID: String, timeFrom: Int, timeTill: Int, output: [String] = ["clock", "value_avg"], limit: Int = 6000) {
+    init(itemID: String, timeFrom: Int, timeTill: Int, output: [String] = ["clock", "value_min", "value_avg", "value_max"], limit: Int = 6000) {
         self.itemids = [itemID]
         self.time_from = timeFrom
         self.time_till = timeTill
