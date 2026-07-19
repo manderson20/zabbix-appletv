@@ -808,14 +808,18 @@ extension DashboardManager {
 
     // MARK: - SLA report
 
-    /// Shows each SLA's configured target only, not a computed period report — see
-    /// `ZabbixSLA`'s documentation for why.
+    /// Shows the configured SLA's target. (Computing the achieved SLI over the report's periods
+    /// via `sla.getsli` is a larger follow-up — see the widget coverage audit.)
+    ///
+    /// The SLA reference is stored as the indexed `slaid.0`, not a flat `slaid`; reading the wrong
+    /// name left the selector nil, so `sla.get` returned every SLA on the server instead of the one
+    /// the widget selected.
     private func resolveSLAReport(
         _ widget: ZabbixWidget,
         serverBaseURL: URL,
         authToken: String
     ) async throws -> DashboardWidgetKind {
-        let slaID = Self.fieldValue(widget.fields, name: "slaid")
+        let slaID = Self.firstIndexedValue(widget.fields, name: "slaid")
         let slas = try await zabbixAPIClient.slas(serverBaseURL: serverBaseURL, authToken: authToken, slaIDs: slaID.map { [$0] })
 
         return .slaReport(
