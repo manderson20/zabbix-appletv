@@ -1328,6 +1328,10 @@ struct DataOverviewWidgetContentView: View {
     private let headerWidth: CGFloat = 130
     private let cellWidth: CGFloat = 74
 
+    /// Column headers rotate vertically, as Zabbix's data overview draws them — a horizontal
+    /// truncation at 74pt left most item names unreadable ("Interface e...").
+    private static let rotatedHeaderHeight: CGFloat = 120
+
     var body: some View {
         if matrix.rows.isEmpty {
             Text("No items match this widget's filters")
@@ -1342,11 +1346,16 @@ struct DataOverviewWidgetContentView: View {
                         GridRow {
                             Color.clear.frame(width: headerWidth, height: 1) // corner spacer
                             ForEach(Array(matrix.columnHeaders.enumerated()), id: \.offset) { _, header in
+                                // Lay the text out horizontally at the header's height, then rotate
+                                // it into the narrow column (the same rotated-header treatment as
+                                // the trigger overview matrix).
                                 Text(header)
-                                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                    .font(.system(size: 12, weight: .regular, design: .rounded))
                                     .foregroundStyle(DashboardTheme.secondaryText)
                                     .lineLimit(1)
-                                    .frame(width: cellWidth, alignment: .leading)
+                                    .frame(width: Self.rotatedHeaderHeight - 8, alignment: .leading)
+                                    .rotationEffect(.degrees(-90))
+                                    .frame(width: cellWidth, height: Self.rotatedHeaderHeight, alignment: .bottom)
                             }
                         }
 
