@@ -513,25 +513,35 @@ struct ZabbixAppleTVDashboardTests {
         #expect(DashboardManager.refreshIntervalSeconds(from: absent) == DashboardManager.defaultRefreshIntervalSeconds)
     }
 
-    @Test func historyWindowSecondsRespectsEachWidgetsOwnTimePeriod() throws {
-        // Every combination below was verified live: two graphs on the same "Internet Bandwidth
-        // Usage" dashboard are independently configured "now-6h" and "now-1h", and a graph with no
-        // time_period fields at all ("Data Center Temperature") falls back to Zabbix's own global
-        // default of 1 hour, not an arbitrary window — this must hold for any dashboard a Zabbix
-        // admin creates in the future, not just the ones checked by hand.
-        let sixHours = [ZabbixWidgetField(name: "time_period.from", value: "now-6h"), ZabbixWidgetField(name: "time_period.to", value: "now")]
-        let oneHour = [ZabbixWidgetField(name: "time_period.from", value: "now-1h"), ZabbixWidgetField(name: "time_period.to", value: "now")]
-        let twentyFourHours = [ZabbixWidgetField(name: "time_period.from", value: "now-24h"), ZabbixWidgetField(name: "time_period.to", value: "now")]
-        let sevenDays = [ZabbixWidgetField(name: "time_period.from", value: "now-7d")]
-        let noTimePeriod: [ZabbixWidgetField] = []
-        let unparseable = [ZabbixWidgetField(name: "time_period.from", value: "now/d")]
+    @Test func timePeriodHonorsFromToAndDefaults() throws {
+        // Fixed reference time so the relative-time resolution is deterministic. Spans use a loose
+        // tolerance so a DST boundary in the local calendar can't make an offset flake by an hour.
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
 
-        #expect(DashboardManager.historyWindowSeconds(from: sixHours) == 6 * 3600)
-        #expect(DashboardManager.historyWindowSeconds(from: oneHour) == 3600)
-        #expect(DashboardManager.historyWindowSeconds(from: twentyFourHours) == 24 * 3600)
-        #expect(DashboardManager.historyWindowSeconds(from: sevenDays) == 7 * 86400)
-        #expect(DashboardManager.historyWindowSeconds(from: noTimePeriod) == 3600)
-        #expect(DashboardManager.historyWindowSeconds(from: unparseable) == 3600)
+        // Explicit "last 6 hours".
+        let sixHours = [ZabbixWidgetField(name: "time_period.from", value: "now-6h"), ZabbixWidgetField(name: "time_period.to", value: "now")]
+        let p6 = DashboardManager.timePeriod(from: sixHours, now: now)
+        #expect(p6.end == now)
+        #expect(p6.end.timeIntervalSince(p6.start) > 5 * 3600 && p6.end.timeIntervalSince(p6.start) < 7 * 3600)
+
+        // No time_period fields -> Zabbix's global "last 1 hour" default.
+        let def = DashboardManager.timePeriod(from: [], now: now)
+        #expect(def.end == now)
+        #expect(def.end.timeIntervalSince(def.start) > 0.9 * 3600 && def.end.timeIntervalSince(def.start) < 1.1 * 3600)
+
+        // A window that ends in the PAST is now honored (previously .to was dropped and end was
+        // always "now").
+        let pastWindow = [ZabbixWidgetField(name: "time_period.from", value: "now-2d"), ZabbixWidgetField(name: "time_period.to", value: "now-1d")]
+        let pw = DashboardManager.timePeriod(from: pastWindow, now: now)
+        #expect(pw.end < now)
+        #expect(pw.start < pw.end)
+
+        // A calendar-aligned expression ("today") that the old parser rejected now yields a valid,
+        // ordered range within the last day.
+        let today = [ZabbixWidgetField(name: "time_period.from", value: "now/d"), ZabbixWidgetField(name: "time_period.to", value: "now")]
+        let td = DashboardManager.timePeriod(from: today, now: now)
+        #expect(td.start < td.end)
+        #expect(now.timeIntervalSince(td.start) <= 24 * 3600)
     }
 
     @Test func bucketedChartPointsPreservesPeaksAndMarksGaps() throws {
