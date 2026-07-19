@@ -690,9 +690,19 @@ nonisolated struct ZabbixWebScenarioGetParameters: Encodable, Sendable {
     /// Requests each scenario's host.
     let selectHosts: [String]
 
+    /// The widget's own tag filter (from its `tags.N.*` fields); web scenarios support the same
+    /// tag/operator/evaltype filtering as problems. Omitted when empty so an unfiltered query is
+    /// unchanged.
+    let tags: [ZabbixTagFilter]?
+
+    /// Tag evaluation type (`evaltype`): 0 = And/Or, 2 = Or. Only sent alongside a non-empty `tags`.
+    let evaltype: Int?
+
     init(
         groupIDs: [String]? = nil,
         hostIDs: [String]? = nil,
+        tags: [ZabbixTagFilter]? = nil,
+        evaltype: Int? = nil,
         output: [String] = ["httptestid", "name"],
         selectHosts: [String] = ["hostid", "name"]
     ) {
@@ -700,6 +710,8 @@ nonisolated struct ZabbixWebScenarioGetParameters: Encodable, Sendable {
         self.hostids = hostIDs
         self.output = output
         self.selectHosts = selectHosts
+        self.tags = (tags?.isEmpty == false) ? tags : nil
+        self.evaltype = (tags?.isEmpty == false) ? evaltype : nil
     }
 }
 

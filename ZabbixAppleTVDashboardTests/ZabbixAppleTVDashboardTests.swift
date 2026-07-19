@@ -583,6 +583,26 @@ struct ZabbixAppleTVDashboardTests {
         #expect(DashboardManager.thresholdColorHex(for: nil, fields: fields) == nil)
     }
 
+    @Test func webScenarioParamsForwardTagFilterWhenPresent() throws {
+        func encoded(_ params: ZabbixWebScenarioGetParameters) throws -> [String: Any] {
+            let data = try JSONEncoder().encode(params)
+            return try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        }
+
+        // No tags → unfiltered (no tags/evaltype keys).
+        let untagged = try encoded(ZabbixWebScenarioGetParameters(groupIDs: ["7"]))
+        #expect(untagged["tags"] == nil)
+        #expect(untagged["evaltype"] == nil)
+
+        // Tag filter forwarded to httptest.get with its evaltype.
+        let tagged = try encoded(ZabbixWebScenarioGetParameters(
+            tags: [ZabbixTagFilter(tag: "env", value: "prod", operator: 1)],
+            evaltype: 0
+        ))
+        #expect((tagged["tags"] as? [[String: Any]])?.count == 1)
+        #expect(tagged["evaltype"] as? Int == 0)
+    }
+
     @Test func itemSearchParamsForwardTagFilterWhenPresent() throws {
         func encoded(_ params: ZabbixItemSearchParameters) throws -> [String: Any] {
             let data = try JSONEncoder().encode(params)

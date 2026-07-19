@@ -1150,12 +1150,29 @@ extension DashboardManager {
         let groupIDs = Self.indexedValues(widget.fields, name: "groupids")
         let hostIDs = Self.indexedValues(widget.fields, name: "hostids")
 
-        let scenarios = try await zabbixAPIClient.webScenarios(
+        let allScenarios = try await zabbixAPIClient.webScenarios(
             serverBaseURL: serverBaseURL,
             authToken: authToken,
             groupIDs: groupIDs.isEmpty ? nil : groupIDs,
-            hostIDs: hostIDs.isEmpty ? nil : hostIDs
+            hostIDs: hostIDs.isEmpty ? nil : hostIDs,
+            tags: Self.tagFilters(from: widget.fields),
+            evalType: Self.tagEvalType(from: widget.fields)
         )
+
+        // exclude_groupids drops scenarios whose host is in an excluded group — httptest.get has no
+        // exclude param, so resolve the scenario hosts' groups and filter client-side (the same
+        // approach the problem widgets use for their exclusion).
+        let excludedGroupIDs = Set(Self.indexedValues(widget.fields, name: "exclude_groupids"))
+        var scenarios = allScenarios
+        if !excludedGroupIDs.isEmpty {
+            let scenarioHostIDs = Array(Set(allScenarios.compactMap { $0.hosts.first?.hostid }))
+            let hostGroups = try await zabbixAPIClient.hostGroups(serverBaseURL: serverBaseURL, authToken: authToken, hostIDs: scenarioHostIDs)
+            let groupIDsByHostID = Dictionary(uniqueKeysWithValues: hostGroups.map { ($0.hostid, Set($0.hostgroups.map(\.groupid))) })
+            scenarios = allScenarios.filter { scenario in
+                guard let hostID = scenario.hosts.first?.hostid else { return true }
+                return groupIDsByHostID[hostID, default: []].isDisjoint(with: excludedGroupIDs)
+            }
+        }
 
         // Each scenario's Ok/Failed state lives in its `web.test.fail[<name>]` item; fetch them all
         // in one call and key them by (host, scenario name) so each scenario finds its own status.
