@@ -392,6 +392,27 @@ struct ZabbixAppleTVDashboardTests {
         #expect(triggers.first?.hosts.first?.hostid == "10461")
     }
 
+    @Test func thresholdColorPicksHighestBandMet() throws {
+        let fields = [
+            ZabbixWidgetField(name: "thresholds.0.threshold", value: "50"),
+            ZabbixWidgetField(name: "thresholds.0.color", value: "FFFF00"),
+            ZabbixWidgetField(name: "thresholds.1.threshold", value: "90"),
+            ZabbixWidgetField(name: "thresholds.1.color", value: "FF0000")
+        ]
+
+        // Below every threshold → no alert color (caller falls back to bg_color).
+        #expect(DashboardManager.thresholdColorHex(for: 20, fields: fields) == nil)
+        // Between the two bands → the lower band's color.
+        #expect(DashboardManager.thresholdColorHex(for: 75, fields: fields) == "FFFF00")
+        // Exactly on a threshold counts as meeting it.
+        #expect(DashboardManager.thresholdColorHex(for: 90, fields: fields) == "FF0000")
+        // Above the top band → the top band's color.
+        #expect(DashboardManager.thresholdColorHex(for: 200, fields: fields) == "FF0000")
+        // No thresholds configured, or no value → nil.
+        #expect(DashboardManager.thresholdColorHex(for: 75, fields: []) == nil)
+        #expect(DashboardManager.thresholdColorHex(for: nil, fields: fields) == nil)
+    }
+
     @Test func itemSearchParamsForwardTagFilterWhenPresent() throws {
         func encoded(_ params: ZabbixItemSearchParameters) throws -> [String: Any] {
             let data = try JSONEncoder().encode(params)

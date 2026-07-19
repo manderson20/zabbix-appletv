@@ -166,15 +166,24 @@ extension DashboardManager {
             let aggregateFunction = Self.fieldValue(widget.fields, name: "aggregate_function").flatMap(Int.init) ?? 0
             let displayValue: String
             let mappedText: String?
+            let numericValue: Double?
             if aggregateFunction > 0 {
                 let (from, to) = Self.timePeriod(from: widget.fields)
                 let aggregated = try await aggregatedValue(itemID: item.itemid, valueType: item.value_type?.intValue ?? 0, function: aggregateFunction, from: from, to: to, serverBaseURL: serverBaseURL, authToken: authToken)
                 displayValue = aggregated.map { String($0) } ?? "\u{2014}"
                 mappedText = nil
+                numericValue = aggregated
             } else {
                 displayValue = item.lastvalue ?? "\u{2014}"
                 mappedText = item.lastvalue.flatMap { item.valuemap?.valueMap?.mappedText(for: $0) }
+                numericValue = item.lastvalue.flatMap(Double.init)
             }
+
+            // A value crossing a configured threshold repaints the background with that band's
+            // color (Zabbix's alert color); the static `bg_color` is the fallback when no threshold
+            // is met or none are set.
+            let backgroundColorHex = Self.thresholdColorHex(for: numericValue, fields: widget.fields)
+                ?? Self.fieldValue(widget.fields, name: "bg_color")
 
             var trend: ItemValueTrend?
             if aggregateFunction == 0, let lastvalue = item.lastvalue.flatMap(Double.init), let prevvalue = item.prevvalue.flatMap(Double.init) {
@@ -189,7 +198,7 @@ extension DashboardManager {
                 name: item.name,
                 value: displayValue,
                 units: item.units ?? "",
-                backgroundColorHex: Self.fieldValue(widget.fields, name: "bg_color"),
+                backgroundColorHex: backgroundColorHex,
                 trend: trend,
                 lastUpdated: item.lastclock.flatMap(TimeInterval.init).map { Date(timeIntervalSince1970: $0) },
                 mappedText: mappedText
@@ -1871,6 +1880,24 @@ extension DashboardManager {
     /// Returns the value of a scalar widget field, e.g. "min" or "show_lines".
     static func fieldValue(_ fields: [ZabbixWidgetField], name: String) -> String? {
         fields.first { $0.name == name }?.value
+    }
+
+    /// The color of the highest `thresholds.N` band the reading meets or exceeds, or nil when the
+    /// reading is below every threshold (or none are configured). This is Zabbix's value-driven
+    /// alert color — the same `thresholds.N.threshold`/`.color` fields the gauge arc uses — so a
+    /// value crossing a threshold repaints the item-value background.
+    static func thresholdColorHex(for value: Double?, fields: [ZabbixWidgetField]) -> String? {
+        guard let value else { return nil }
+        return indexedFieldGroups(fields, prefix: "thresholds")
+            .compactMap { group -> (threshold: Double, color: String)? in
+                guard let threshold = group["threshold"].flatMap(Double.init), let color = group["color"] else {
+                    return nil
+                }
+                return (threshold, color)
+            }
+            .sorted { $0.threshold < $1.threshold }
+            .last { value >= $0.threshold }?
+            .color
     }
 
     /// Zabbix's default dashboard widget refresh rate, applied when a widget is left at "Default"

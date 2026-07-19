@@ -63,7 +63,7 @@ cosmetic-leaning last).
 | System information | partial | wrong-data | 2 | `info_type` ignored (HA-nodes mode wrong); `isRunning` hardcoded true |
 | Clock | partial | wrong-data | 2 | `time_type=host` / `tzone_timezone` ignored → shows device local time |
 | Map | full | wrong-data | 1 | Non-host elements (submap/group/trigger) always colored OK/green |
-| Item value | partial | missing-detail | 5 | `thresholds` ignored (no alert color); units/`units_show`/`decimal_places`/`description` overrides ignored — aggregation now honored |
+| Item value | partial | missing-detail | 4 | units/`units_show`/`decimal_places`/`description` overrides ignored — aggregation + `thresholds` alert color now honored |
 | Gauge | partial | missing-detail | 8 | `description`/`units`/`units_show`/`decimal_places` overrides ignored (value + threshold arc correct) |
 | Pie chart | partial | missing-detail | 5 | Pattern datasets expand correctly + per-dataset aggregation honored; still missing merge/center-total, units, value maps |
 | Host availability | partial | missing-detail | 3 | Ignores maintenance, active-check availability (`active_available`), and layout — `groupids` + multi-interface classification now correct |
@@ -80,6 +80,7 @@ cosmetic-leaning last).
 
 **Landed since the original audit:**
 
+- ~~**Item value — thresholds ignored.**~~ **Done** — reads `thresholds.N` (shared `thresholdColorHex` helper) so a value crossing a band repaints the background with its alert color.
 - ~~**Geomap — marker severity ignores widget `tags`.**~~ **Done** — `maxSeverityByHostID` now takes the widget's tag + severity filter, so a marker's color reflects only the problems the widget shows.
 - ~~**Tag filtering on the item-search path.**~~ **Done** — `ZabbixItemSearchParameters` now carries `tags`/`evaltype` (forwarded to `item.get`); Data overview, Honeycomb, and Item navigator apply the widget's item-tag filter.
 - ~~**Item history — item selector reads the wrong field.**~~ **Done** — reads `columns.N.itemid`, honors `show_lines` (default 25), applies value maps, bounds to `time_period`.
@@ -104,8 +105,6 @@ cosmetic-leaning last).
   returning the static target from `sla.get`.
 - **Top triggers — wrong metric.** Rank by problem-event count over `time_period` (`event.get`
   grouped by `objectid`, ordered by count DESC) and surface the count column.
-- **Item value — thresholds ignored.** Read `thresholds` (the gauge resolver already does) so the
-  value-driven background alert color fires.
 - **Acknowledgement filtering dropped.** Problems (`acknowledgement_status`) and Problems by severity
   (`ext_ack`) still over-count acknowledged problems.
 - **Host availability — `maintenance` not honored.** Add the `maintenance_status` filter (default
