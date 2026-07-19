@@ -144,10 +144,10 @@ actor ZabbixAPIClient {
     /// problems (hosts in maintenance, manually-suppressed problems) are excluded by default to
     /// match Zabbix's own problem widgets; pass `showSuppressed: true` for a widget configured to
     /// show them.
-    func problems(serverBaseURL: URL, authToken: String, severities: [Int]? = nil, tags: [ZabbixTagFilter]? = nil, evalType: Int? = nil, showSuppressed: Bool = false) async throws -> [ZabbixProblemSummary] {
+    func problems(serverBaseURL: URL, authToken: String, severities: [Int]? = nil, groupIDs: [String]? = nil, tags: [ZabbixTagFilter]? = nil, evalType: Int? = nil, showSuppressed: Bool = false) async throws -> [ZabbixProblemSummary] {
         try await send(
             method: "problem.get",
-            params: ZabbixProblemGetParameters(severities: severities, suppressed: showSuppressed ? nil : false, tags: tags, evaltype: evalType),
+            params: ZabbixProblemGetParameters(severities: severities, groupids: groupIDs, suppressed: showSuppressed ? nil : false, tags: tags, evaltype: evalType),
             serverBaseURL: serverBaseURL,
             authToken: authToken,
             resultType: [ZabbixProblemSummary].self
@@ -169,11 +169,12 @@ actor ZabbixAPIClient {
         )
     }
 
-    /// Fetches enabled hosts with their monitoring interfaces, for the "hostavail" widget.
-    func hostsWithInterfaces(serverBaseURL: URL, authToken: String) async throws -> [ZabbixHostAvailability] {
+    /// Fetches enabled hosts with their monitoring interfaces, for the "hostavail" widget,
+    /// optionally scoped to a set of host groups.
+    func hostsWithInterfaces(serverBaseURL: URL, authToken: String, groupIDs: [String]? = nil) async throws -> [ZabbixHostAvailability] {
         try await send(
             method: "host.get",
-            params: ZabbixHostAvailabilityParameters(),
+            params: ZabbixHostAvailabilityParameters(groupIDs: groupIDs),
             serverBaseURL: serverBaseURL,
             authToken: authToken,
             resultType: [ZabbixHostAvailability].self
@@ -194,6 +195,18 @@ actor ZabbixAPIClient {
             serverBaseURL: serverBaseURL,
             authToken: authToken,
             resultType: [ZabbixTriggerSummary].self
+        )
+    }
+
+    /// Resolves host groups by ID (or all groups when `groupIDs` is nil) via `hostgroup.get`, used
+    /// to expand a widget's selected groups to their nested subgroups by name.
+    func hostGroupNames(serverBaseURL: URL, authToken: String, groupIDs: [String]?) async throws -> [ZabbixHostGroupReference] {
+        try await send(
+            method: "hostgroup.get",
+            params: ZabbixHostGroupGetParameters(groupIDs: groupIDs),
+            serverBaseURL: serverBaseURL,
+            authToken: authToken,
+            resultType: [ZabbixHostGroupReference].self
         )
     }
 
