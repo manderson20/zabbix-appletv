@@ -734,20 +734,58 @@ private struct GaugeNeedle: Shape {
     }
 }
 
+/// A flat-top regular hexagon inscribed in its rect: flat edges top and bottom, points left and
+/// right. `rect.height` should be `rect.width * sqrt(3)/2` for the hexagon to come out regular.
+struct FlatTopHexagon: Shape {
+    func path(in rect: CGRect) -> Path {
+        let w = rect.width, h = rect.height
+        let cx = rect.midX, cy = rect.midY
+        let points = [
+            CGPoint(x: cx + w / 2, y: cy),        // right vertex
+            CGPoint(x: cx + w / 4, y: cy - h / 2), // top-right
+            CGPoint(x: cx - w / 4, y: cy - h / 2), // top-left
+            CGPoint(x: cx - w / 2, y: cy),        // left vertex
+            CGPoint(x: cx - w / 4, y: cy + h / 2), // bottom-left
+            CGPoint(x: cx + w / 4, y: cy + h / 2), // bottom-right
+        ]
+        var path = Path()
+        path.addLines(points)
+        path.closeSubpath()
+        return path
+    }
+}
+
 struct HoneycombWidgetContentView: View {
     let cells: [HoneycombCell]
 
-    private let spacing: CGFloat = 4
+    /// A flat-top hexagon's height as a fraction of its width (`sqrt(3)/2`).
+    private static let hexHeightRatio: CGFloat = 0.8660254
 
-    /// Chooses a roughly-square grid that fills the given area with `count` cells — matching Zabbix's
-    /// honeycomb, where a few items become a few large cells rather than tiny fixed ones. Columns are
-    /// picked to make cells as square as possible for the widget's aspect ratio, capped at the count.
-    static func gridLayout(count: Int, size: CGSize) -> (columns: Int, rows: Int) {
-        guard count > 0, size.width > 0, size.height > 0 else { return (max(count, 1), 1) }
-        let ideal = (Double(count) * size.width / size.height).squareRoot()
-        let columns = min(count, max(1, Int(ideal.rounded())))
-        let rows = Int((Double(count) / Double(columns)).rounded(.up))
-        return (columns, rows)
+    /// Thin gap between hexagons, so cells read as separate tiles (as Zabbix draws them) rather than
+    /// one continuous mesh.
+    private static let hexGap: CGFloat = 4
+
+    /// Picks the flat-top honeycomb packing that fills `size` with `count` hexagons at the largest
+    /// size that still fits — so a few items become a few big hexagons and many stay legible. Flat-top
+    /// hexagons tessellate in offset columns: columns advance by 3/4 of a hexagon's width, and every
+    /// other column is dropped half a hexagon's height, so the used height spans `rows + 0.5`. For
+    /// each candidate column count the hexagon size is capped by both width and height; the count that
+    /// yields the biggest hexagon wins. Returns the chosen columns/rows and that hexagon width.
+    static func honeycombLayout(count: Int, size: CGSize) -> (columns: Int, rows: Int, hexWidth: CGFloat) {
+        guard count > 0, size.width > 0, size.height > 0 else { return (max(count, 1), 1, max(size.width, 0)) }
+
+        var best = (columns: 1, rows: count, hexWidth: CGFloat(0))
+        for columns in 1...count {
+            let rows = Int((Double(count) / Double(columns)).rounded(.up))
+            let columnOffset: CGFloat = columns > 1 ? 0.5 : 0 // alternating columns drop half a hex
+            let widthLimited = size.width / (0.75 * CGFloat(columns - 1) + 1)
+            let heightLimited = size.height / (hexHeightRatio * (CGFloat(rows) + columnOffset))
+            let hexWidth = min(widthLimited, heightLimited)
+            if hexWidth > best.hexWidth {
+                best = (columns, rows, hexWidth)
+            }
+        }
+        return best
     }
 
     var body: some View {
@@ -757,48 +795,56 @@ struct HoneycombWidgetContentView: View {
                 .foregroundStyle(DashboardTheme.secondaryText)
         } else {
             GeometryReader { geometry in
-                let layout = Self.gridLayout(count: cells.count, size: geometry.size)
-                let cellWidth = (geometry.size.width - spacing * CGFloat(layout.columns - 1)) / CGFloat(layout.columns)
-                let cellHeight = (geometry.size.height - spacing * CGFloat(layout.rows - 1)) / CGFloat(layout.rows)
+                let layout = Self.honeycombLayout(count: cells.count, size: geometry.size)
+                let hexWidth = layout.hexWidth
+                let hexHeight = hexWidth * Self.hexHeightRatio
+                let columnOffset: CGFloat = layout.columns > 1 ? 0.5 : 0
+                // The honeycomb's own extent, so it can be centered in whatever space is left over.
+                let usedWidth = hexWidth * (0.75 * CGFloat(layout.columns - 1) + 1)
+                let usedHeight = hexHeight * (CGFloat(layout.rows) + columnOffset)
+                let originX = (geometry.size.width - usedWidth) / 2
+                let originY = (geometry.size.height - usedHeight) / 2
 
-                VStack(spacing: spacing) {
-                    ForEach(0..<layout.rows, id: \.self) { row in
-                        HStack(spacing: spacing) {
-                            ForEach(0..<layout.columns, id: \.self) { column in
-                                let index = row * layout.columns + column
-                                if index < cells.count {
-                                    cellView(cells[index], width: cellWidth, height: cellHeight)
-                                } else {
-                                    Color.clear.frame(width: cellWidth, height: cellHeight)
-                                }
-                            }
-                        }
+                ZStack(alignment: .topLeading) {
+                    ForEach(Array(cells.enumerated()), id: \.element.id) { index, cell in
+                        let column = index % layout.columns
+                        let row = index / layout.columns
+                        let centerX = originX + hexWidth / 2 + CGFloat(column) * 0.75 * hexWidth
+                        let centerY = originY + hexHeight / 2 + CGFloat(row) * hexHeight
+                            + (column % 2 == 1 ? hexHeight / 2 : 0)
+                        hexCell(cell, width: hexWidth, height: hexHeight)
+                            .position(x: centerX, y: centerY)
                     }
                 }
+                .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
             }
         }
     }
 
-    /// One cell sized to fill its grid slot, with fonts scaled to the cell so a few large cells read
-    /// from across the room and many small ones still fit.
-    private func cellView(_ cell: HoneycombCell, width: CGFloat, height: CGFloat) -> some View {
+    /// One hexagon cell, its fill clipped to the hexagon and its label/value scaled to the cell so a
+    /// few large hexagons read from across the room and many small ones still fit. Text is inset
+    /// horizontally so it stays clear of the hexagon's slanted top/bottom edges.
+    private func hexCell(_ cell: HoneycombCell, width: CGFloat, height: CGFloat) -> some View {
         VStack(spacing: 2) {
             Text(cell.primaryLabel)
-                .font(.system(size: min(max(height * 0.16, 12), 34), weight: .bold, design: .rounded))
+                .font(.system(size: min(max(height * 0.17, 11), 32), weight: .bold, design: .rounded))
                 .foregroundStyle(DashboardTheme.primaryText)
                 .lineLimit(1)
                 .minimumScaleFactor(0.5)
 
             Text(cell.secondaryLabel)
-                .font(.system(size: min(max(height * 0.13, 10), 26), weight: .regular, design: .rounded))
+                .font(.system(size: min(max(height * 0.14, 9), 24), weight: .regular, design: .rounded))
                 .foregroundStyle(DashboardTheme.secondaryText)
                 .lineLimit(1)
                 .minimumScaleFactor(0.5)
         }
-        .padding(4)
-        .frame(width: width, height: height)
-        .background(cell.backgroundColorHex.flatMap { Color(hex: $0) } ?? DashboardTheme.secondaryCardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .padding(.horizontal, width * 0.16)
+        .frame(width: width - Self.hexGap, height: height - Self.hexGap)
+        .background(
+            FlatTopHexagon()
+                .fill(cell.backgroundColorHex.flatMap { Color(hex: $0) } ?? DashboardTheme.secondaryCardBackground)
+        )
+        .clipShape(FlatTopHexagon())
     }
 }
 
