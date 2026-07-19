@@ -25,7 +25,12 @@ nonisolated struct ZabbixTrendValue: Decodable, Sendable {
     /// Unix timestamp of the start of the trend's hour, as a string per Zabbix API convention.
     let clock: String
 
-    /// Average value over the hour. Plotted as the line for the trend-covered part of a graph,
-    /// matching Zabbix's own default of drawing the average.
+    /// Average value over the hour. The default drawn for the trend-covered part of a graph,
+    /// matching Zabbix's own default approximation.
     let value_avg: String
+
+    /// Minimum / maximum over the hour, requested and used when a dataset's `approximation` selects
+    /// min or max rather than the average. Optional because a caller may request only `value_avg`.
+    let value_min: String?
+    let value_max: String?
 }

@@ -392,6 +392,21 @@ struct ZabbixAppleTVDashboardTests {
         #expect(triggers.first?.hosts.first?.hostid == "10461")
     }
 
+    @Test func trendApproximationSelectsMinAvgMax() throws {
+        let full = ZabbixTrendValue(clock: "1700000000", value_avg: "50", value_min: "10", value_max: "90")
+
+        #expect(DashboardManager.trendValue(from: full, approximation: 1) == "10") // min
+        #expect(DashboardManager.trendValue(from: full, approximation: 2) == "50") // avg
+        #expect(DashboardManager.trendValue(from: full, approximation: 3) == "90") // max
+        #expect(DashboardManager.trendValue(from: full, approximation: 0) == "50") // "all" → avg
+        #expect(DashboardManager.trendValue(from: full, approximation: 99) == "50") // unknown → avg
+
+        // When only value_avg was requested, min/max fall back to it.
+        let avgOnly = ZabbixTrendValue(clock: "1700000000", value_avg: "50", value_min: nil, value_max: nil)
+        #expect(DashboardManager.trendValue(from: avgOnly, approximation: 1) == "50")
+        #expect(DashboardManager.trendValue(from: avgOnly, approximation: 3) == "50")
+    }
+
     @Test func slaPercentFormattingTrimsTrailingZeros() throws {
         // Configured SLO strings render trimmed.
         #expect(DashboardManager.formatSLOPercent("99.9000") == "99.9%")
