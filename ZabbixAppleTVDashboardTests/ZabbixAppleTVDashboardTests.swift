@@ -690,6 +690,25 @@ struct ZabbixAppleTVDashboardTests {
         #expect(items.first?.hostid == "10461")
     }
 
+    @Test func groupedSectionsBucketsByKeyOrFlat() throws {
+        let pairs = [(key: "GroupA", entry: "h1"), (key: "GroupB", entry: "h2"), (key: "GroupA", entry: "h3")]
+
+        // Not grouped → one untitled section with everything, in order.
+        let flat = DashboardManager.groupedSections(pairs, grouped: false)
+        #expect(flat.count == 1)
+        #expect(flat[0].title == "")
+        #expect(flat[0].entries == ["h1", "h2", "h3"])
+
+        // Grouped → sections by key in first-seen order.
+        let grouped = DashboardManager.groupedSections(pairs, grouped: true)
+        #expect(grouped.map(\.title) == ["GroupA", "GroupB"])
+        #expect(grouped[0].entries == ["h1", "h3"])
+        #expect(grouped[1].entries == ["h2"])
+
+        // Empty input → no sections either way.
+        #expect(DashboardManager.groupedSections([(key: String, entry: String)](), grouped: false).isEmpty)
+    }
+
     @Test func severityCountsBucketsWorstSeverities() throws {
         // Hosts whose worst severities are 5, 5, 2, 0 → two disasters, one warning, one not-classified.
         let counts = DashboardManager.severityCounts(fromWorstSeverities: [5, 5, 2, 0])

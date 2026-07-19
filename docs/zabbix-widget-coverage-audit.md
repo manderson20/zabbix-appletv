@@ -57,7 +57,7 @@ cosmetic-leaning last).
 | Graph (svggraph) | partial | missing-detail | 1 | Per-dataset `aggregate_function`/`aggregate_interval`, `timeshift`, and `approximation` all honored; only left/right `axisy` assignment remains |
 | Graph (classic) | partial | missing-detail | 1 | Pie/exploded-pie graphs render as a pie and Simple-graph (`itemid`) mode is supported; stacked graphs draw as overlaid lines (data correct, visual stacking pending) |
 | Honeycomb | partial | wrong-data | 1 | `primary_label`/`secondary_label` macro templates, `items.N`, value maps, item-tag filter, threshold coloring, and unit/decimal formatting all applied; only the hardcoded 60-cell cap remains |
-| Item navigator | partial | missing-detail | 2 | `group_by` flattened; `show_lines` default 100 — `items.N` + value maps + item-tag filter now applied |
+| Item navigator | partial | missing-detail | 1 | `group_by` now sections the list (by host); `items.N` + value maps + item-tag filter applied — only the specific group-by attribute (tag vs host) isn't distinguished |
 | Data overview | partial | wrong-data | 1 | Renders the hosts×items matrix (with `style` orientation) + tags + value maps + unit/decimal formatting; only the arbitrary 100-item cap remains |
 | Geomap | partial | missing-detail | 1 | Marker severity scoped to the widget's tag + severity filter; only `default_view` initial center/zoom (cosmetic) remains |
 | Problems | partial | missing-detail | 1 | `groupids`/tags/suppression/acknowledgement all honored; only `show_lines` default (20 vs 25) remains |
@@ -70,7 +70,7 @@ cosmetic-leaning last).
 | Gauge | partial | missing-detail | 4 | unit/decimal formatting and the `description` label-macro template now done; only cosmetic color/size knobs remain |
 | Pie chart | partial | missing-detail | 4 | Pattern expansion + per-dataset aggregation + legend value labels (units/decimals) honored; still missing merge/center-total and value maps |
 | Host availability | partial | missing-detail | 3 | Ignores maintenance, active-check availability (`active_available`), and layout — `groupids` + multi-interface classification now correct |
-| Host navigator | partial | missing-detail | 2 | `group_by` flattened; `show_lines` default 100 — `hosts.N`/`status`/host-tags now honored |
+| Host navigator | partial | missing-detail | 1 | `group_by` now sections the list (by host group); `hosts.N`/`status`/host-tags honored — only the specific group-by attribute (group vs tag vs severity) isn't distinguished |
 | Problem hosts | partial | missing-detail | 1 | Per-severity count columns now rendered (host counted in its worst-severity column); groups(nested)/tags/severity/suppression/exclude all applied — only explicit `hostids` scoping remains |
 | Top hosts | partial | missing-detail | 2 | Ranking + per-column aggregation + per-column units/decimals honored; still missing tag/maintenance scope and exact-item match |
 | Trigger overview | partial | missing-detail | 3 | `show`(Any→OK cells)/tags/nested-scope honored; still missing `show_suppressed` and Recent-vs-Problems recency |
@@ -126,9 +126,11 @@ cosmetic-leaning last).
   (done, 25) fixed. Host nav / Item nav read `show_lines` but default 100; Honeycomb hardcodes
   `prefix(60)` and Data overview `prefix(100)` — these two are **safety caps with no corresponding
   Zabbix field**, left as-is. Problems default 20 vs 25; Top triggers 20 vs 10 — minor.
-- **Grouping/tree structure flattened.** `group_by` (Host/Item navigator) is still rendered as a flat
-  list. (Problems-by-severity `show_type=GROUPS`, Problem hosts' per-severity columns, the
-  Data-overview hosts×items matrix, and the `navtree` hierarchy are now rendered.)
+- ~~**Grouping/tree structure flattened.**~~ **Done** — Host/Item navigator `group_by` sections the
+  list (by host group / host), Problems-by-severity `show_type=GROUPS`, Problem hosts' per-severity
+  columns, the Data-overview hosts×items matrix, and the `navtree` hierarchy are all now rendered.
+  The one nuance left is that the navigator's specific group-by *attribute* (host group vs tag vs
+  severity) isn't distinguished — it groups by the natural host/host-group key.
 - **`time_period.to` and non-relative expressions.** ~~Item history~~ (done). Classic/svg graphs and
   Action log still always end at `now()` and drop `now/d`/absolute windows.
 - ~~**Units + decimal formatting.**~~ **Done** — `units`/`units_show`/`decimal_places` applied in

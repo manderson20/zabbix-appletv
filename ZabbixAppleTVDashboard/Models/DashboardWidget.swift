@@ -146,8 +146,8 @@ nonisolated enum DashboardWidgetKind: Sendable {
     case networkMap(NetworkMapDiagram)
     case mapList([MapListEntry])
     case navigationTree([NavTreeNode])
-    case hostList([HostListEntry])
-    case itemList([ItemListEntry])
+    case hostList([HostListSection])
+    case itemList([ItemListSection])
     case slaReport([SLAReportEntry])
     case unsupported(rawType: String)
 }
@@ -638,6 +638,20 @@ nonisolated struct NavTreeNode: Identifiable, Sendable {
 }
 
 /// A single host shown in a static host navigator list.
+/// A group of hosts under a `group_by` heading in the Host navigator (empty title = ungrouped).
+nonisolated struct HostListSection: Identifiable, Sendable {
+    let id: String
+    let title: String
+    let hosts: [HostListEntry]
+}
+
+/// A group of items under a `group_by` heading in the Item navigator (empty title = ungrouped).
+nonisolated struct ItemListSection: Identifiable, Sendable {
+    let id: String
+    let title: String
+    let items: [ItemListEntry]
+}
+
 nonisolated struct HostListEntry: Identifiable, Sendable {
     /// Stable entry identifier.
     let id: String

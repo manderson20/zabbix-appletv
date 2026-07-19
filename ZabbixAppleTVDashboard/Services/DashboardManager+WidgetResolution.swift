@@ -849,6 +849,23 @@ extension DashboardManager {
         )
     }
 
+    /// Groups (key, entry) pairs into ordered sections for a navigator's `group_by`: when not
+    /// grouped, all entries fall in a single untitled section; when grouped, they're bucketed by key
+    /// in first-seen order (an entry can appear under several keys, e.g. a host in multiple groups).
+    static func groupedSections<Entry>(_ pairs: [(key: String, entry: Entry)], grouped: Bool) -> [(title: String, entries: [Entry])] {
+        guard grouped else {
+            return pairs.isEmpty ? [] : [("", pairs.map(\.entry))]
+        }
+        var order: [String] = []
+        var seen = Set<String>()
+        var byKey: [String: [Entry]] = [:]
+        for pair in pairs {
+            if seen.insert(pair.key).inserted { order.append(pair.key) }
+            byKey[pair.key, default: []].append(pair.entry)
+        }
+        return order.map { ($0, byKey[$0] ?? []) }
+    }
+
     /// Buckets each host's worst severity into a 6-slot per-severity count array (index 0…5),
     /// clamping out-of-range severities into the valid band.
     static func severityCounts(fromWorstSeverities severities: [Int]) -> [Int] {
@@ -1153,14 +1170,38 @@ extension DashboardManager {
             maxSeverityByHostID[entry.hostID] = max(maxSeverityByHostID[entry.hostID] ?? 0, entry.problem.severity.intValue)
         }
 
+        let shownHosts = Array(hosts.prefix(showLines))
+        let entries = shownHosts.map { host in
+            HostListEntry(
+                id: host.hostid,
+                name: host.name,
+                problemCount: countByHostID[host.hostid] ?? 0,
+                maxSeverity: maxSeverityByHostID[host.hostid] ?? 0
+            )
+        }
+
+        // `group_by` (any level configured) breaks the flat list into sections by host group. A host
+        // in several groups appears under each; a host with none goes under "Ungrouped".
+        let grouped = !Self.indexedFieldGroups(widget.fields, prefix: "group_by").isEmpty
+        var pairs: [(key: String, entry: HostListEntry)] = []
+        if grouped {
+            let hostGroups = try await zabbixAPIClient.hostGroups(serverBaseURL: serverBaseURL, authToken: authToken, hostIDs: shownHosts.map(\.hostid))
+            let groupNamesByHostID = Dictionary(uniqueKeysWithValues: hostGroups.map { ($0.hostid, $0.hostgroups.map(\.name)) })
+            for entry in entries {
+                let names = groupNamesByHostID[entry.id] ?? []
+                if names.isEmpty {
+                    pairs.append((key: "Ungrouped", entry: entry))
+                } else {
+                    for name in names { pairs.append((key: name, entry: entry)) }
+                }
+            }
+        } else {
+            pairs = entries.map { (key: "", entry: $0) }
+        }
+
         return .hostList(
-            hosts.prefix(showLines).map { host in
-                HostListEntry(
-                    id: host.hostid,
-                    name: host.name,
-                    problemCount: countByHostID[host.hostid] ?? 0,
-                    maxSeverity: maxSeverityByHostID[host.hostid] ?? 0
-                )
+            Self.groupedSections(pairs, grouped: grouped).map { section in
+                HostListSection(id: section.title.isEmpty ? "all" : section.title, title: section.title, hosts: section.entries)
             }
         )
     }
@@ -1200,15 +1241,23 @@ extension DashboardManager {
             authToken: authToken
         )
 
+        // `group_by` (any level configured) breaks the flat list into sections by host.
+        let grouped = !Self.indexedFieldGroups(widget.fields, prefix: "group_by").isEmpty
+        let pairs = items.prefix(showLines).map { item -> (key: String, entry: ItemListEntry) in
+            let hostName = item.hosts.first?.name ?? ""
+            let entry = ItemListEntry(
+                id: item.itemid,
+                name: item.name,
+                hostName: hostName,
+                lastValue: Self.mappedItemValue(rawValue: item.lastvalue, valueMap: item.valuemap?.valueMap),
+                units: item.units ?? ""
+            )
+            return (key: grouped ? (hostName.isEmpty ? "Ungrouped" : hostName) : "", entry: entry)
+        }
+
         return .itemList(
-            items.prefix(showLines).map { item in
-                ItemListEntry(
-                    id: item.itemid,
-                    name: item.name,
-                    hostName: item.hosts.first?.name ?? "",
-                    lastValue: Self.mappedItemValue(rawValue: item.lastvalue, valueMap: item.valuemap?.valueMap),
-                    units: item.units ?? ""
-                )
+            Self.groupedSections(Array(pairs), grouped: grouped).map { section in
+                ItemListSection(id: section.title.isEmpty ? "all" : section.title, title: section.title, items: section.entries)
             }
         )
     }
