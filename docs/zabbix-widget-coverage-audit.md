@@ -56,7 +56,7 @@ cosmetic-leaning last).
 | Top triggers | partial | missing-detail | 1 | Now ranks by problem-event frequency over `time_period` with a count column; only acknowledgement filtering remains |
 | Graph (svggraph) | partial | missing-detail | 1 | Per-dataset `aggregate_function`/`aggregate_interval`, `timeshift`, and `approximation` all honored; only left/right `axisy` assignment remains |
 | Graph (classic) | full | missing-detail | 1 | Line/stacked/pie/exploded-pie `graphtype` and Simple-graph (`itemid`) mode all rendered; only legend/color cosmetics remain |
-| Honeycomb | partial | wrong-data | 1 | `primary_label`/`secondary_label` macro templates, `items.N`, value maps, item-tag filter, threshold coloring, and unit/decimal formatting all applied; only the hardcoded 60-cell cap remains |
+| Honeycomb | partial | wrong-data | 1 | `primary_label`/`secondary_label` macro templates, `items.N`, value maps, item-tag filter, threshold coloring, and unit/decimal formatting all applied; cells now fill the widget (near-square grid sized to the available area) instead of a fixed tiny column; only the hardcoded 60-cell cap remains |
 | Item navigator | partial | missing-detail | 1 | `group_by` now sections the list (by host); `items.N` + value maps + item-tag filter applied — only the specific group-by attribute (tag vs host) isn't distinguished |
 | Data overview | partial | wrong-data | 1 | Renders the hosts×items matrix (with `style` orientation) + tags + value maps + unit/decimal formatting; only the arbitrary 100-item cap remains |
 | Geomap | full | missing-detail | 0 | Marker severity scoped to the widget's tag + severity filter, and `default_view` initial center/zoom honored |

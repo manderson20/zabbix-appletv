@@ -737,30 +737,68 @@ private struct GaugeNeedle: Shape {
 struct HoneycombWidgetContentView: View {
     let cells: [HoneycombCell]
 
-    private let columns = [GridItem(.adaptive(minimum: 90), spacing: 6)]
+    private let spacing: CGFloat = 4
+
+    /// Chooses a roughly-square grid that fills the given area with `count` cells — matching Zabbix's
+    /// honeycomb, where a few items become a few large cells rather than tiny fixed ones. Columns are
+    /// picked to make cells as square as possible for the widget's aspect ratio, capped at the count.
+    static func gridLayout(count: Int, size: CGSize) -> (columns: Int, rows: Int) {
+        guard count > 0, size.width > 0, size.height > 0 else { return (max(count, 1), 1) }
+        let ideal = (Double(count) * size.width / size.height).squareRoot()
+        let columns = min(count, max(1, Int(ideal.rounded())))
+        let rows = Int((Double(count) / Double(columns)).rounded(.up))
+        return (columns, rows)
+    }
 
     var body: some View {
-        AutoScrollingContent {
-            LazyVGrid(columns: columns, spacing: 6) {
-                ForEach(cells) { cell in
-                    VStack(spacing: 2) {
-                        Text(cell.primaryLabel)
-                            .font(.system(size: 18, weight: .bold, design: .rounded))
-                            .foregroundStyle(DashboardTheme.primaryText)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.6)
+        if cells.isEmpty {
+            Text("No items match this widget's filters")
+                .font(.system(size: 16, weight: .regular, design: .rounded))
+                .foregroundStyle(DashboardTheme.secondaryText)
+        } else {
+            GeometryReader { geometry in
+                let layout = Self.gridLayout(count: cells.count, size: geometry.size)
+                let cellWidth = (geometry.size.width - spacing * CGFloat(layout.columns - 1)) / CGFloat(layout.columns)
+                let cellHeight = (geometry.size.height - spacing * CGFloat(layout.rows - 1)) / CGFloat(layout.rows)
 
-                        Text(cell.secondaryLabel)
-                            .font(.system(size: 12, weight: .regular, design: .rounded))
-                            .foregroundStyle(DashboardTheme.secondaryText)
-                            .lineLimit(1)
+                VStack(spacing: spacing) {
+                    ForEach(0..<layout.rows, id: \.self) { row in
+                        HStack(spacing: spacing) {
+                            ForEach(0..<layout.columns, id: \.self) { column in
+                                let index = row * layout.columns + column
+                                if index < cells.count {
+                                    cellView(cells[index], width: cellWidth, height: cellHeight)
+                                } else {
+                                    Color.clear.frame(width: cellWidth, height: cellHeight)
+                                }
+                            }
+                        }
                     }
-                    .frame(maxWidth: .infinity, minHeight: 60)
-                    .background(cell.backgroundColorHex.flatMap { Color(hex: $0) } ?? DashboardTheme.secondaryCardBackground)
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }
             }
         }
+    }
+
+    /// One cell sized to fill its grid slot, with fonts scaled to the cell so a few large cells read
+    /// from across the room and many small ones still fit.
+    private func cellView(_ cell: HoneycombCell, width: CGFloat, height: CGFloat) -> some View {
+        VStack(spacing: 2) {
+            Text(cell.primaryLabel)
+                .font(.system(size: min(max(height * 0.16, 12), 34), weight: .bold, design: .rounded))
+                .foregroundStyle(DashboardTheme.primaryText)
+                .lineLimit(1)
+                .minimumScaleFactor(0.5)
+
+            Text(cell.secondaryLabel)
+                .font(.system(size: min(max(height * 0.13, 10), 26), weight: .regular, design: .rounded))
+                .foregroundStyle(DashboardTheme.secondaryText)
+                .lineLimit(1)
+                .minimumScaleFactor(0.5)
+        }
+        .padding(4)
+        .frame(width: width, height: height)
+        .background(cell.backgroundColorHex.flatMap { Color(hex: $0) } ?? DashboardTheme.secondaryCardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
 

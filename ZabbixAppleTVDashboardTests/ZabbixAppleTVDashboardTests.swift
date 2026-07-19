@@ -737,6 +737,31 @@ struct ZabbixAppleTVDashboardTests {
         #expect(HostGroupProblemSummary(id: "2", groupName: "G", countsBySeverity: [0, 0, 0, 0, 0, 0]).maxSeverity == 0)
     }
 
+    @MainActor
+    @Test func honeycombGridLayoutFillsAreaWithNearSquareCells() throws {
+        // 2 cells in a wide area → 2 columns × 1 row (two big side-by-side cells).
+        let wide = HoneycombWidgetContentView.gridLayout(count: 2, size: CGSize(width: 1000, height: 300))
+        #expect(wide.columns == 2)
+        #expect(wide.rows == 1)
+
+        // 2 cells in a tall area → 1 column × 2 rows (stacked).
+        let tall = HoneycombWidgetContentView.gridLayout(count: 2, size: CGSize(width: 300, height: 1000))
+        #expect(tall.columns == 1)
+        #expect(tall.rows == 2)
+
+        // Columns never exceed the cell count.
+        let single = HoneycombWidgetContentView.gridLayout(count: 1, size: CGSize(width: 1000, height: 200))
+        #expect(single.columns == 1 && single.rows == 1)
+
+        // A square area with 9 cells → a 3×3 grid.
+        let square = HoneycombWidgetContentView.gridLayout(count: 9, size: CGSize(width: 600, height: 600))
+        #expect(square.columns == 3 && square.rows == 3)
+
+        // Zero size (GeometryReader's initial pass) doesn't divide by zero.
+        let zero = HoneycombWidgetContentView.gridLayout(count: 4, size: CGSize(width: 0, height: 0))
+        #expect(zero.columns >= 1 && zero.rows >= 1)
+    }
+
     @Test func buildDataOverviewMatrixGroupsHostsAndItems() throws {
         // host1 has CPU+Mem; host2 has only CPU → host2's Mem cell is blank.
         let entries = [
