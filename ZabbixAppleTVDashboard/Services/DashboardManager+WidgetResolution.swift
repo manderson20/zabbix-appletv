@@ -252,7 +252,7 @@ extension DashboardManager {
             return try await resolveTriggerOverview(widget, serverBaseURL: serverBaseURL, authToken: authToken)
 
         case "problemhosts":
-            return try await resolveProblemHosts(serverBaseURL: serverBaseURL, authToken: authToken)
+            return try await resolveProblemHosts(widget, serverBaseURL: serverBaseURL, authToken: authToken)
 
         case "actionlog":
             return try await resolveActionLog(serverBaseURL: serverBaseURL, authToken: authToken)
@@ -517,8 +517,29 @@ extension DashboardManager {
 
     // MARK: - Problem hosts
 
-    private func resolveProblemHosts(serverBaseURL: URL, authToken: String) async throws -> DashboardWidgetKind {
-        let resolved = try await activeProblemsWithHostID(serverBaseURL: serverBaseURL, authToken: authToken)
+    private func resolveProblemHosts(_ widget: ZabbixWidget, serverBaseURL: URL, authToken: String) async throws -> DashboardWidgetKind {
+        // Honor the widget's own scope — severity, host groups (incl. nested), tags, and suppression
+        // — the same way the other problem widgets do; this resolver previously took no widget at
+        // all and counted every host on the server.
+        let severities = Self.indexedValues(widget.fields, name: "severities").compactMap(Int.init)
+        var resolved = try await activeProblemsWithHostID(
+            serverBaseURL: serverBaseURL,
+            authToken: authToken,
+            severities: severities.isEmpty ? nil : severities,
+            groupIDs: try await scopedGroupIDs(from: widget, serverBaseURL: serverBaseURL, authToken: authToken),
+            tags: Self.tagFilters(from: widget.fields),
+            evalType: Self.tagEvalType(from: widget.fields),
+            showSuppressed: Self.fieldValue(widget.fields, name: "show_suppressed") == "1"
+        )
+
+        // exclude_groupids drops problems whose host is in an excluded group (incl. nested), reusing
+        // the shared helper that operates on the problems themselves.
+        let excludedGroupIDs = Set(Self.indexedValues(widget.fields, name: "exclude_groupids"))
+        if !excludedGroupIDs.isEmpty {
+            let keptEventIDs = Set(try await problemsExcludingGroups(resolved.map(\.problem), excludedGroupIDs: excludedGroupIDs, serverBaseURL: serverBaseURL, authToken: authToken).map(\.eventid))
+            resolved = resolved.filter { keptEventIDs.contains($0.problem.eventid) }
+        }
+
         let hostIDs = Array(Set(resolved.map(\.hostID)))
         let hostGroups = try await zabbixAPIClient.hostGroups(serverBaseURL: serverBaseURL, authToken: authToken, hostIDs: hostIDs)
         let groupsByHostID = Dictionary(uniqueKeysWithValues: hostGroups.map { ($0.hostid, $0.hostgroups) })
@@ -1418,9 +1439,14 @@ extension DashboardManager {
     /// geomap, network map, host navigator).
     private func activeProblemsWithHostID(
         serverBaseURL: URL,
-        authToken: String
+        authToken: String,
+        severities: [Int]? = nil,
+        groupIDs: [String]? = nil,
+        tags: [ZabbixTagFilter]? = nil,
+        evalType: Int? = nil,
+        showSuppressed: Bool = false
     ) async throws -> [(problem: ZabbixProblemSummary, hostID: String)] {
-        let problems = try await zabbixAPIClient.problems(serverBaseURL: serverBaseURL, authToken: authToken)
+        let problems = try await zabbixAPIClient.problems(serverBaseURL: serverBaseURL, authToken: authToken, severities: severities, groupIDs: groupIDs, tags: tags, evalType: evalType, showSuppressed: showSuppressed)
         let triggerIDs = Array(Set(problems.map(\.objectid)))
         let triggerHosts = try await zabbixAPIClient.triggerHosts(serverBaseURL: serverBaseURL, authToken: authToken, triggerIDs: triggerIDs)
         let hostIDByTriggerID = Dictionary(uniqueKeysWithValues: triggerHosts.compactMap { entry in
