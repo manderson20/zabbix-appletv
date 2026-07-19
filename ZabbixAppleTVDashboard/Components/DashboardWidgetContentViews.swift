@@ -391,27 +391,28 @@ struct LineChartWidgetContentView: View {
 private struct ChartLegendView: View {
     let series: [ChartSeries]
 
-    private let columns = [GridItem(.adaptive(minimum: 220, maximum: 320), spacing: 12, alignment: .leading)]
+    private let columns = [GridItem(.adaptive(minimum: 240, maximum: 360), spacing: 12, alignment: .leading)]
 
     var body: some View {
-        LazyVGrid(columns: columns, alignment: .leading, spacing: 4) {
+        LazyVGrid(columns: columns, alignment: .leading, spacing: 6) {
             ForEach(series) { line in
-                HStack(spacing: 5) {
+                HStack(alignment: .top, spacing: 5) {
                     Circle()
                         .fill(Color(hex: line.colorHex) ?? DashboardTheme.accent)
                         .frame(width: 8, height: 8)
+                        // Nudge the swatch down onto the first line's center when the label wraps.
+                        .padding(.top, 3)
 
-                    // Zabbix interface item names put the part that actually distinguishes two
-                    // series of the same graph — "Bits sent" vs "Bits received" — at the very end
-                    // (e.g. "BSD-WAN-CV: Interface Port 1: Bits received"). Tail truncation cut
-                    // exactly that off, leaving two legend entries that read identically and no
-                    // way to tell which color was which. Eliding the middle instead keeps both the
-                    // host/interface prefix and the sent/received suffix visible.
+                    // Show the full series name, wrapping to as many lines as needed rather than
+                    // truncating. Zabbix names differ in different places — the "sent/received"
+                    // suffix on interface graphs, but the "Department/Specialists/Maintenance"
+                    // middle on others — so any truncation (tail *or* middle) can hide exactly the
+                    // part that tells two series apart. Wrapping the full text is the only form that
+                    // always keeps them distinguishable.
                     Text(line.name)
                         .font(.system(size: 11, weight: .regular, design: .rounded))
                         .foregroundStyle(DashboardTheme.secondaryText)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }

@@ -326,6 +326,34 @@ nonisolated struct ZabbixHistoryGetParameters: Encodable, Sendable {
     }
 }
 
+/// Parameters for `trend.get` when backfilling the older part of a graph window from hourly trend
+/// data. Unlike `history.get`, `trend.get` needs no value-type parameter — it resolves the correct
+/// trends table from the item itself.
+nonisolated struct ZabbixTrendGetParameters: Encodable, Sendable {
+    /// Item identifiers to fetch trends for.
+    let itemids: [String]
+
+    /// Unix timestamp; only trends at or after this time are returned.
+    let time_from: Int
+
+    /// Unix timestamp; only trends at or before this time are returned.
+    let time_till: Int
+
+    /// Trend fields to return.
+    let output: [String]
+
+    /// Maximum number of trend records to return.
+    let limit: Int
+
+    init(itemID: String, timeFrom: Int, timeTill: Int, output: [String] = ["clock", "value_avg"], limit: Int = 6000) {
+        self.itemids = [itemID]
+        self.time_from = timeFrom
+        self.time_till = timeTill
+        self.output = output
+        self.limit = limit
+    }
+}
+
 /// Parameters for `host.get` when resolving hosts by their exact technical name, as used by chart
 /// widgets whose datasets reference a host by name rather than ID (e.g. "ds.0.hosts.0").
 nonisolated struct ZabbixHostByNameParameters: Encodable, Sendable {
