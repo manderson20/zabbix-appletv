@@ -71,7 +71,7 @@ cosmetic-leaning last).
 | Pie chart | partial | missing-detail | 4 | Pattern expansion + per-dataset aggregation + legend value labels (units/decimals) honored; still missing merge/center-total and value maps |
 | Host availability | partial | missing-detail | 3 | Ignores maintenance, active-check availability (`active_available`), and layout — `groupids` + multi-interface classification now correct |
 | Host navigator | partial | missing-detail | 2 | `group_by` flattened; `show_lines` default 100 — `hosts.N`/`status`/host-tags now honored |
-| Problem hosts | partial | missing-detail | 2 | Per-severity-column layout + explicit host scoping missing — now receives widget; groups(nested)/tags/severity/suppression/exclude all applied |
+| Problem hosts | partial | missing-detail | 1 | Per-severity count columns now rendered (host counted in its worst-severity column); groups(nested)/tags/severity/suppression/exclude all applied — only explicit `hostids` scoping remains |
 | Top hosts | partial | missing-detail | 2 | Ranking + per-column aggregation + per-column units/decimals honored; still missing tag/maintenance scope and exact-item match |
 | Trigger overview | partial | missing-detail | 3 | `show`(Any→OK cells)/tags/nested-scope honored; still missing `show_suppressed` and Recent-vs-Problems recency |
 | Item history | partial | missing-detail | 2 | Reads `columns.N.itemid`/`show_lines`/value maps/`time_period`; still missing trend backfill + per-column thresholds |
@@ -126,9 +126,9 @@ cosmetic-leaning last).
   (done, 25) fixed. Host nav / Item nav read `show_lines` but default 100; Honeycomb hardcodes
   `prefix(60)` and Data overview `prefix(100)` — these two are **safety caps with no corresponding
   Zabbix field**, left as-is. Problems default 20 vs 25; Top triggers 20 vs 10 — minor.
-- **Grouping/tree structure flattened.** `group_by` (Host/Item navigator), `show_type=GROUPS`
-  (Problems by severity), and per-severity columns (Problem hosts) are still rendered as flat lists.
-  (The Data-overview hosts×items matrix and the `navtree` hierarchy are now rendered.)
+- **Grouping/tree structure flattened.** `group_by` (Host/Item navigator) and `show_type=GROUPS`
+  (Problems by severity) are still rendered as flat lists. (Problem hosts' per-severity columns, the
+  Data-overview hosts×items matrix, and the `navtree` hierarchy are now rendered.)
 - **`time_period.to` and non-relative expressions.** ~~Item history~~ (done). Classic/svg graphs and
   Action log still always end at `now()` and drop `now/d`/absolute windows.
 - ~~**Units + decimal formatting.**~~ **Done** — `units`/`units_show`/`decimal_places` applied in
