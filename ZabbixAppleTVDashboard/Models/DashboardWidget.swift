@@ -179,6 +179,20 @@ nonisolated struct DashboardProblem: Identifiable, Sendable {
     /// Number of times the trigger fired over the widget's window — set only for the Top triggers
     /// frequency ranking, nil for the live Problems list.
     var problemCount: Int? = nil
+
+    /// The problem's event tags to display (already limited to the widget's `show_tags` count);
+    /// empty for widgets that don't show tags.
+    var tags: [ProblemTag] = []
+}
+
+/// One event tag shown on a problem row.
+nonisolated struct ProblemTag: Identifiable, Sendable {
+    var id: String { "\(tag)=\(value)" }
+    let tag: String
+    let value: String
+
+    /// "tag: value", or just the tag when it has no value (matching Zabbix's tag chips).
+    var label: String { value.isEmpty ? tag : "\(tag): \(value)" }
 }
 
 /// One trigger's problem-event frequency over a window, used to rank the Top triggers widget.

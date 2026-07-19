@@ -60,7 +60,7 @@ cosmetic-leaning last).
 | Item navigator | partial | missing-detail | 1 | `group_by` now sections the list (by host); `items.N` + value maps + item-tag filter applied — only the specific group-by attribute (tag vs host) isn't distinguished |
 | Data overview | partial | wrong-data | 1 | Renders the hosts×items matrix (with `style` orientation) + tags + value maps + unit/decimal formatting; only the arbitrary 100-item cap remains |
 | Geomap | full | missing-detail | 0 | Marker severity scoped to the widget's tag + severity filter, and `default_view` initial center/zoom honored |
-| Problems | partial | missing-detail | 1 | `groupids`/tags/suppression/acknowledgement all honored; only `show_lines` default (20 vs 25) remains |
+| Problems | partial | missing-detail | 1 | `groupids`/tags/suppression/acknowledgement and per-problem `show_tags` (event tag chips) honored — verified live; only `show`(recent/history) mode and the `show_lines` default (20 vs 25) remain |
 | Problems by severity | full | missing-detail | 1 | `groupids`/tags/`ext_ack`, the totals tally, and `show_type=GROUPS` (per-group × per-severity problem-count table) all honored; only the `layout` (horizontal/vertical) cosmetic remains |
 | Action log | partial | missing-detail | 1 | Content filters (`actionids`/`mediatypeids`/`userids`/`statuses` → `alert.get`) **verified against a live widget**; the widget has no time period to honor. Only failed-status (2) styling and the last-N-vs-7-day lookback edge remain |
 | System information | partial | missing-detail | 1 | `info_type=1` shows HA nodes and `isRunning` is derived from them (`hanode.get`); standalone still uses the API-success proxy for running |
@@ -148,8 +148,9 @@ cosmetic-leaning last).
   stacked graphs now render as a stacked area chart, the graph legend `legend` toggle is honored,
   and a fixed left Y-axis range `lefty_min`/`lefty_max` is applied — verified live against a
   2.5 Gbps-pinned graph. svg per-dataset stacking and right-axis `axisy` are still follow-ups.)
-- **`only_totals`, `maintenance`, `hide_empty_groups`, `show`/`show_tags`/`show_opdata`** knobs
-  ignored across the problem/availability widgets.
+- **`only_totals`, `maintenance`, `hide_empty_groups`, `show`(recent/history)/`show_opdata`** knobs
+  ignored across the problem/availability widgets. (Problems' `show_tags` — event tag chips — is now
+  honored, verified live.)
 
 ### Tier 3 — Cosmetic / nice-to-have
 

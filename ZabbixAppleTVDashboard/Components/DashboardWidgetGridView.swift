@@ -435,6 +435,21 @@ private struct ProblemRow: View {
                         .foregroundStyle(.black.opacity(0.65))
                         .lineLimit(1)
                 }
+
+                // Event tags (capped by the widget's show_tags), as small chips on the severity band.
+                if !problem.tags.isEmpty {
+                    HStack(spacing: 4) {
+                        ForEach(problem.tags) { tag in
+                            Text(tag.label)
+                                .font(.system(size: 12, weight: .medium, design: .rounded))
+                                .foregroundStyle(.black.opacity(0.72))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(RoundedRectangle(cornerRadius: 4, style: .continuous).fill(.black.opacity(0.12)))
+                                .lineLimit(1)
+                        }
+                    }
+                }
             }
 
             // For Top triggers, the trailing number is how many times the trigger fired over the
