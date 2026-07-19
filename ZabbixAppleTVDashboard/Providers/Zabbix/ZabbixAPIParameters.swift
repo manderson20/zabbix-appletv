@@ -131,6 +131,12 @@ nonisolated struct ZabbixProblemGetParameters: Encodable, Sendable {
     /// alongside a non-empty `tags`.
     let evaltype: Int?
 
+    /// Acknowledgement filter, matching the problem widgets' own acknowledgement option. `false`
+    /// returns only unacknowledged problems, `true` only acknowledged, `nil` omits the filter so
+    /// every problem is returned regardless. Without this the app counted acknowledged problems a
+    /// widget scoped to "unacknowledged only" would hide, inflating its counts.
+    let acknowledged: Bool?
+
     init(
         output: [String] = ["eventid", "name", "severity", "clock", "objectid"],
         severities: [Int]? = nil,
@@ -140,7 +146,8 @@ nonisolated struct ZabbixProblemGetParameters: Encodable, Sendable {
         limit: Int = 5000,
         suppressed: Bool? = false,
         tags: [ZabbixTagFilter]? = nil,
-        evaltype: Int? = nil
+        evaltype: Int? = nil,
+        acknowledged: Bool? = nil
     ) {
         self.output = output
         self.severities = severities
@@ -151,15 +158,16 @@ nonisolated struct ZabbixProblemGetParameters: Encodable, Sendable {
         self.suppressed = suppressed
         self.tags = (tags?.isEmpty == false) ? tags : nil
         self.evaltype = (tags?.isEmpty == false) ? evaltype : nil
+        self.acknowledged = acknowledged
     }
 
     private enum CodingKeys: String, CodingKey {
-        case output, severities, groupids, sortfield, sortorder, limit, suppressed, tags, evaltype
+        case output, severities, groupids, sortfield, sortorder, limit, suppressed, tags, evaltype, acknowledged
     }
 
     // Custom encoding so a `nil` optional is omitted entirely rather than sent as JSON `null`:
-    // omitting `suppressed` is how "return problems regardless of suppression" is expressed, and
-    // omitting `severities`/`groupids`/`tags` cleanly means "no such filter".
+    // omitting `suppressed`/`acknowledged` is how "return problems regardless of that status" is
+    // expressed, and omitting `severities`/`groupids`/`tags` cleanly means "no such filter".
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(output, forKey: .output)
@@ -171,6 +179,7 @@ nonisolated struct ZabbixProblemGetParameters: Encodable, Sendable {
         try container.encodeIfPresent(suppressed, forKey: .suppressed)
         try container.encodeIfPresent(tags, forKey: .tags)
         try container.encodeIfPresent(evaltype, forKey: .evaltype)
+        try container.encodeIfPresent(acknowledged, forKey: .acknowledged)
     }
 }
 
