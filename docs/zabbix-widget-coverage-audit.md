@@ -11,7 +11,7 @@
 
 Coverage is broad and, since the original audit, materially deeper. Every widget renders
 *something*, and the count of widgets whose worst realistic-config behavior is **wrong-data** has
-dropped from 25/26 to **7/26**, with the other 19 down to **missing-detail** (renders correctly
+dropped from 25/26 to **6/26**, with the other 20 down to **missing-detail** (renders correctly
 but ignores a display or layout knob). The improvement came almost entirely from the cross-cutting
 helpers the original audit predicted would each fix a class of widgets:
 
@@ -34,11 +34,10 @@ helpers the original audit predicted would each fix a class of widgets:
   do (and honor their scope/`show_lines`). **Map navigation tree still does not.**
 
 The genuine strengths are unchanged: everything fetches under the session token, so server-side
-permissions hold and nothing leaks. The wrong-data set is down to 7 and is now concentrated in a
+permissions hold and nothing leaks. The wrong-data set is down to 6 and is now concentrated in a
 handful of genuinely-unbuilt features — the navtree hierarchy (Map navigation tree), classic/svg
-graph type & per-dataset aggregation, Map non-host-element status, Action log's fixed window &
-content filters, and the Data-overview / Honeycomb row caps — rather than a systemic scope/filter
-drop. The scope, tag, aggregation, value-map, status-derivation, and time-period themes the original
+graph type & per-dataset aggregation, Action log's fixed window & content filters, and the
+Data-overview / Honeycomb row caps — rather than a systemic scope/filter drop. The scope, tag, aggregation, value-map, status-derivation, and time-period themes the original
 audit opened with are all closed.
 
 ## 2. Coverage matrix
@@ -63,7 +62,7 @@ cosmetic-leaning last).
 | Action log | partial | wrong-data | 4 | Hardcoded 7-day window; content filters (recipients/severities/statuses) ignored — now receives widget + honors `show_lines` |
 | System information | partial | missing-detail | 1 | `info_type=1` shows HA nodes and `isRunning` is derived from them (`hanode.get`); standalone still uses the API-success proxy for running |
 | Clock | partial | missing-detail | 1 | `time_type=host` (via `system.localtime` offset) and `tzone_timezone` now honored; server-time mode still falls back to local |
-| Map | full | wrong-data | 1 | Non-host elements (submap/group/trigger) always colored OK/green |
+| Map | full | missing-detail | 1 | Trigger + host-group elements now colored by their real severity; only submap (map-type) elements — needing recursive child-map rollup — stay OK |
 | Item value | partial | missing-detail | 4 | units/`units_show`/`decimal_places`/`description` overrides ignored — aggregation + `thresholds` alert color now honored |
 | Gauge | partial | missing-detail | 8 | `description`/`units`/`units_show`/`decimal_places` overrides ignored (value + threshold arc correct) |
 | Pie chart | partial | missing-detail | 5 | Pattern datasets expand correctly + per-dataset aggregation honored; still missing merge/center-total, units, value maps |
@@ -87,6 +86,7 @@ cosmetic-leaning last).
 - ~~**Clock — `time_type=host` / `tzone_timezone` ignored.**~~ **Done** — host time is derived from the host's `system.localtime` item (reported-minus-collected offset) and the configured timezone is applied to both faces; server-time mode still falls back to local.
 - ~~**System information — `isRunning` hardcoded true + `info_type` ignored.**~~ **Done** — `info_type=1` lists HA nodes via `hanode.get`, and `isRunning` is inferred from an active node; standalone servers (no HA nodes) keep the API-success proxy.
 - ~~**Web monitoring — `exclude_groupids` + tags dropped.**~~ **Done** — tags filter `httptest.get` server-side and `exclude_groupids` drops scenarios whose host is in an excluded group (client-side), so the widget's full scope is honored.
+- ~~**Map — non-host elements always OK.**~~ **Done** — trigger elements take the worst severity of their referenced triggers and host-group elements the worst across the group's hosts; only submap elements (needing a recursive child-map rollup) stay OK.
 - ~~**Item value — thresholds ignored.**~~ **Done** — reads `thresholds.N` (shared `thresholdColorHex` helper) so a value crossing a band repaints the background with its alert color.
 - ~~**Honeycomb — thresholds/cell coloring absent.**~~ **Done** — each cell is tinted by the threshold band its reading meets (same `thresholdColorHex` helper).
 - ~~**Geomap — marker severity ignores widget `tags`.**~~ **Done** — `maxSeverityByHostID` now takes the widget's tag + severity filter, so a marker's color reflects only the problems the widget shows.
@@ -117,7 +117,6 @@ cosmetic-leaning last).
   (`approximation` min/avg/max trend backfill is now done.)
 - **Graph (classic) — graph type lost + Simple-graph unsupported.** Fetch `graphtype` and render
   stacked/pie; implement `source_type=1`/`itemid`.
-- **Map — non-host elements always OK.** Compute status for submap/host-group/trigger elements.
 
 ### Tier 2 — Missing configured detail (renders, but ignores a knob)
 

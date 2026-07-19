@@ -392,6 +392,31 @@ struct ZabbixAppleTVDashboardTests {
         #expect(triggers.first?.hosts.first?.hostid == "10461")
     }
 
+    @Test func mapElementSeverityByType() throws {
+        func ref(host: String? = nil, trigger: String? = nil, group: String? = nil) -> ZabbixMapElementReference {
+            ZabbixMapElementReference(hostid: host, triggerid: trigger, groupid: group, sysmapid: nil)
+        }
+        let byHost = ["h1": 4]
+        let byTrigger = ["t1": 2, "t2": 5]
+        let byGroup = ["g1": 3]
+
+        func severity(type: Int, _ refs: [ZabbixMapElementReference]) -> Int {
+            DashboardManager.mapElementSeverity(elementType: type, references: refs, severityByHostID: byHost, severityByTriggerID: byTrigger, severityByGroupID: byGroup)
+        }
+
+        // Host element → its host's severity.
+        #expect(severity(type: 0, [ref(host: "h1")]) == 4)
+        // Trigger element → worst of its referenced triggers.
+        #expect(severity(type: 2, [ref(trigger: "t1"), ref(trigger: "t2")]) == 5)
+        // Host-group element → the group's severity.
+        #expect(severity(type: 3, [ref(group: "g1")]) == 3)
+        // Submap (1) and image (4) elements have no computed severity → 0 (OK).
+        #expect(severity(type: 1, [ref()]) == 0)
+        #expect(severity(type: 4, [ref()]) == 0)
+        // An element referencing something with no active problem → 0.
+        #expect(severity(type: 0, [ref(host: "unknown")]) == 0)
+    }
+
     @Test func serverRunningInferredFromHANodeStatuses() throws {
         // An active node (3) means the server is up.
         #expect(DashboardManager.isServerRunning(fromHANodeStatuses: [0, 3]) == true)

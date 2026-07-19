@@ -841,7 +841,23 @@ extension DashboardManager {
         let hostNameByID = Dictionary(uniqueKeysWithValues: hosts.map { ($0.hostid, $0.name) })
         let severityByHostID = try await maxSeverityByHostID(serverBaseURL: serverBaseURL, authToken: authToken)
 
-        let activeTriggerIDs = Set(try await zabbixAPIClient.problems(serverBaseURL: serverBaseURL, authToken: authToken).map(\.objectid))
+        // Full active problem list drives both the link overrides (by trigger ID) and the severity
+        // of trigger-type map elements (worst severity among the triggers the element references).
+        let problems = try await zabbixAPIClient.problems(serverBaseURL: serverBaseURL, authToken: authToken)
+        let activeTriggerIDs = Set(problems.map(\.objectid))
+        var severityByTriggerID: [String: Int] = [:]
+        for problem in problems {
+            severityByTriggerID[problem.objectid] = max(severityByTriggerID[problem.objectid] ?? 0, problem.severity.intValue)
+        }
+
+        // Host-group elements take the worst severity across the group's hosts. Resolve each
+        // referenced group's hosts once (maps rarely carry many group elements).
+        let groupElementGroupIDs = Set(map.selements.filter { $0.elementtype.intValue == 3 }.compactMap { $0.elements.first?.groupid })
+        var severityByGroupID: [String: Int] = [:]
+        for groupID in groupElementGroupIDs {
+            let groupHosts = try await zabbixAPIClient.hosts(serverBaseURL: serverBaseURL, authToken: authToken, groupIDs: [groupID], hostIDs: nil)
+            severityByGroupID[groupID] = groupHosts.map { severityByHostID[$0.hostid] ?? 0 }.max() ?? 0
+        }
 
         // Elements typically reuse a small set of icons (e.g. every switch shares one "Switch"
         // icon), so the unique set is fetched once rather than once per element.
@@ -856,7 +872,13 @@ extension DashboardManager {
         let elements = map.selements.map { selement -> NetworkMapElement in
             let hostID = selement.elementtype.intValue == 0 ? selement.elements.first?.hostid : nil
             let label = hostID.flatMap { hostNameByID[$0] } ?? Self.cleanedMapLabel(selement.label)
-            let severity = hostID.flatMap { severityByHostID[$0] } ?? 0
+            let severity = Self.mapElementSeverity(
+                elementType: selement.elementtype.intValue,
+                references: selement.elements,
+                severityByHostID: severityByHostID,
+                severityByTriggerID: severityByTriggerID,
+                severityByGroupID: severityByGroupID
+            )
             severityByElementID[selement.selementid] = severity
 
             return NetworkMapElement(
@@ -2175,6 +2197,25 @@ extension DashboardManager {
     /// its And/Or default). `field` defaults to "evaltype"; host widgets use "host_tags_evaltype".
     static func tagEvalType(from fields: [ZabbixWidgetField], field: String = "evaltype") -> Int? {
         fieldValue(fields, name: field).flatMap(Int.init)
+    }
+
+    /// The worst active-problem severity for a map element, by its type: hosts (0) use their host's
+    /// severity, triggers (2) the worst of their referenced triggers, host groups (3) the worst
+    /// across the group's hosts. Submap (1) and image (4) elements have no computed severity here
+    /// (submap rollup would require recursively resolving the child map), so they stay at 0/OK.
+    static func mapElementSeverity(
+        elementType: Int,
+        references: [ZabbixMapElementReference],
+        severityByHostID: [String: Int],
+        severityByTriggerID: [String: Int],
+        severityByGroupID: [String: Int]
+    ) -> Int {
+        switch elementType {
+        case 0: return references.compactMap { $0.hostid.flatMap { severityByHostID[$0] } }.max() ?? 0
+        case 2: return references.compactMap { $0.triggerid.flatMap { severityByTriggerID[$0] } }.max() ?? 0
+        case 3: return references.compactMap { $0.groupid.flatMap { severityByGroupID[$0] } }.max() ?? 0
+        default: return 0
+        }
     }
 
     /// Human-readable label for an HA node status (0 = standby, 1 = stopped, 2 = unavailable,

@@ -68,10 +68,20 @@ nonisolated struct ZabbixMapElement: Decodable, Sendable {
     let elements: [ZabbixMapElementReference]
 }
 
-/// A map element's underlying object reference.
+/// A map element's underlying object reference. Which identifier is present depends on the owning
+/// element's `elementtype`.
 nonisolated struct ZabbixMapElementReference: Decodable, Sendable {
     /// Host identifier, present for host-type (`elementtype` 0) elements.
     let hostid: String?
+
+    /// Trigger identifier, present for trigger-type (`elementtype` 2) elements.
+    let triggerid: String?
+
+    /// Host group identifier, present for host-group-type (`elementtype` 3) elements.
+    let groupid: String?
+
+    /// Submap identifier, present for map-type (`elementtype` 1) elements.
+    let sysmapid: String?
 }
 
 /// A single connecting line between two map elements.
