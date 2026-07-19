@@ -334,6 +334,23 @@ struct ZabbixAppleTVDashboardTests {
         #expect(groups[1]["threshold"] == "80")
     }
 
+    @Test func rankTopHostsRowsOrdersByColumnAndLimits() throws {
+        let scored: [(row: String, sortValue: Double?)] = [
+            (row: "web1", sortValue: 40),
+            (row: "web2", sortValue: 95),
+            (row: "web3", sortValue: 12),
+            (row: "web4", sortValue: nil) // no data in the ranking column
+        ]
+
+        // Top-N: highest first, unscored last, limited to 2.
+        let top = DashboardManager.rankTopHostsRows(scored, isBottomN: false, limit: 2)
+        #expect(top == ["web2", "web1"])
+
+        // Bottom-N: lowest first, unscored still last.
+        let bottom = DashboardManager.rankTopHostsRows(scored, isBottomN: true, limit: 4)
+        #expect(bottom == ["web3", "web1", "web2", "web4"])
+    }
+
     @Test func zabbixAPIResponseDecodesHostGroupLookupPluralKey() throws {
         // host.get's selectHostGroups response key is "hostgroups" (verified against a live
         // Zabbix 7.0 server), not "hostGroups" or "groups".
