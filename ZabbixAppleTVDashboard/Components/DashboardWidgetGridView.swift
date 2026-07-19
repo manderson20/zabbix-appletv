@@ -626,8 +626,9 @@ private struct HostAvailabilityWidgetContentView: View {
                         .frame(width: Self.nameColumnWidth, alignment: .leading)
                         .lineLimit(1)
 
+                    // The active-checks row has no interface-based Mixed state — Zabbix shows "-".
                     ForEach(Self.columns, id: \.title) { column in
-                        Text("\(row[keyPath: column.keyPath])")
+                        Text(row.isActiveChecksRow && column.title == "Mixed" ? "-" : "\(row[keyPath: column.keyPath])")
                             .font(.system(size: 22, weight: .bold, design: .rounded))
                             .foregroundStyle(DashboardTheme.primaryText)
                     }

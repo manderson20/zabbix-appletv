@@ -12,6 +12,10 @@ nonisolated struct ZabbixHostAvailability: Decodable, Sendable {
     /// Zabbix host identifier.
     let hostid: String
 
+    /// Availability of the host's active agent checks (7.0+ host field): 0 = unknown / no active
+    /// checks, 1 = available, 2 = unavailable. Optional so older servers still decode.
+    let active_available: ZabbixNumericString?
+
     /// The host's monitoring interfaces.
     let interfaces: [ZabbixHostInterface]
 }

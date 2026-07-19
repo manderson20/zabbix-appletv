@@ -265,7 +265,7 @@ nonisolated struct ZabbixHostAvailabilityParameters: Encodable, Sendable {
     /// Restricts results to enabled hosts.
     let filter: ZabbixEnabledFilter
 
-    init(output: [String] = ["hostid"], selectInterfaces: [String] = ["type", "available"], groupIDs: [String]? = nil) {
+    init(output: [String] = ["hostid", "active_available"], selectInterfaces: [String] = ["type", "available"], groupIDs: [String]? = nil) {
         self.output = output
         self.selectInterfaces = selectInterfaces
         self.groupids = (groupIDs?.isEmpty == false) ? groupIDs : nil
