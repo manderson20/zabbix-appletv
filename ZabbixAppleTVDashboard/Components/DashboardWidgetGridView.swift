@@ -92,7 +92,7 @@ private struct DashboardWidgetCardView: View {
     /// Zabbix's own per-widget background color, when the widget type supports one (currently
     /// just "item value" widgets, via their "bg_color" field).
     private var backgroundColorHex: String? {
-        if case let .itemValue(_, _, _, backgroundColorHex, _, _, _) = widget.kind {
+        if case let .itemValue(_, _, _, _, backgroundColorHex, _, _, _) = widget.kind {
             return backgroundColorHex
         }
         return nil
@@ -120,8 +120,8 @@ private struct DashboardWidgetCardView: View {
         switch widget.kind {
         case let .clock(configuration):
             ClockWidgetContentView(configuration: configuration)
-        case let .itemValue(name, value, units, _, trend, lastUpdated, mappedText):
-            ItemValueWidgetContentView(name: name, value: value, units: units, trend: trend, lastUpdated: lastUpdated, mappedText: mappedText)
+        case let .itemValue(name, value, units, decimalPlaces, _, trend, lastUpdated, mappedText):
+            ItemValueWidgetContentView(name: name, value: value, units: units, decimalPlaces: decimalPlaces, trend: trend, lastUpdated: lastUpdated, mappedText: mappedText)
         case let .problems(problems):
             ProblemsWidgetContentView(problems: problems)
         case let .problemsBySeverity(counts):
@@ -290,22 +290,24 @@ private struct ItemValueWidgetContentView: View {
     let name: String
     let value: String
     let units: String
+    let decimalPlaces: Int
     let trend: ItemValueTrend?
     let lastUpdated: Date?
     let mappedText: String?
 
-    /// Matches Zabbix's own item-value widget: always two decimal places (a plain "1" reading is
-    /// shown as "1.00"), not the variable-precision formatting used for graph axis labels. When the
-    /// item has a value map, its label leads with the raw value in parentheses, e.g. "Up (1.00)".
+    /// Matches Zabbix's own item-value widget: the widget's `decimal_places` precision (a plain "1"
+    /// reading is shown as "1.00" at the default 2), not the variable-precision formatting used for
+    /// graph axis labels. When the item has a value map, its label leads with the raw value in
+    /// parentheses, e.g. "Up (1.00)".
     private var displayValue: String {
         if let mappedText {
-            let rawText = Double(value).map { ZabbixValueFormatting.formatItemValue($0, units: "") } ?? value
+            let rawText = Double(value).map { ZabbixValueFormatting.formatItemValue($0, units: "", decimalPlaces: decimalPlaces) } ?? value
             return "\(mappedText) (\(rawText))"
         }
         guard let numericValue = Double(value) else {
             return units.isEmpty ? value : "\(value) \(units)"
         }
-        return ZabbixValueFormatting.formatItemValue(numericValue, units: units)
+        return ZabbixValueFormatting.formatItemValue(numericValue, units: units, decimalPlaces: decimalPlaces)
     }
 
     /// Only the trend arrow is colored — verified against a live Zabbix screenshot that the
