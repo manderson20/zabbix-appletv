@@ -282,14 +282,11 @@ nonisolated struct HoneycombCell: Identifiable, Sendable {
     /// Stable cell identifier.
     let id: String
 
-    /// Primary label, typically the host name.
+    /// Expanded `primary_label` template — the larger line (default "{HOST.NAME}").
     let primaryLabel: String
 
-    /// Secondary label, typically the item name or value.
+    /// Expanded `secondary_label` template — the smaller line (default "{ITEM.LASTVALUE}").
     let secondaryLabel: String
-
-    /// Current value.
-    let value: String
 
     /// Threshold-driven cell color (hex, no leading '#'), or nil when the reading meets no
     /// configured threshold — the cell then uses the default card background.

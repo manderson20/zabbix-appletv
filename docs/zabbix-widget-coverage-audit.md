@@ -56,7 +56,7 @@ cosmetic-leaning last).
 | Top triggers | partial | missing-detail | 1 | Now ranks by problem-event frequency over `time_period` with a count column; only acknowledgement filtering remains |
 | Graph (svggraph) | partial | missing-detail | 1 | Per-dataset `aggregate_function`/`aggregate_interval`, `timeshift`, and `approximation` all honored; only left/right `axisy` assignment remains |
 | Graph (classic) | partial | missing-detail | 1 | Pie/exploded-pie graphs render as a pie and Simple-graph (`itemid`) mode is supported; stacked graphs draw as overlaid lines (data correct, visual stacking pending) |
-| Honeycomb | partial | wrong-data | 2 | Hardcoded 60-cell cap; label-macro templates dropped — `items.N` + value maps + item-tag filter + threshold coloring + value units/decimals now applied |
+| Honeycomb | partial | wrong-data | 1 | `primary_label`/`secondary_label` macro templates, `items.N`, value maps, item-tag filter, threshold coloring, and unit/decimal formatting all applied; only the hardcoded 60-cell cap remains |
 | Item navigator | partial | missing-detail | 2 | `group_by` flattened; `show_lines` default 100 — `items.N` + value maps + item-tag filter now applied |
 | Data overview | partial | wrong-data | 3 | Arbitrary 100-item cap; hosts×items matrix flattened — `tags` + value maps now applied |
 | Geomap | partial | missing-detail | 1 | Marker severity scoped to the widget's tag + severity filter; only `default_view` initial center/zoom (cosmetic) remains |
@@ -135,10 +135,10 @@ cosmetic-leaning last).
   Item value and Gauge, and value units/precision in Honeycomb cells, Top hosts columns (per-column
   `decimal_places`), and Pie chart legend labels, all via the shared `formatItemValue` /
   `formattedItemValue` helpers.
-- **Label/description templates.** ~~Item value / Gauge `description`~~ **done** — expanded via the
-  shared `expandMacros`/`expandLabel` helper ({ITEM.NAME}/{ITEM.LASTVALUE}/{ITEM.VALUE}/{ITEM.UNITS}/
-  {HOST.NAME}). Honeycomb's `primary_label`/`secondary_label` still show literal names — the same
-  helper applies, but its cell/view needs the two label lines wired up.
+- ~~**Label/description templates.**~~ **Done** — Item value / Gauge `description` and Honeycomb
+  `primary_label`/`secondary_label` are expanded via the shared `expandMacros` / `itemLabelMacros`
+  helpers ({ITEM.NAME}/{ITEM.LASTVALUE}/{ITEM.VALUE}/{ITEM.UNITS}/{HOST.NAME}, plus single-item
+  numbered variants).
 - **Pie chart merge + center total.** `merge`/`merge_percent` and the `total_show`/center-value
   block unimplemented.
 - **Display styles.** `display` (bar/indicators), per-column `thresholds`/`base_color` (Top hosts,

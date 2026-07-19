@@ -498,17 +498,28 @@ extension DashboardManager {
         )
 
         let decimalPlaces = Self.fieldValue(widget.fields, name: "decimal_places").flatMap(Int.init) ?? 2
+        // Each cell shows two label templates; Zabbix's defaults are the host name (primary) and the
+        // last value (secondary) when the widget doesn't configure them.
+        let primaryTemplate = Self.fieldValue(widget.fields, name: "primary_label").flatMap { $0.isEmpty ? nil : $0 } ?? "{HOST.NAME}"
+        let secondaryTemplate = Self.fieldValue(widget.fields, name: "secondary_label").flatMap { $0.isEmpty ? nil : $0 } ?? "{ITEM.LASTVALUE}"
 
         return .honeycomb(
             items.prefix(60).map { item in
                 // Each cell is tinted by the threshold band its reading meets — the same value-driven
                 // coloring Zabbix's honeycomb applies — using the shared thresholds.N resolver.
                 let cellColor = Self.thresholdColorHex(for: item.lastvalue.flatMap(Double.init), fields: widget.fields)
+                let macros = Self.itemLabelMacros(
+                    itemName: item.name,
+                    hostName: item.hosts.first?.name ?? "",
+                    lastValue: item.lastvalue,
+                    units: item.units ?? "",
+                    valueMap: item.valuemap?.valueMap,
+                    decimalPlaces: decimalPlaces
+                )
                 return HoneycombCell(
                     id: item.itemid,
-                    primaryLabel: item.hosts.first?.name ?? "",
-                    secondaryLabel: item.name,
-                    value: Self.formattedItemValue(rawValue: item.lastvalue, units: item.units ?? "", valueMap: item.valuemap?.valueMap, decimalPlaces: decimalPlaces),
+                    primaryLabel: Self.expandMacros(primaryTemplate, macros),
+                    secondaryLabel: Self.expandMacros(secondaryTemplate, macros),
                     backgroundColorHex: cellColor
                 )
             }
@@ -2322,21 +2333,33 @@ extension DashboardManager {
         return result
     }
 
+    /// The common item label macros — `{ITEM.NAME}` / `{ITEM.LASTVALUE}` / `{ITEM.VALUE}` /
+    /// `{ITEM.UNITS}` / `{HOST.NAME}` — for a single item's label templates. `{ITEM.LASTVALUE}` and
+    /// `{ITEM.VALUE}` are value-mapped and unit/precision-formatted like the widget's own value.
+    static func itemLabelMacros(itemName: String, hostName: String, lastValue: String?, units: String, valueMap: ZabbixValueMap?, decimalPlaces: Int) -> [String: String] {
+        let formatted = formattedItemValue(rawValue: lastValue, units: units, valueMap: valueMap, decimalPlaces: decimalPlaces)
+        return [
+            "ITEM.NAME": itemName,
+            "ITEM.LASTVALUE": formatted,
+            "ITEM.VALUE": formatted,
+            "ITEM.UNITS": units,
+            "HOST.NAME": hostName
+        ]
+    }
+
     /// Resolves a single-item widget's label template (item value / gauge `description`) against its
-    /// item, supporting the common `{ITEM.NAME}` / `{ITEM.LASTVALUE}` / `{ITEM.VALUE}` /
-    /// `{ITEM.UNITS}` / `{HOST.NAME}` macros. Falls back to the item's name when no template is set —
-    /// Zabbix's own default is "{ITEM.NAME}", so this reproduces the prior behavior.
+    /// item. Falls back to the item's name when no template is set — Zabbix's own default is
+    /// "{ITEM.NAME}", so this reproduces the prior behavior.
     static func expandLabel(template: String?, item: ZabbixItemSummary, decimalPlaces: Int) -> String {
         guard let template, !template.isEmpty else { return item.name }
-        let itemUnits = item.units ?? ""
-        let lastValue = formattedItemValue(rawValue: item.lastvalue, units: itemUnits, valueMap: item.valuemap?.valueMap, decimalPlaces: decimalPlaces)
-        return expandMacros(template, [
-            "ITEM.NAME": item.name,
-            "ITEM.LASTVALUE": lastValue,
-            "ITEM.VALUE": lastValue,
-            "ITEM.UNITS": itemUnits,
-            "HOST.NAME": item.hosts?.first?.name ?? ""
-        ])
+        return expandMacros(template, itemLabelMacros(
+            itemName: item.name,
+            hostName: item.hosts?.first?.name ?? "",
+            lastValue: item.lastvalue,
+            units: item.units ?? "",
+            valueMap: item.valuemap?.valueMap,
+            decimalPlaces: decimalPlaces
+        ))
     }
 
     /// Like `mappedItemValue`, but an unmapped *numeric* reading is formatted with its units and the

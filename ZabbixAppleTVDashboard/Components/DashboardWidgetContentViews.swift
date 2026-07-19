@@ -634,13 +634,13 @@ struct HoneycombWidgetContentView: View {
             LazyVGrid(columns: columns, spacing: 6) {
                 ForEach(cells) { cell in
                     VStack(spacing: 2) {
-                        Text(cell.value)
+                        Text(cell.primaryLabel)
                             .font(.system(size: 18, weight: .bold, design: .rounded))
                             .foregroundStyle(DashboardTheme.primaryText)
                             .lineLimit(1)
                             .minimumScaleFactor(0.6)
 
-                        Text(cell.primaryLabel)
+                        Text(cell.secondaryLabel)
                             .font(.system(size: 12, weight: .regular, design: .rounded))
                             .foregroundStyle(DashboardTheme.secondaryText)
                             .lineLimit(1)
