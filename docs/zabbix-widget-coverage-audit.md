@@ -59,7 +59,7 @@ cosmetic-leaning last).
 | Geomap | partial | missing-detail | 1 | Marker severity scoped to the widget's tag + severity filter; only `default_view` initial center/zoom (cosmetic) remains |
 | Problems | partial | missing-detail | 1 | `groupids`/tags/suppression/acknowledgement all honored; only `show_lines` default (20 vs 25) remains |
 | Problems by severity | partial | missing-detail | 1 | `groupids`/tags/`ext_ack` acknowledgement now honored; only `show_type=GROUPS` (collapsed to a flat tally) remains |
-| Action log | partial | wrong-data | 4 | Hardcoded 7-day window; content filters (recipients/severities/statuses) ignored — now receives widget + honors `show_lines` |
+| Action log | partial | wrong-data | 2 | Content-filter support (actions/media types/recipients/statuses → `alert.get`) added but the widget field names are **unverified** (safe-degrading); the fixed 7-day window remains |
 | System information | partial | missing-detail | 1 | `info_type=1` shows HA nodes and `isRunning` is derived from them (`hanode.get`); standalone still uses the API-success proxy for running |
 | Clock | partial | missing-detail | 1 | `time_type=host` (via `system.localtime` offset) and `tzone_timezone` now honored; server-time mode still falls back to local |
 | Map | full | missing-detail | 1 | Trigger + host-group elements now colored by their real severity; only submap (map-type) elements — needing recursive child-map rollup — stay OK |
@@ -101,7 +101,7 @@ cosmetic-leaning last).
 - ~~**Trigger overview — only PROBLEM state fetched.**~~ **Done** — `show: Any` fetches all triggers and renders OK cells green; tags + nested scope applied.
 - ~~**Discovery — no `status=active` filter.**~~ **Done** — filters to `status: 0`, sorted by name.
 - ~~**Problem hosts — resolver doesn't receive the widget.**~~ **Done** — now accepts `ZabbixWidget`; severity/groups(nested)/tags/suppression/exclude all applied.
-- ~~**Action log — resolver doesn't receive the widget.**~~ **Partly done** — now accepts `ZabbixWidget` and honors `show_lines`; the 7-day window and content filters remain.
+- ~~**Action log — resolver doesn't receive the widget.**~~ **Partly done** — now accepts `ZabbixWidget`, honors `show_lines`, and forwards content filters (actions / media types / recipients / statuses) to `alert.get`. **Caveat:** the widget field names for those filters are unverified (no live example / repo evidence), so they safe-degrade to no-filter if wrong; the fixed 7-day window also remains. Needs on-device confirmation against a filtered Action log widget.
 - ~~**Host availability — multi-interface classification bug.**~~ **Done** — available/unavailable/mixed/unknown categorization matches Zabbix; `groupids` scoping applied.
 - ~~**Host navigator / Item navigator / Honeycomb — indexed-field reads.**~~ **Done** — read `hosts.N` / `items.N`; Host navigator honors `status` (Any/Enabled/Disabled).
 - ~~**Value maps dropped on the "search" fetch path.**~~ **Done** — `ZabbixItemSearchParameters` requests `selectValueMap`; Data overview / Honeycomb / Item navigator / Item history apply `mappedText`.

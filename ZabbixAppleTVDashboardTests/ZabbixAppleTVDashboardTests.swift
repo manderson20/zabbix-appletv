@@ -686,6 +686,39 @@ struct ZabbixAppleTVDashboardTests {
         #expect(emptyTags["evaltype"] == nil)
     }
 
+    @Test func alertParamsForwardContentFiltersWhenPresent() throws {
+        func encoded(_ params: ZabbixAlertGetParameters) throws -> [String: Any] {
+            let data = try JSONEncoder().encode(params)
+            return try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        }
+
+        // No filters → only the base query (no filter/actionids/etc. keys).
+        let base = try encoded(ZabbixAlertGetParameters(sinceUnixTime: 100))
+        #expect(base["actionids"] == nil)
+        #expect(base["userids"] == nil)
+        #expect(base["mediatypeids"] == nil)
+        #expect(base["filter"] == nil)
+
+        // Configured filters are forwarded; statuses go under filter:{status:[...]}.
+        let filtered = try encoded(ZabbixAlertGetParameters(
+            sinceUnixTime: 100,
+            actionIDs: ["4"],
+            mediatypeIDs: ["1", "2"],
+            userIDs: ["7"],
+            statuses: [0, 2]
+        ))
+        #expect(filtered["actionids"] as? [String] == ["4"])
+        #expect((filtered["mediatypeids"] as? [String])?.count == 2)
+        #expect(filtered["userids"] as? [String] == ["7"])
+        let filter = try #require(filtered["filter"] as? [String: Any])
+        #expect((filter["status"] as? [Int]) == [0, 2])
+
+        // Empty arrays are treated as no filter.
+        let empties = try encoded(ZabbixAlertGetParameters(sinceUnixTime: 100, actionIDs: [], statuses: []))
+        #expect(empties["actionids"] == nil)
+        #expect(empties["filter"] == nil)
+    }
+
     @Test func discoveryRuleParamsFilterToActiveRules() throws {
         func encoded(_ params: ZabbixDiscoveryRuleGetParameters) throws -> [String: Any] {
             let data = try JSONEncoder().encode(params)
