@@ -1495,17 +1495,17 @@ extension DashboardManager {
             evalType: Self.tagEvalType(from: widget.fields)
         )
 
-        return .dataOverview(
-            items.prefix(100).map { item in
-                DataOverviewEntry(
-                    id: item.itemid,
-                    hostName: item.hosts.first?.name ?? "",
-                    itemName: item.name,
-                    value: Self.mappedItemValue(rawValue: item.lastvalue, valueMap: item.valuemap?.valueMap),
-                    units: item.units ?? ""
-                )
-            }
-        )
+        let decimalPlaces = Self.fieldValue(widget.fields, name: "decimal_places").flatMap(Int.init) ?? 2
+        // "style": 0 = hosts as rows / items as columns (default), 1 = transposed.
+        let transpose = Self.fieldValue(widget.fields, name: "style").flatMap(Int.init) == 1
+
+        let entries = items.prefix(100).map { item in
+            (host: item.hosts.first?.name ?? "",
+             item: item.name,
+             value: Self.formattedItemValue(rawValue: item.lastvalue, units: item.units ?? "", valueMap: item.valuemap?.valueMap, decimalPlaces: decimalPlaces))
+        }
+
+        return .dataOverview(Self.buildDataOverviewMatrix(Array(entries), transpose: transpose))
     }
 
     // MARK: - SVG graph
@@ -2380,6 +2380,31 @@ extension DashboardManager {
             result = result.replacingOccurrences(of: "{\(key)}", with: value)
         }
         return result
+    }
+
+    /// Assembles flat (host, item, value) entries into a Data-overview matrix: one row per host,
+    /// one column per distinct item name, each in first-seen order, with the value at the crossing
+    /// (empty when a host has no such item). `transpose` swaps rows/columns (items as rows) to honor
+    /// the widget's orientation.
+    static func buildDataOverviewMatrix(_ entries: [(host: String, item: String, value: String)], transpose: Bool) -> DataOverviewMatrix {
+        var rowOrder: [String] = []
+        var columnOrder: [String] = []
+        var rowSeen = Set<String>()
+        var columnSeen = Set<String>()
+        var valueByRowColumn: [String: [String: String]] = [:]
+
+        for entry in entries {
+            let rowKey = transpose ? entry.item : entry.host
+            let columnKey = transpose ? entry.host : entry.item
+            if rowSeen.insert(rowKey).inserted { rowOrder.append(rowKey) }
+            if columnSeen.insert(columnKey).inserted { columnOrder.append(columnKey) }
+            valueByRowColumn[rowKey, default: [:]][columnKey] = entry.value
+        }
+
+        let rows = rowOrder.map { rowKey in
+            DataOverviewMatrixRow(id: rowKey, header: rowKey, cells: columnOrder.map { valueByRowColumn[rowKey]?[$0] ?? "" })
+        }
+        return DataOverviewMatrix(columnHeaders: columnOrder, rows: rows)
     }
 
     /// The common item label macros — `{ITEM.NAME}` / `{ITEM.LASTVALUE}` / `{ITEM.VALUE}` /

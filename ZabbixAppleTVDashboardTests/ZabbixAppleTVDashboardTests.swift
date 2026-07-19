@@ -690,6 +690,28 @@ struct ZabbixAppleTVDashboardTests {
         #expect(items.first?.hostid == "10461")
     }
 
+    @Test func buildDataOverviewMatrixGroupsHostsAndItems() throws {
+        // host1 has CPU+Mem; host2 has only CPU → host2's Mem cell is blank.
+        let entries = [
+            (host: "host1", item: "CPU", value: "10"),
+            (host: "host1", item: "Mem", value: "20"),
+            (host: "host2", item: "CPU", value: "30")
+        ]
+
+        let matrix = DashboardManager.buildDataOverviewMatrix(entries, transpose: false)
+        // Rows = hosts, columns = items, in first-seen order.
+        #expect(matrix.columnHeaders == ["CPU", "Mem"])
+        #expect(matrix.rows.map(\.header) == ["host1", "host2"])
+        #expect(matrix.rows[0].cells == ["10", "20"])
+        #expect(matrix.rows[1].cells == ["30", ""]) // host2 has no Mem
+
+        // Transposed: rows = items, columns = hosts.
+        let transposed = DashboardManager.buildDataOverviewMatrix(entries, transpose: true)
+        #expect(transposed.columnHeaders == ["host1", "host2"])
+        #expect(transposed.rows.map(\.header) == ["CPU", "Mem"])
+        #expect(transposed.rows[1].cells == ["20", ""]) // Mem only on host1
+    }
+
     @Test func expandMacrosResolvesKnownTokensAndKeepsUnknown() throws {
         let macros = ["HOST.NAME": "web-01", "ITEM.NAME": "CPU load", "ITEM.LASTVALUE": "0.42"]
 

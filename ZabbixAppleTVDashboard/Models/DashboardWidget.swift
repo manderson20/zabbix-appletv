@@ -139,7 +139,7 @@ nonisolated enum DashboardWidgetKind: Sendable {
     case discoveryStatus([DiscoveryRuleStatus])
     case webMonitoring([WebScenarioSummary])
     case itemHistory([ItemHistorySeries])
-    case dataOverview([DataOverviewEntry])
+    case dataOverview(DataOverviewMatrix)
     case lineChart(series: [ChartSeries], window: ChartTimeWindow)
     case pieChart([ChartSlice])
     case geomap([GeoMapMarker])
@@ -438,21 +438,26 @@ nonisolated struct ItemHistoryPoint: Identifiable, Sendable {
 }
 
 /// A single host/item value pair, shown in a data overview widget.
-nonisolated struct DataOverviewEntry: Identifiable, Sendable {
-    /// Stable entry identifier.
+/// A hosts×items grid for the Data overview widget: one row per host (or item, when the widget's
+/// orientation is transposed), one column per item (or host), each cell the item's value for that
+/// host — matching Zabbix's own matrix layout rather than a flat list.
+nonisolated struct DataOverviewMatrix: Sendable {
+    /// Column headers (item names by default; host names when transposed).
+    let columnHeaders: [String]
+
+    /// One row per host (or item when transposed).
+    let rows: [DataOverviewMatrixRow]
+}
+
+nonisolated struct DataOverviewMatrixRow: Identifiable, Sendable {
+    /// Stable row identifier (the row header).
     let id: String
 
-    /// Host display name.
-    let hostName: String
+    /// Leading row header — the host name (or item name when transposed).
+    let header: String
 
-    /// Item display name.
-    let itemName: String
-
-    /// Current value.
-    let value: String
-
-    /// Unit label, e.g. "%" or "°F".
-    let units: String
+    /// Formatted cell values aligned with `columnHeaders`; empty for a host/item with no value.
+    let cells: [String]
 }
 
 /// A single time series shown as a line on a chart widget.
