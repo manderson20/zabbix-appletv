@@ -392,6 +392,23 @@ struct ZabbixAppleTVDashboardTests {
         #expect(triggers.first?.hosts.first?.hostid == "10461")
     }
 
+    @Test func discoveryRuleParamsFilterToActiveRules() throws {
+        func encoded(_ params: ZabbixDiscoveryRuleGetParameters) throws -> [String: Any] {
+            let data = try JSONEncoder().encode(params)
+            return try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        }
+
+        // Default: only enabled discovery rules, sorted by name — matching Zabbix's widget.
+        let active = try encoded(ZabbixDiscoveryRuleGetParameters())
+        let filter = try #require(active["filter"] as? [String: Any])
+        #expect(filter["status"] as? Int == 0)
+        #expect(active["sortfield"] as? [String] == ["name"])
+
+        // Opt out to include disabled rules too.
+        let all = try encoded(ZabbixDiscoveryRuleGetParameters(activeOnly: false))
+        #expect(all["filter"] == nil)
+    }
+
     @Test func triggerOverviewParamsIncludeProblemFilterOnlyWhenRequested() throws {
         func encoded(_ params: ZabbixActiveTriggerGetParameters) throws -> [String: Any] {
             let data = try JSONEncoder().encode(params)
