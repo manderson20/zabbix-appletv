@@ -200,33 +200,43 @@ struct NavigationTreeWidgetContentView: View {
 }
 
 struct HostListWidgetContentView: View {
-    let hosts: [HostListEntry]
+    let sections: [HostListSection]
 
     var body: some View {
-        if hosts.isEmpty {
+        if sections.allSatisfy({ $0.hosts.isEmpty }) {
             Text("No hosts match this widget's filters")
                 .font(.system(size: 16, weight: .regular, design: .rounded))
                 .foregroundStyle(DashboardTheme.secondaryText)
         } else {
             AutoScrollingContent {
                 VStack(alignment: .leading, spacing: 6) {
-                    ForEach(hosts) { host in
-                        HStack(spacing: 8) {
-                            Circle()
-                                .fill(host.maxSeverity == 0 ? Color.green : severityIndicatorColor(for: host.maxSeverity))
-                                .frame(width: 10, height: 10)
+                    ForEach(sections) { section in
+                        // A `group_by` heading, when grouped (empty title = a single flat list).
+                        if !section.title.isEmpty {
+                            Text(section.title)
+                                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                .foregroundStyle(DashboardTheme.secondaryText)
+                                .padding(.top, 2)
+                        }
+                        ForEach(section.hosts) { host in
+                            HStack(spacing: 8) {
+                                Circle()
+                                    .fill(host.maxSeverity == 0 ? Color.green : severityIndicatorColor(for: host.maxSeverity))
+                                    .frame(width: 10, height: 10)
 
-                            Text(host.name)
-                                .font(.system(size: 16, weight: .medium, design: .rounded))
-                                .foregroundStyle(DashboardTheme.primaryText)
-                                .lineLimit(1)
+                                Text(host.name)
+                                    .font(.system(size: 16, weight: .medium, design: .rounded))
+                                    .foregroundStyle(DashboardTheme.primaryText)
+                                    .lineLimit(1)
 
-                            if host.problemCount > 0 {
-                                Spacer()
-                                Text("\(host.problemCount)")
-                                    .font(.system(size: 14, weight: .semibold, design: .rounded))
-                                    .foregroundStyle(DashboardTheme.secondaryText)
+                                if host.problemCount > 0 {
+                                    Spacer()
+                                    Text("\(host.problemCount)")
+                                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                        .foregroundStyle(DashboardTheme.secondaryText)
+                                }
                             }
+                            .padding(.leading, section.title.isEmpty ? 0 : 10)
                         }
                     }
                 }
@@ -236,32 +246,45 @@ struct HostListWidgetContentView: View {
 }
 
 struct ItemListWidgetContentView: View {
-    let items: [ItemListEntry]
+    let sections: [ItemListSection]
 
     var body: some View {
-        if items.isEmpty {
+        if sections.allSatisfy({ $0.items.isEmpty }) {
             Text("No items match this widget's filters")
                 .font(.system(size: 16, weight: .regular, design: .rounded))
                 .foregroundStyle(DashboardTheme.secondaryText)
         } else {
             AutoScrollingContent {
                 VStack(alignment: .leading, spacing: 6) {
-                    ForEach(items) { item in
-                        HStack {
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(item.name)
-                                    .font(.system(size: 15, weight: .medium, design: .rounded))
-                                    .foregroundStyle(DashboardTheme.primaryText)
-                                    .lineLimit(1)
-                                Text(item.hostName)
-                                    .font(.system(size: 12, weight: .regular, design: .rounded))
-                                    .foregroundStyle(DashboardTheme.secondaryText)
-                                    .lineLimit(1)
+                    ForEach(sections) { section in
+                        // When grouped by host, the section title is the host name, so each item's
+                        // own host line is redundant and dropped.
+                        if !section.title.isEmpty {
+                            Text(section.title)
+                                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                .foregroundStyle(DashboardTheme.secondaryText)
+                                .padding(.top, 2)
+                        }
+                        ForEach(section.items) { item in
+                            HStack {
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(item.name)
+                                        .font(.system(size: 15, weight: .medium, design: .rounded))
+                                        .foregroundStyle(DashboardTheme.primaryText)
+                                        .lineLimit(1)
+                                    if section.title.isEmpty {
+                                        Text(item.hostName)
+                                            .font(.system(size: 12, weight: .regular, design: .rounded))
+                                            .foregroundStyle(DashboardTheme.secondaryText)
+                                            .lineLimit(1)
+                                    }
+                                }
+                                Spacer()
+                                Text(item.units.isEmpty ? item.lastValue : "\(item.lastValue) \(item.units)")
+                                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                                    .foregroundStyle(DashboardTheme.accent)
                             }
-                            Spacer()
-                            Text(item.units.isEmpty ? item.lastValue : "\(item.lastValue) \(item.units)")
-                                .font(.system(size: 15, weight: .semibold, design: .rounded))
-                                .foregroundStyle(DashboardTheme.accent)
+                            .padding(.leading, section.title.isEmpty ? 0 : 10)
                         }
                     }
                 }

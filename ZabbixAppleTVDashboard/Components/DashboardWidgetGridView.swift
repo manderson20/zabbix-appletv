@@ -164,10 +164,10 @@ private struct DashboardWidgetCardView: View {
             MapListWidgetContentView(maps: maps)
         case let .navigationTree(nodes):
             NavigationTreeWidgetContentView(nodes: nodes)
-        case let .hostList(hosts):
-            HostListWidgetContentView(hosts: hosts)
-        case let .itemList(items):
-            ItemListWidgetContentView(items: items)
+        case let .hostList(sections):
+            HostListWidgetContentView(sections: sections)
+        case let .itemList(sections):
+            ItemListWidgetContentView(sections: sections)
         case let .slaReport(entries):
             SLAReportWidgetContentView(entries: entries)
         case let .unsupported(rawType):
