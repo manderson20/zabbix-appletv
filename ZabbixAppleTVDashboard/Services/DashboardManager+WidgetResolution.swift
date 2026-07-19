@@ -483,6 +483,8 @@ extension DashboardManager {
             authToken: authToken
         )
 
+        let decimalPlaces = Self.fieldValue(widget.fields, name: "decimal_places").flatMap(Int.init) ?? 2
+
         return .honeycomb(
             items.prefix(60).map { item in
                 // Each cell is tinted by the threshold band its reading meets — the same value-driven
@@ -492,7 +494,7 @@ extension DashboardManager {
                     id: item.itemid,
                     primaryLabel: item.hosts.first?.name ?? "",
                     secondaryLabel: item.name,
-                    value: Self.mappedItemValue(rawValue: item.lastvalue, valueMap: item.valuemap?.valueMap),
+                    value: Self.formattedItemValue(rawValue: item.lastvalue, units: item.units ?? "", valueMap: item.valuemap?.valueMap, decimalPlaces: decimalPlaces),
                     backgroundColorHex: cellColor
                 )
             }
@@ -598,6 +600,10 @@ extension DashboardManager {
         )
         guard let item = items.first else { return ("\u{2014}", nil) }
 
+        // Per-column display precision; units come from the item (or the column's units override).
+        let decimalPlaces = column["decimal_places"].flatMap(Int.init) ?? 2
+        let units = column["units"]?.isEmpty == false ? column["units"]! : (item.units ?? "")
+
         let aggregateFunction = column["aggregate_function"].flatMap(Int.init) ?? 0
         if aggregateFunction > 0 {
             let aggregated = try await aggregatedValue(
@@ -609,10 +615,11 @@ extension DashboardManager {
                 serverBaseURL: serverBaseURL,
                 authToken: authToken
             )
-            return (aggregated.map { String($0) } ?? "\u{2014}", aggregated)
+            let display = aggregated.map { ZabbixValueFormatting.formatItemValue($0, units: units, decimalPlaces: decimalPlaces) } ?? "\u{2014}"
+            return (display, aggregated)
         }
 
-        let display = Self.mappedItemValue(rawValue: item.lastvalue, valueMap: item.valuemap?.valueMap)
+        let display = Self.formattedItemValue(rawValue: item.lastvalue, units: units, valueMap: item.valuemap?.valueMap, decimalPlaces: decimalPlaces)
         return (display, item.lastvalue.flatMap(Double.init))
     }
 
@@ -1649,6 +1656,7 @@ extension DashboardManager {
         }
 
         let (windowStart, windowEnd) = Self.timePeriod(from: widget.fields)
+        let decimalPlaces = Self.fieldValue(widget.fields, name: "decimal_places").flatMap(Int.init) ?? 2
         var slices: [ChartSlice] = []
 
         for (datasetIndex, dataset) in datasets.enumerated() {
@@ -1662,8 +1670,8 @@ extension DashboardManager {
 
             let hosts = try await zabbixAPIClient.hostsByName(serverBaseURL: serverBaseURL, authToken: authToken, names: hostNames)
 
-            // One (id, label, value) per matched item across every host/pattern in the dataset.
-            var matched: [(id: String, label: String, value: Double)] = []
+            // One (id, label, units, value) per matched item across every host/pattern in the dataset.
+            var matched: [(id: String, label: String, units: String, value: Double)] = []
             for host in hosts {
                 for itemPattern in itemPatterns {
                     let items = try await zabbixAPIClient.itemsMatching(
@@ -1688,7 +1696,7 @@ extension DashboardManager {
                             value = item.lastvalue.flatMap(Double.init)
                         }
                         guard let value else { continue }
-                        matched.append((id: item.itemid, label: "\(host.name): \(item.name)", value: value))
+                        matched.append((id: item.itemid, label: "\(host.name): \(item.name)", units: item.units ?? "", value: value))
                     }
                 }
             }
@@ -1697,11 +1705,12 @@ extension DashboardManager {
             if datasetAggregation > 0 {
                 // Collapse every matched item into one combined slice for this dataset.
                 guard let combined = Self.aggregate(matched.map { (clock: 0, value: $0.value) }, function: datasetAggregation) else { continue }
-                slices.append(ChartSlice(id: "\(widget.widgetid).ds\(datasetIndex)", name: matched.first?.label ?? "Data set \(datasetIndex + 1)", colorHex: baseColorHex, value: combined))
+                let units = matched.first?.units ?? ""
+                slices.append(ChartSlice(id: "\(widget.widgetid).ds\(datasetIndex)", name: matched.first?.label ?? "Data set \(datasetIndex + 1)", colorHex: baseColorHex, value: combined, valueLabel: ZabbixValueFormatting.formatItemValue(combined, units: units, decimalPlaces: decimalPlaces)))
             } else {
                 // One slice per matched item, shaded so items sharing a dataset color stay distinct.
                 for (index, entry) in matched.enumerated() {
-                    slices.append(ChartSlice(id: "\(widget.widgetid).\(entry.id)", name: entry.label, colorHex: Self.shadedColorHex(baseColorHex, index: index), value: entry.value))
+                    slices.append(ChartSlice(id: "\(widget.widgetid).\(entry.id)", name: entry.label, colorHex: Self.shadedColorHex(baseColorHex, index: index), value: entry.value, valueLabel: ZabbixValueFormatting.formatItemValue(entry.value, units: entry.units, decimalPlaces: decimalPlaces)))
                 }
             }
         }
@@ -2282,6 +2291,20 @@ extension DashboardManager {
         guard let raw = rawValue else { return "\u{2014}" }
         if let mapped = valueMap?.mappedText(for: raw) {
             return "\(mapped) (\(raw))"
+        }
+        return raw
+    }
+
+    /// Like `mappedItemValue`, but an unmapped *numeric* reading is formatted with its units and the
+    /// widget's decimal precision (via `formatItemValue`) — "50.00 %", "1.5 Mbps" — rather than shown
+    /// as a raw string. Value-mapped ("Up (1)") and non-numeric (text/log) readings are unchanged.
+    static func formattedItemValue(rawValue: String?, units: String, valueMap: ZabbixValueMap?, decimalPlaces: Int) -> String {
+        guard let raw = rawValue else { return "\u{2014}" }
+        if let mapped = valueMap?.mappedText(for: raw) {
+            return "\(mapped) (\(raw))"
+        }
+        if let numeric = Double(raw) {
+            return ZabbixValueFormatting.formatItemValue(numeric, units: units, decimalPlaces: decimalPlaces)
         }
         return raw
     }
