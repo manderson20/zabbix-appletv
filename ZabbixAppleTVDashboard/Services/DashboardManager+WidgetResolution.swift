@@ -217,8 +217,16 @@ extension DashboardManager {
             let resolvedUnits = showUnits ? (unitsOverride?.isEmpty == false ? unitsOverride! : (item.units ?? "")) : ""
             let decimalPlaces = Self.fieldValue(widget.fields, name: "decimal_places").flatMap(Int.init) ?? 2
 
+            // The widget's `description` is a label template with macros (default "{ITEM.NAME}",
+            // which reproduces the previous behavior); expand it into the shown label.
+            let label = Self.expandLabel(
+                template: Self.fieldValue(widget.fields, name: "description"),
+                item: item,
+                decimalPlaces: decimalPlaces
+            )
+
             return .itemValue(
-                name: item.name,
+                name: label,
                 value: displayValue,
                 units: resolvedUnits,
                 decimalPlaces: decimalPlaces,
@@ -415,9 +423,15 @@ extension DashboardManager {
             }
             .sorted { $0.value < $1.value }
 
+        let label = Self.expandLabel(
+            template: Self.fieldValue(widget.fields, name: "description"),
+            item: item,
+            decimalPlaces: decimalPlaces
+        )
+
         return .gauge(
             GaugeReading(
-                name: item.name,
+                name: label,
                 value: value,
                 minValue: minValue,
                 maxValue: maxValue,
@@ -2293,6 +2307,36 @@ extension DashboardManager {
             return "\(mapped) (\(raw))"
         }
         return raw
+    }
+
+    /// Expands a label template's `{MACRO}` tokens (item value / gauge `description`, honeycomb
+    /// labels) from the given values, e.g. "{HOST.NAME}: {ITEM.NAME}". The single-item numbered
+    /// variant `{MACRO1}` resolves to the same value. Unrecognized macros are left untouched rather
+    /// than blanked, so an unsupported token stays visible rather than silently vanishing.
+    static func expandMacros(_ template: String, _ macros: [String: String]) -> String {
+        var result = template
+        for (key, value) in macros {
+            result = result.replacingOccurrences(of: "{\(key)1}", with: value)
+            result = result.replacingOccurrences(of: "{\(key)}", with: value)
+        }
+        return result
+    }
+
+    /// Resolves a single-item widget's label template (item value / gauge `description`) against its
+    /// item, supporting the common `{ITEM.NAME}` / `{ITEM.LASTVALUE}` / `{ITEM.VALUE}` /
+    /// `{ITEM.UNITS}` / `{HOST.NAME}` macros. Falls back to the item's name when no template is set —
+    /// Zabbix's own default is "{ITEM.NAME}", so this reproduces the prior behavior.
+    static func expandLabel(template: String?, item: ZabbixItemSummary, decimalPlaces: Int) -> String {
+        guard let template, !template.isEmpty else { return item.name }
+        let itemUnits = item.units ?? ""
+        let lastValue = formattedItemValue(rawValue: item.lastvalue, units: itemUnits, valueMap: item.valuemap?.valueMap, decimalPlaces: decimalPlaces)
+        return expandMacros(template, [
+            "ITEM.NAME": item.name,
+            "ITEM.LASTVALUE": lastValue,
+            "ITEM.VALUE": lastValue,
+            "ITEM.UNITS": itemUnits,
+            "HOST.NAME": item.hosts?.first?.name ?? ""
+        ])
     }
 
     /// Like `mappedItemValue`, but an unmapped *numeric* reading is formatted with its units and the

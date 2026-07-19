@@ -666,6 +666,19 @@ struct ZabbixAppleTVDashboardTests {
         #expect(items.first?.hostid == "10461")
     }
 
+    @Test func expandMacrosResolvesKnownTokensAndKeepsUnknown() throws {
+        let macros = ["HOST.NAME": "web-01", "ITEM.NAME": "CPU load", "ITEM.LASTVALUE": "0.42"]
+
+        // Base macros resolve.
+        #expect(DashboardManager.expandMacros("{HOST.NAME}: {ITEM.NAME}", macros) == "web-01: CPU load")
+        // Single-item numbered variant resolves to the same value.
+        #expect(DashboardManager.expandMacros("{ITEM.NAME1} = {ITEM.LASTVALUE1}", macros) == "CPU load = 0.42")
+        // Unknown macros are left untouched (not blanked).
+        #expect(DashboardManager.expandMacros("{ITEM.NAME} @ {EVENT.NAME}", macros) == "CPU load @ {EVENT.NAME}")
+        // A plain string with no macros is unchanged.
+        #expect(DashboardManager.expandMacros("Static label", macros) == "Static label")
+    }
+
     @Test func formattedItemValueFormatsNumericButPreservesMappedAndText() throws {
         let map = ZabbixValueMap(mappings: [ZabbixValueMapping(type: nil, value: "1", newvalue: "Up")])
 

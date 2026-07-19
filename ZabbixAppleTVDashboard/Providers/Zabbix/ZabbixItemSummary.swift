@@ -38,6 +38,10 @@ nonisolated struct ZabbixItemSummary: Decodable, Sendable {
     /// raw reading like "1" be shown as its human label, e.g. "Up (1)", matching Zabbix's own
     /// item-value and gauge widgets.
     let valuemap: ZabbixValueMapField?
+
+    /// The item's host (requested via `selectHosts`), so label-macro templates can resolve
+    /// "{HOST.NAME}". Optional because not every `item.get` caller selects it.
+    let hosts: [ZabbixHostReference]?
 }
 
 /// Decodes Zabbix's `selectValueMap` result, which is the value map object when the item has one

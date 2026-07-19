@@ -66,8 +66,8 @@ cosmetic-leaning last).
 | System information | partial | missing-detail | 1 | `info_type=1` shows HA nodes and `isRunning` is derived from them (`hanode.get`); standalone still uses the API-success proxy for running |
 | Clock | partial | missing-detail | 1 | `time_type=host` (via `system.localtime` offset) and `tzone_timezone` now honored; server-time mode still falls back to local |
 | Map | full | missing-detail | 1 | Trigger + host-group elements now colored by their real severity; only submap (map-type) elements — needing recursive child-map rollup — stay OK |
-| Item value | partial | missing-detail | 2 | `units`/`units_show`/`decimal_places` overrides now applied — aggregation, `thresholds`, and formatting done; only the `description` label-macro template remains (plus `min`/`max`/position knobs) |
-| Gauge | partial | missing-detail | 5 | `units`/`units_show`/`decimal_places` now applied (shared `formatItemValue`); only the `description` label-macro template and cosmetic color/size knobs remain |
+| Item value | partial | missing-detail | 1 | aggregation, `thresholds`, unit/decimal formatting, and the `description` label-macro template now done; only position/size cosmetics remain |
+| Gauge | partial | missing-detail | 4 | unit/decimal formatting and the `description` label-macro template now done; only cosmetic color/size knobs remain |
 | Pie chart | partial | missing-detail | 4 | Pattern expansion + per-dataset aggregation + legend value labels (units/decimals) honored; still missing merge/center-total and value maps |
 | Host availability | partial | missing-detail | 3 | Ignores maintenance, active-check availability (`active_available`), and layout — `groupids` + multi-interface classification now correct |
 | Host navigator | partial | missing-detail | 2 | `group_by` flattened; `show_lines` default 100 — `hosts.N`/`status`/host-tags now honored |
@@ -135,8 +135,10 @@ cosmetic-leaning last).
   Item value and Gauge, and value units/precision in Honeycomb cells, Top hosts columns (per-column
   `decimal_places`), and Pie chart legend labels, all via the shared `formatItemValue` /
   `formattedItemValue` helpers.
-- **Label/description templates.** `description`/`primary_label`/`secondary_label` macro templates
-  ignored (Gauge, Item value, Honeycomb).
+- **Label/description templates.** ~~Item value / Gauge `description`~~ **done** — expanded via the
+  shared `expandMacros`/`expandLabel` helper ({ITEM.NAME}/{ITEM.LASTVALUE}/{ITEM.VALUE}/{ITEM.UNITS}/
+  {HOST.NAME}). Honeycomb's `primary_label`/`secondary_label` still show literal names — the same
+  helper applies, but its cell/view needs the two label lines wired up.
 - **Pie chart merge + center total.** `merge`/`merge_percent` and the `total_show`/center-value
   block unimplemented.
 - **Display styles.** `display` (bar/indicators), per-column `thresholds`/`base_color` (Top hosts,
