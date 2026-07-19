@@ -618,12 +618,40 @@ nonisolated struct ZabbixWebScenarioGetParameters: Encodable, Sendable {
         groupIDs: [String]? = nil,
         hostIDs: [String]? = nil,
         output: [String] = ["httptestid", "name"],
-        selectHosts: [String] = ["name"]
+        selectHosts: [String] = ["hostid", "name"]
     ) {
         self.groupids = groupIDs
         self.hostids = hostIDs
         self.output = output
         self.selectHosts = selectHosts
+    }
+}
+
+/// Parameters for `item.get` when fetching the `web.test.fail[...]` internal items that back a web
+/// scenario's Ok/Failed status. `webitems: true` is required — these items are created by the web
+/// scenario itself and `item.get` omits them by default.
+nonisolated struct ZabbixWebFailItemGetParameters: Encodable, Sendable {
+    /// Restricts to these host groups, matching the widget's scope.
+    let groupids: [String]?
+
+    /// Restricts to these hosts, matching the widget's scope.
+    let hostids: [String]?
+
+    /// Item fields to return.
+    let output: [String]
+
+    /// Includes web-scenario-created items, which are excluded from `item.get` by default.
+    let webitems: Bool
+
+    /// Substring search on the item key to fetch only the fail-status items in one round trip.
+    let search: [String: String]
+
+    init(groupIDs: [String]? = nil, hostIDs: [String]? = nil) {
+        self.groupids = groupIDs
+        self.hostids = hostIDs
+        self.output = ["itemid", "key_", "lastvalue", "hostid"]
+        self.webitems = true
+        self.search = ["key_": "web.test.fail["]
     }
 }
 

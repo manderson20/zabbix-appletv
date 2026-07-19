@@ -9,10 +9,9 @@ import Foundation
 
 /// A web monitoring scenario, as returned by `httptest.get`.
 ///
-/// Zabbix's own Web Monitoring widget classifies each scenario as Ok/Failed/Unknown by inspecting
-/// the scenario's associated internal check items and last-failed-step trigger, a derivation this
-/// app does not yet replicate. Scenarios are shown by name and host only, without a fabricated
-/// status, until that's verified against a server that actually has web scenarios configured.
+/// Ok/Failed/Unknown status is derived separately from each scenario's `web.test.fail[<name>]`
+/// internal item (see `ZabbixWebFailItem` and `resolveWebMonitoring`), matching how Zabbix's own
+/// Web monitoring widget classifies scenarios.
 nonisolated struct ZabbixWebScenario: Decodable, Sendable {
     /// Zabbix web scenario identifier.
     let httptestid: String

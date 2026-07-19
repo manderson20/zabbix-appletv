@@ -348,6 +348,23 @@ actor ZabbixAPIClient {
         )
     }
 
+    /// Fetches the `web.test.fail[...]` internal items that give each web scenario its Ok/Failed
+    /// status, scoped to the same groups/hosts as the scenarios themselves.
+    func webTestFailItems(
+        serverBaseURL: URL,
+        authToken: String,
+        groupIDs: [String]? = nil,
+        hostIDs: [String]? = nil
+    ) async throws -> [ZabbixWebFailItem] {
+        try await send(
+            method: "item.get",
+            params: ZabbixWebFailItemGetParameters(groupIDs: groupIDs, hostIDs: hostIDs),
+            serverBaseURL: serverBaseURL,
+            authToken: authToken,
+            resultType: [ZabbixWebFailItem].self
+        )
+    }
+
     /// Lists enabled hosts by group and/or host filter.
     func hosts(
         serverBaseURL: URL,

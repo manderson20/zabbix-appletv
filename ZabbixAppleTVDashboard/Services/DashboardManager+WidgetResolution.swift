@@ -1037,11 +1037,54 @@ extension DashboardManager {
             hostIDs: hostIDs.isEmpty ? nil : hostIDs
         )
 
+        // Each scenario's Ok/Failed state lives in its `web.test.fail[<name>]` item; fetch them all
+        // in one call and key them by (host, scenario name) so each scenario finds its own status.
+        let failItems = try await zabbixAPIClient.webTestFailItems(
+            serverBaseURL: serverBaseURL,
+            authToken: authToken,
+            groupIDs: groupIDs.isEmpty ? nil : groupIDs,
+            hostIDs: hostIDs.isEmpty ? nil : hostIDs
+        )
+        var failValueByHostAndScenario: [String: String?] = [:]
+        for item in failItems {
+            guard let name = Self.scenarioName(fromFailKey: item.key_) else { continue }
+            failValueByHostAndScenario[Self.webStatusKey(hostID: item.hostid, scenarioName: name)] = item.lastvalue
+        }
+
         return .webMonitoring(
             scenarios.map { scenario in
-                WebScenarioSummary(id: scenario.httptestid, name: scenario.name, hostName: scenario.hosts.first?.name)
+                let hostID = scenario.hosts.first?.hostid
+                let failValue = hostID.flatMap { failValueByHostAndScenario[Self.webStatusKey(hostID: $0, scenarioName: scenario.name)] ?? nil }
+                return WebScenarioSummary(
+                    id: scenario.httptestid,
+                    name: scenario.name,
+                    hostName: scenario.hosts.first?.name,
+                    status: Self.webScenarioStatus(fromFailValue: failValue)
+                )
             }
         )
+    }
+
+    /// Composite dictionary key pairing a host with a scenario name, so two hosts running a
+    /// same-named scenario don't collide.
+    static func webStatusKey(hostID: String, scenarioName: String) -> String {
+        "\(hostID)\u{1}\(scenarioName)"
+    }
+
+    /// Extracts the scenario name from a `web.test.fail[<name>]` item key, or nil if the key isn't
+    /// a fail-status item. (Names Zabbix quotes in the key — those containing `]` or `,` — aren't
+    /// unwrapped here; the common unquoted case is handled.)
+    static func scenarioName(fromFailKey key: String) -> String? {
+        let prefix = "web.test.fail["
+        guard key.hasPrefix(prefix), key.hasSuffix("]") else { return nil }
+        return String(key.dropFirst(prefix.count).dropLast())
+    }
+
+    /// Maps a `web.test.fail` reading to a scenario status: 0 = Ok, > 0 = Failed (the failed step),
+    /// and a missing/non-numeric value = Unknown (never collected).
+    static func webScenarioStatus(fromFailValue value: String?) -> WebScenarioStatus {
+        guard let value, let failedStep = Double(value) else { return .unknown }
+        return failedStep > 0 ? .failed : .ok
     }
 
     // MARK: - Item history

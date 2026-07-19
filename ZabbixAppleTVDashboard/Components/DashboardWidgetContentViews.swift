@@ -782,6 +782,22 @@ struct DiscoveryStatusWidgetContentView: View {
 struct WebMonitoringWidgetContentView: View {
     let scenarios: [WebScenarioSummary]
 
+    private func statusColor(for status: WebScenarioStatus) -> Color {
+        switch status {
+        case .ok: .green
+        case .failed: .red
+        case .unknown: .gray
+        }
+    }
+
+    private func statusLabel(for status: WebScenarioStatus) -> String {
+        switch status {
+        case .ok: "Ok"
+        case .failed: "Failed"
+        case .unknown: "Unknown"
+        }
+    }
+
     var body: some View {
         if scenarios.isEmpty {
             Text("No web scenarios configured")
@@ -792,6 +808,10 @@ struct WebMonitoringWidgetContentView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     ForEach(scenarios.prefix(15)) { scenario in
                         HStack(spacing: 8) {
+                            Circle()
+                                .fill(statusColor(for: scenario.status))
+                                .frame(width: 10, height: 10)
+
                             Text(scenario.name)
                                 .font(.system(size: 16, weight: .medium, design: .rounded))
                                 .foregroundStyle(DashboardTheme.primaryText)
@@ -803,6 +823,12 @@ struct WebMonitoringWidgetContentView: View {
                                     .foregroundStyle(DashboardTheme.secondaryText)
                                     .lineLimit(1)
                             }
+
+                            Spacer(minLength: 4)
+
+                            Text(statusLabel(for: scenario.status))
+                                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                .foregroundStyle(statusColor(for: scenario.status))
                         }
                     }
                 }
