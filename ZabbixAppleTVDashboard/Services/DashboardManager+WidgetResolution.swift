@@ -1742,9 +1742,9 @@ extension DashboardManager {
 
     // MARK: - Classic graph
 
-    /// The "graphid" field name is Zabbix's standard convention for referencing a Graph object, not
-    /// yet verified against a live example (no dashboard using the classic "graph" widget type was
-    /// available to check against).
+    /// The graph reference is stored under the indexed field name `graphid.0` (verified against a live
+    /// classic "graph" widget), so it must be read with `firstIndexedValue` — an exact-name lookup for
+    /// "graphid" misses it and the widget falls through to `.unsupported`.
     private func resolveClassicGraph(
         _ widget: ZabbixWidget,
         serverBaseURL: URL,
@@ -1754,7 +1754,7 @@ extension DashboardManager {
 
         // Simple-graph mode: the widget references a single `itemid` directly (no configured graph),
         // plotted as its own line — previously returned .unsupported.
-        if Self.fieldValue(widget.fields, name: "graphid") == nil,
+        if Self.firstIndexedValue(widget.fields, name: "graphid") == nil,
            let itemID = Self.firstIndexedValue(widget.fields, name: "itemid") {
             let items = try await zabbixAPIClient.items(serverBaseURL: serverBaseURL, authToken: authToken, itemIDs: [itemID])
             guard let item = items.first else { return .unsupported(rawType: widget.type) }
@@ -1763,7 +1763,7 @@ extension DashboardManager {
             return .lineChart(series: series, window: ChartTimeWindow(start: windowStart, end: windowEnd), stacked: false, showLegend: Self.fieldValue(widget.fields, name: "legend") != "0", yMin: nil, yMax: nil)
         }
 
-        guard let graphID = Self.fieldValue(widget.fields, name: "graphid") else {
+        guard let graphID = Self.firstIndexedValue(widget.fields, name: "graphid") else {
             return .unsupported(rawType: widget.type)
         }
 
