@@ -82,6 +82,40 @@ nonisolated enum ClockStyle: Sendable {
     case digital
 }
 
+/// How a Clock widget should render: its face style plus which time it shows.
+nonisolated struct ClockConfiguration: Sendable {
+    /// Analog or digital face.
+    let style: ClockStyle
+
+    /// Timezone to display in (`tzone_timezone`), or nil for the device's local zone.
+    let timeZoneIdentifier: String?
+
+    /// For host time (`time_type = host`), seconds to add to the device's clock so it reads as the
+    /// host's own time — derived from the host's `system.localtime` item (its reported time minus
+    /// when that value was collected). Nil for local/server time, where the device clock is used
+    /// directly (optionally shifted by `timeZoneIdentifier`).
+    let hostTimeOffset: TimeInterval?
+
+    /// The resolved `TimeZone`, or nil when the identifier is unset/invalid (fall back to local).
+    var timeZone: TimeZone? {
+        timeZoneIdentifier.flatMap(TimeZone.init(identifier:))
+    }
+
+    /// A calendar in the configured timezone (or the device's local zone), for the analog hands.
+    var calendar: Calendar {
+        var calendar = Calendar.current
+        if let timeZone { calendar.timeZone = timeZone }
+        return calendar
+    }
+
+    /// An hour/minute/second format in the configured timezone, for the digital face.
+    var timeFormat: Date.FormatStyle {
+        var format = Date.FormatStyle.dateTime.hour().minute().second()
+        if let timeZone { format.timeZone = timeZone }
+        return format
+    }
+}
+
 /// Native renderings supported for a dashboard widget.
 ///
 /// The graph prototype widget (tied to low-level discovery, a distinct and deeper feature),
@@ -89,7 +123,7 @@ nonisolated enum ClockStyle: Sendable {
 /// and the URL widget (tvOS has no in-app browser) are the only Zabbix 7.0 widget types without a
 /// native rendering here — see the widget build-out plan for the reasoning behind each.
 nonisolated enum DashboardWidgetKind: Sendable {
-    case clock(ClockStyle)
+    case clock(ClockConfiguration)
     case itemValue(name: String, value: String, units: String, backgroundColorHex: String?, trend: ItemValueTrend?, lastUpdated: Date?, mappedText: String?)
     case problems([DashboardProblem])
     case problemsBySeverity([SeverityCount])
