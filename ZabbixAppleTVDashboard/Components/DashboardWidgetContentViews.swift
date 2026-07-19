@@ -339,6 +339,7 @@ struct SLAReportWidgetContentView: View {
 struct LineChartWidgetContentView: View {
     let series: [ChartSeries]
     let window: ChartTimeWindow
+    var stacked: Bool = false
 
     private var units: String { series.first?.units ?? "" }
 
@@ -408,54 +409,89 @@ struct LineChartWidgetContentView: View {
             .foregroundStyle(by: .value("Series", segment.id))
     }
 
+    /// A stacked-area mark: the single-`y` initializer with `stacking: .standard`, grouped by series
+    /// (not gap-segment), is exactly what makes Swift Charts pile each series on the one before it —
+    /// the composition the non-stacked path deliberately avoids. Gaps interpolate here (a stacked
+    /// area reads a missing sample as no contribution) rather than breaking the line.
+    @ChartContentBuilder
+    private func stackedMark(for point: ChartPoint, in line: ChartSeries) -> some ChartContent {
+        AreaMark(x: .value("Time", point.date), y: .value("Value", point.value ?? 0), stacking: .standard)
+            .foregroundStyle(by: .value("Series", line.id))
+            .opacity(line.fillOpacity)
+    }
+
+    private var segmentedChart: some View {
+        let segments = segments
+        return Chart {
+            ForEach(segments) { segment in
+                ForEach(segment.points) { point in
+                    marks(for: point, in: segment)
+                }
+            }
+        }
+        // Every segment of a series maps to that series' one color, so a broken-up line stays a
+        // single visual color across its gaps.
+        .chartForegroundStyleScale(
+            domain: segments.map(\.id),
+            range: segments.map { Color(hex: $0.colorHex) ?? DashboardTheme.accent }
+        )
+    }
+
+    private var stackedChart: some View {
+        Chart {
+            ForEach(series) { line in
+                ForEach(line.points.filter { $0.value != nil }) { point in
+                    stackedMark(for: point, in: line)
+                }
+            }
+        }
+        .chartForegroundStyleScale(
+            domain: series.map(\.id),
+            range: series.map { Color(hex: $0.colorHex) ?? DashboardTheme.accent }
+        )
+    }
+
+    /// Axis/legend configuration shared by the stacked and non-stacked charts.
+    private func styled(_ chart: some View) -> some View {
+        chart
+            // Swift Charts' built-in legend doesn't wrap long labels within the card's actual width,
+            // so it's hidden in favor of the wrapping `ChartLegendView` below.
+            .chartLegend(.hidden)
+            // Pin the x-axis to the widget's full configured window rather than auto-fitting to the
+            // data, so a period with no data reads as blank space at the right spot.
+            .chartXScale(domain: window.start...window.end)
+            .chartXAxis {
+                AxisMarks(values: .automatic(desiredCount: 3)) {
+                    AxisValueLabel(format: .dateTime.hour().minute())
+                        .font(.system(size: 13, weight: .regular, design: .rounded))
+                }
+            }
+            .chartYAxis {
+                let scale = yAxisScale
+                AxisMarks(position: .leading) { value in
+                    AxisGridLine()
+                    AxisTick()
+                    AxisValueLabel {
+                        if let rawValue = value.as(Double.self) {
+                            Text(ZabbixValueFormatting.format(rawValue, units: units, scale: scale))
+                                .font(.system(size: 13, weight: .regular, design: .rounded))
+                        }
+                    }
+                }
+            }
+    }
+
     var body: some View {
         if series.allSatisfy({ $0.points.isEmpty }) {
             Text("No data for this time period")
                 .font(.system(size: 16, weight: .regular, design: .rounded))
                 .foregroundStyle(DashboardTheme.secondaryText)
         } else {
-            let segments = segments
             VStack(alignment: .leading, spacing: 6) {
-                Chart {
-                    ForEach(segments) { segment in
-                        ForEach(segment.points) { point in
-                            marks(for: point, in: segment)
-                        }
-                    }
-                }
-                // Every segment of a series maps to that series' one color, so a broken-up line
-                // stays a single visual color across its gaps.
-                .chartForegroundStyleScale(
-                    domain: segments.map(\.id),
-                    range: segments.map { Color(hex: $0.colorHex) ?? DashboardTheme.accent }
-                )
-                // Swift Charts' built-in legend doesn't wrap long labels within the card's actual
-                // width — it can run entries off the edge instead — so it's hidden in favor of
-                // the wrapping `ChartLegendView` below, which we fully control.
-                .chartLegend(.hidden)
-                // Pin the x-axis to the widget's full configured window rather than letting Swift
-                // Charts auto-fit to the data's own extent — so a period Zabbix has no data for
-                // reads as blank space at the correct spot on a full-width axis instead of the
-                // whole graph zooming in on just the range that happens to have points.
-                .chartXScale(domain: window.start...window.end)
-                .chartXAxis {
-                    AxisMarks(values: .automatic(desiredCount: 3)) {
-                        AxisValueLabel(format: .dateTime.hour().minute())
-                            .font(.system(size: 13, weight: .regular, design: .rounded))
-                    }
-                }
-                .chartYAxis {
-                    let scale = yAxisScale
-                    AxisMarks(position: .leading) { value in
-                        AxisGridLine()
-                        AxisTick()
-                        AxisValueLabel {
-                            if let rawValue = value.as(Double.self) {
-                                Text(ZabbixValueFormatting.format(rawValue, units: units, scale: scale))
-                                    .font(.system(size: 13, weight: .regular, design: .rounded))
-                            }
-                        }
-                    }
+                if stacked {
+                    styled(stackedChart)
+                } else {
+                    styled(segmentedChart)
                 }
 
                 if series.count > 1 {

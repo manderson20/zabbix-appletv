@@ -55,7 +55,7 @@ cosmetic-leaning last).
 | Web monitoring | partial | missing-detail | 1 | Status (`web.test.fail`) + full scope (`groupids`/`hostids`/tags/`exclude_groupids`) honored; only the 15-row view cap remains |
 | Top triggers | partial | missing-detail | 1 | Now ranks by problem-event frequency over `time_period` with a count column; only acknowledgement filtering remains |
 | Graph (svggraph) | partial | missing-detail | 1 | Per-dataset `aggregate_function`/`aggregate_interval`, `timeshift`, and `approximation` all honored; only left/right `axisy` assignment remains |
-| Graph (classic) | partial | missing-detail | 1 | Pie/exploded-pie graphs render as a pie and Simple-graph (`itemid`) mode is supported; stacked graphs draw as overlaid lines (data correct, visual stacking pending) |
+| Graph (classic) | full | missing-detail | 1 | Line/stacked/pie/exploded-pie `graphtype` and Simple-graph (`itemid`) mode all rendered; only legend/color cosmetics remain |
 | Honeycomb | partial | wrong-data | 1 | `primary_label`/`secondary_label` macro templates, `items.N`, value maps, item-tag filter, threshold coloring, and unit/decimal formatting all applied; only the hardcoded 60-cell cap remains |
 | Item navigator | partial | missing-detail | 1 | `group_by` now sections the list (by host); `items.N` + value maps + item-tag filter applied — only the specific group-by attribute (tag vs host) isn't distinguished |
 | Data overview | partial | wrong-data | 1 | Renders the hosts×items matrix (with `style` orientation) + tags + value maps + unit/decimal formatting; only the arbitrary 100-item cap remains |
@@ -90,7 +90,7 @@ cosmetic-leaning last).
 - ~~**System information — `isRunning` hardcoded true + `info_type` ignored.**~~ **Done** — `info_type=1` lists HA nodes via `hanode.get`, and `isRunning` is inferred from an active node; standalone servers (no HA nodes) keep the API-success proxy.
 - ~~**Web monitoring — `exclude_groupids` + tags dropped.**~~ **Done** — tags filter `httptest.get` server-side and `exclude_groupids` drops scenarios whose host is in an excluded group (client-side), so the widget's full scope is honored.
 - ~~**Map — non-host elements always OK.**~~ **Done** — trigger elements take the worst severity of their referenced triggers and host-group elements the worst across the group's hosts; only submap elements (needing a recursive child-map rollup) stay OK.
-- ~~**Graph (classic) — graph type lost + Simple-graph unsupported.**~~ **Done** — pie/exploded-pie graphs (`graphtype` 2/3) render as a pie of each item's latest value, and Simple-graph mode (`itemid`, no `graphid`) plots the single item; stacked graphs (type 1) still draw as overlaid lines (correct data, visual stacking pending).
+- ~~**Graph (classic) — graph type lost + Simple-graph unsupported.**~~ **Done** — pie/exploded-pie graphs (`graphtype` 2/3) render as a pie, stacked graphs (type 1) render as a true stacked area chart, and Simple-graph mode (`itemid`, no `graphid`) plots the single item.
 - ~~**Graph (svggraph) — per-dataset aggregation + timeshift.**~~ **Done** — each dataset's `aggregate_function` is applied over `aggregate_interval` buckets, and `timeshift` moves the data window and re-aligns it on the current axis for overlays (reusing the shared `aggregate`/duration helpers).
 - ~~**Map navigation tree — resolver doesn't receive the widget.**~~ **Done** — now accepts `ZabbixWidget` and renders the authored `navtree` hierarchy (parent/order/depth) as an indented, ordered list instead of listing every server map; per-node problem indicators are a follow-up.
 - ~~**Item value — thresholds ignored.**~~ **Done** — reads `thresholds.N` (shared `thresholdColorHex` helper) so a value crossing a band repaints the background with its alert color.
@@ -144,7 +144,8 @@ cosmetic-leaning last).
 - **Pie chart merge + center total.** `merge`/`merge_percent` and the `total_show`/center-value
   block unimplemented.
 - **Display styles.** `display` (bar/indicators), per-column `thresholds`/`base_color` (Top hosts,
-  Item history), svg draw `type`/`stacked`/`fill`/`axisy`, problem overlays and percentile lines.
+  Item history), svg draw `type`/`fill`/`axisy`, problem overlays and percentile lines. (Classic
+  stacked graphs now render as a stacked area chart; svg per-dataset stacking is still a follow-up.)
 - **`only_totals`, `maintenance`, `hide_empty_groups`, `show`/`show_tags`/`show_opdata`** knobs
   ignored across the problem/availability widgets.
 

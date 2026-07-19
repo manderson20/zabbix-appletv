@@ -152,8 +152,8 @@ private struct DashboardWidgetCardView: View {
             ItemHistoryWidgetContentView(series: series)
         case let .dataOverview(matrix):
             DataOverviewWidgetContentView(matrix: matrix)
-        case let .lineChart(series, window):
-            LineChartWidgetContentView(series: series, window: window)
+        case let .lineChart(series, window, stacked):
+            LineChartWidgetContentView(series: series, window: window, stacked: stacked)
         case let .pieChart(slices):
             PieChartWidgetContentView(slices: slices)
         case let .geomap(markers):

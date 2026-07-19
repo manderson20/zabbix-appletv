@@ -1691,7 +1691,7 @@ extension DashboardManager {
         }
 
         let window = ChartTimeWindow(start: windowStart, end: windowEnd)
-        return series.isEmpty ? .unsupported(rawType: widget.type) : .lineChart(series: series, window: window)
+        return series.isEmpty ? .unsupported(rawType: widget.type) : .lineChart(series: series, window: window, stacked: false)
     }
 
     /// Returns all values for keys like "prefix0", "prefix1", ... in a dataset dictionary, in
@@ -1755,7 +1755,7 @@ extension DashboardManager {
             guard let item = items.first else { return .unsupported(rawType: widget.type) }
             let points = try await recentPoints(for: item.itemid, valueType: item.value_type?.intValue ?? 0, windowStart: windowStart, windowEnd: windowEnd, serverBaseURL: serverBaseURL, authToken: authToken)
             let series = [ChartSeries(id: "\(widget.widgetid).\(item.itemid)", name: item.name, colorHex: "3DC9B0", units: item.units ?? "", fillOpacity: 0.5, points: points)]
-            return .lineChart(series: series, window: ChartTimeWindow(start: windowStart, end: windowEnd))
+            return .lineChart(series: series, window: ChartTimeWindow(start: windowStart, end: windowEnd), stacked: false)
         }
 
         guard let graphID = Self.fieldValue(widget.fields, name: "graphid") else {
@@ -1793,7 +1793,8 @@ extension DashboardManager {
         }
 
         let window = ChartTimeWindow(start: windowStart, end: windowEnd)
-        return series.isEmpty ? .unsupported(rawType: widget.type) : .lineChart(series: series, window: window)
+        // Classic graph type 1 is a stacked graph; 0 is a normal overlaid line chart.
+        return series.isEmpty ? .unsupported(rawType: widget.type) : .lineChart(series: series, window: window, stacked: graphType == 1)
     }
 
     // MARK: - Pie chart
