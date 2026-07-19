@@ -248,8 +248,12 @@ nonisolated struct GaugeReading: Sendable {
     /// Gauge scale maximum.
     let maxValue: Double
 
-    /// Unit label, e.g. "%" or "°F".
+    /// Unit label, e.g. "%" or "°F" (the widget's `units` override when set, else the item's own
+    /// units; empty when `units_show` is off).
     let units: String
+
+    /// The widget's `decimal_places` precision for the center value (default 2).
+    let decimalPlaces: Int
 
     /// Threshold values that color the gauge arc, in ascending order.
     let thresholds: [GaugeThreshold]

@@ -398,6 +398,14 @@ extension DashboardManager {
         let minValue = Self.fieldValue(widget.fields, name: "min").flatMap(Double.init) ?? 0
         let maxValue = Self.fieldValue(widget.fields, name: "max").flatMap(Double.init) ?? 100
 
+        // Same unit/precision overrides as the item-value widget: `units` replaces the item's own
+        // units, `units_show` (default on) toggles the suffix, `decimal_places` (default 2) sets the
+        // center value's precision.
+        let showUnits = Self.fieldValue(widget.fields, name: "units_show") != "0"
+        let unitsOverride = Self.fieldValue(widget.fields, name: "units")
+        let resolvedUnits = showUnits ? (unitsOverride?.isEmpty == false ? unitsOverride! : (item.units ?? "")) : ""
+        let decimalPlaces = Self.fieldValue(widget.fields, name: "decimal_places").flatMap(Int.init) ?? 2
+
         let thresholds = Self.indexedFieldGroups(widget.fields, prefix: "thresholds")
             .compactMap { group -> GaugeThreshold? in
                 guard let thresholdValue = group["threshold"].flatMap(Double.init), let color = group["color"] else {
@@ -413,7 +421,8 @@ extension DashboardManager {
                 value: value,
                 minValue: minValue,
                 maxValue: maxValue,
-                units: item.units ?? "",
+                units: resolvedUnits,
+                decimalPlaces: decimalPlaces,
                 thresholds: thresholds,
                 fixedArcColorHex: Self.fieldValue(widget.fields, name: "value_arc_color"),
                 mappedText: item.lastvalue.flatMap { item.valuemap?.valueMap?.mappedText(for: $0) }
