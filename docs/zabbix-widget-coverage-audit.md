@@ -155,7 +155,7 @@ cosmetic-leaning last).
   typography intentionally overrides these.
 - Matrix orientation: `style`/`layout` (Trigger overview, Data overview, Problems by severity, Host
   availability).
-- `show_legend`/`legend_*` (classic + svg graphs, Pie), `show_timeline`, `highlight_row`,
+- `legend_*` row/column layout (graphs), Pie legend, `show_timeline`, `highlight_row`,
   `draw_type` doughnut-vs-pie, `tzone_format` (Clock), SLO trailing-zero trimming. (Geomap's
   `default_view` initial center/zoom is now honored.)
 - Discovery: a no-permission/empty-state distinction.
