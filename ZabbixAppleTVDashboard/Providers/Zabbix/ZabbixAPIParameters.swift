@@ -574,6 +574,56 @@ nonisolated struct ZabbixHostListParameters: Encodable, Sendable {
     }
 }
 
+/// Search filter for `host.get` by visible-name patterns.
+nonisolated struct ZabbixHostNameSearch: Encodable, Sendable {
+    let name: [String]
+}
+
+/// Status filter for `host.get` (0 = enabled/monitored, 1 = disabled).
+nonisolated struct ZabbixHostStatusFilter: Encodable, Sendable {
+    let status: Int
+}
+
+/// Parameters for `host.get` when a widget scopes hosts by name pattern, status, and/or host tags
+/// (host navigator). Unlike `ZabbixHostListParameters`, status is not hardcoded to enabled-only.
+nonisolated struct ZabbixHostScopedParameters: Encodable, Sendable {
+    let groupids: [String]?
+    let output: [String]
+    let search: ZabbixHostNameSearch?
+    let searchWildcardsEnabled: Bool?
+    let searchByAny: Bool?
+    let filter: ZabbixHostStatusFilter?
+    let tags: [ZabbixTagFilter]?
+    let evaltype: Int?
+
+    init(groupIDs: [String]?, namePatterns: [String], status: Int?, tags: [ZabbixTagFilter]?, evalType: Int?, output: [String] = ["hostid", "name"]) {
+        self.groupids = (groupIDs?.isEmpty == false) ? groupIDs : nil
+        self.output = output
+        let cleaned = namePatterns.filter { !$0.isEmpty }
+        self.search = cleaned.isEmpty ? nil : ZabbixHostNameSearch(name: cleaned)
+        self.searchWildcardsEnabled = cleaned.isEmpty ? nil : true
+        self.searchByAny = cleaned.isEmpty ? nil : true
+        // Widget status: -1 = Any (no filter), 0 = Enabled, 1 = Disabled.
+        self.filter = (status == 0 || status == 1) ? ZabbixHostStatusFilter(status: status!) : nil
+        self.tags = (tags?.isEmpty == false) ? tags : nil
+        self.evaltype = (tags?.isEmpty == false) ? evalType : nil
+    }
+
+    private enum CodingKeys: String, CodingKey { case groupids, output, search, searchWildcardsEnabled, searchByAny, filter, tags, evaltype }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(groupids, forKey: .groupids)
+        try container.encode(output, forKey: .output)
+        try container.encodeIfPresent(search, forKey: .search)
+        try container.encodeIfPresent(searchWildcardsEnabled, forKey: .searchWildcardsEnabled)
+        try container.encodeIfPresent(searchByAny, forKey: .searchByAny)
+        try container.encodeIfPresent(filter, forKey: .filter)
+        try container.encodeIfPresent(tags, forKey: .tags)
+        try container.encodeIfPresent(evaltype, forKey: .evaltype)
+    }
+}
+
 /// Parameters for `host.get` when resolving hosts with geographic coordinates for the geomap widget.
 nonisolated struct ZabbixHostInventoryParameters: Encodable, Sendable {
     /// Restricts to these host groups, when specified.

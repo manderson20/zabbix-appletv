@@ -731,17 +731,26 @@ extension DashboardManager {
         serverBaseURL: URL,
         authToken: String
     ) async throws -> DashboardWidgetKind {
+        // Read the widget's real scope: hosts are name patterns (`hosts.N`, not the "hostids" this
+        // used to read), status is Any/Enabled/Disabled (not hardcoded enabled-only), plus host
+        // tags, severities, and a row limit.
         let groupIDs = Self.indexedValues(widget.fields, name: "groupids")
-        let hostIDs = Self.indexedValues(widget.fields, name: "hostids")
+        let namePatterns = Self.indexedValues(widget.fields, name: "hosts")
+        let status = Self.fieldValue(widget.fields, name: "status").flatMap(Int.init)
+        let showLines = Self.fieldValue(widget.fields, name: "show_lines").flatMap(Int.init) ?? 100
+        let severities = Self.indexedValues(widget.fields, name: "severities").compactMap(Int.init)
 
-        let hosts = try await zabbixAPIClient.hosts(
+        let hosts = try await zabbixAPIClient.hostsMatching(
             serverBaseURL: serverBaseURL,
             authToken: authToken,
             groupIDs: groupIDs.isEmpty ? nil : groupIDs,
-            hostIDs: hostIDs.isEmpty ? nil : hostIDs
+            namePatterns: namePatterns,
+            status: status,
+            tags: Self.tagFilters(from: widget.fields, prefix: "host_tags"),
+            evalType: Self.tagEvalType(from: widget.fields, field: "host_tags_evaltype")
         )
 
-        let resolved = try await activeProblemsWithHostID(serverBaseURL: serverBaseURL, authToken: authToken)
+        let resolved = try await activeProblemsWithHostID(serverBaseURL: serverBaseURL, authToken: authToken, severities: severities.isEmpty ? nil : severities)
         var countByHostID: [String: Int] = [:]
         var maxSeverityByHostID: [String: Int] = [:]
         for entry in resolved {
@@ -750,7 +759,7 @@ extension DashboardManager {
         }
 
         return .hostList(
-            hosts.prefix(100).map { host in
+            hosts.prefix(showLines).map { host in
                 HostListEntry(
                     id: host.hostid,
                     name: host.name,
@@ -1643,21 +1652,22 @@ extension DashboardManager {
         return groupsByIndex.keys.sorted().compactMap { groupsByIndex[$0] }
     }
 
-    /// Reads a widget's tag filter (its `tags.N.tag` / `tags.N.operator` / `tags.N.value` fields)
-    /// into API tag filters. Entries with no tag name are dropped; a missing operator defaults to
-    /// 0 (Contains), matching Zabbix. Returns an empty array when the widget has no tag filter, so
-    /// callers can pass it straight through and leave an unfiltered query unchanged.
-    static func tagFilters(from fields: [ZabbixWidgetField]) -> [ZabbixTagFilter] {
-        indexedFieldGroups(fields, prefix: "tags").compactMap { group in
+    /// Reads a widget's tag filter (its `<prefix>.N.tag` / `.operator` / `.value` fields) into API
+    /// tag filters. Entries with no tag name are dropped; a missing operator defaults to 0
+    /// (Contains), matching Zabbix. Returns an empty array when the widget has no tag filter, so
+    /// callers can pass it straight through and leave an unfiltered query unchanged. `prefix`
+    /// defaults to "tags" (problem/item widgets); host-oriented widgets store theirs as "host_tags".
+    static func tagFilters(from fields: [ZabbixWidgetField], prefix: String = "tags") -> [ZabbixTagFilter] {
+        indexedFieldGroups(fields, prefix: prefix).compactMap { group in
             guard let tag = group["tag"], !tag.isEmpty else { return nil }
             return ZabbixTagFilter(tag: tag, value: group["value"] ?? "", operator: group["operator"].flatMap(Int.init) ?? 0)
         }
     }
 
-    /// The widget's tag evaluation type (`evaltype`): 0 = And/Or, 2 = Or. `nil` when unset (the API
-    /// then applies its And/Or default).
-    static func tagEvalType(from fields: [ZabbixWidgetField]) -> Int? {
-        fieldValue(fields, name: "evaltype").flatMap(Int.init)
+    /// The widget's tag evaluation type: 0 = And/Or, 2 = Or. `nil` when unset (the API then applies
+    /// its And/Or default). `field` defaults to "evaltype"; host widgets use "host_tags_evaltype".
+    static func tagEvalType(from fields: [ZabbixWidgetField], field: String = "evaltype") -> Int? {
+        fieldValue(fields, name: field).flatMap(Int.init)
     }
 
     /// Resolves a widget's positive host-group scope (`groupids.N`) into the full set of group IDs
