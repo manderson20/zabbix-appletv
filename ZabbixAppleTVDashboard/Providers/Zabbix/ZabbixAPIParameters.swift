@@ -369,10 +369,21 @@ nonisolated struct ZabbixItemSearchParameters: Encodable, Sendable {
     /// Enables "*" wildcard matching in `search` rather than plain substring matching.
     let searchWildcardsEnabled: Bool?
 
+    /// The widget's item-tag filter (from its `tags.N.*` fields). `item.get` supports the same
+    /// tag/operator/evaltype filtering as `problem.get`, so widgets on this search path (data
+    /// overview, honeycomb, item navigator) can scope to tagged items instead of showing a
+    /// tag-unfiltered superset. Omitted when empty so an unfiltered query is unchanged.
+    let tags: [ZabbixTagFilter]?
+
+    /// Tag evaluation type (`evaltype`): 0 = And/Or, 2 = Or. Only sent alongside a non-empty `tags`.
+    let evaltype: Int?
+
     init(
         groupIDs: [String]? = nil,
         hostIDs: [String]? = nil,
         namePattern: String? = nil,
+        tags: [ZabbixTagFilter]? = nil,
+        evaltype: Int? = nil,
         output: [String] = ["itemid", "name", "lastvalue", "units", "value_type"],
         selectHosts: [String] = ["hostid", "name"],
         selectValueMap: [String] = ["mappings"]
@@ -384,6 +395,8 @@ nonisolated struct ZabbixItemSearchParameters: Encodable, Sendable {
         self.selectValueMap = selectValueMap
         self.search = namePattern.map(ZabbixItemNameSearch.init)
         self.searchWildcardsEnabled = namePattern != nil ? true : nil
+        self.tags = (tags?.isEmpty == false) ? tags : nil
+        self.evaltype = (tags?.isEmpty == false) ? evaltype : nil
     }
 }
 

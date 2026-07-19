@@ -376,18 +376,20 @@ extension DashboardManager {
         _ patterns: [String],
         groupIDs: [String]?,
         hostIDs: [String]?,
+        tags: [ZabbixTagFilter]? = nil,
+        evalType: Int? = nil,
         serverBaseURL: URL,
         authToken: String
     ) async throws -> [ZabbixItemWithHost] {
         let cleaned = patterns.filter { !$0.isEmpty }
         guard !cleaned.isEmpty else {
-            return try await zabbixAPIClient.itemsMatching(serverBaseURL: serverBaseURL, authToken: authToken, groupIDs: groupIDs, hostIDs: hostIDs, namePattern: nil)
+            return try await zabbixAPIClient.itemsMatching(serverBaseURL: serverBaseURL, authToken: authToken, groupIDs: groupIDs, hostIDs: hostIDs, namePattern: nil, tags: tags, evalType: evalType)
         }
 
         var result: [ZabbixItemWithHost] = []
         var seen = Set<String>()
         for pattern in cleaned {
-            let matched = try await zabbixAPIClient.itemsMatching(serverBaseURL: serverBaseURL, authToken: authToken, groupIDs: groupIDs, hostIDs: hostIDs, namePattern: pattern)
+            let matched = try await zabbixAPIClient.itemsMatching(serverBaseURL: serverBaseURL, authToken: authToken, groupIDs: groupIDs, hostIDs: hostIDs, namePattern: pattern, tags: tags, evalType: evalType)
             for item in matched where seen.insert(item.itemid).inserted {
                 result.append(item)
             }
@@ -408,11 +410,14 @@ extension DashboardManager {
         // "itempatterns.N.itemname" this used to read — so the pattern was never applied and an
         // unfiltered fetch returned every item on the server.
         let itemPatterns = Self.indexedValues(widget.fields, name: "items")
+        let tags = Self.tagFilters(from: widget.fields)
 
         let items = try await itemsMatchingPatterns(
             itemPatterns,
             groupIDs: groupIDs.isEmpty ? nil : groupIDs,
             hostIDs: hostIDs.isEmpty ? nil : hostIDs,
+            tags: tags,
+            evalType: Self.tagEvalType(from: widget.fields),
             serverBaseURL: serverBaseURL,
             authToken: authToken
         )
@@ -878,10 +883,22 @@ extension DashboardManager {
         let itemPatterns = Self.indexedValues(widget.fields, name: "items")
         let showLines = Self.fieldValue(widget.fields, name: "show_lines").flatMap(Int.init) ?? 100
 
+        // Item navigator stores its item-tag filter under `item_tags.*` (mirroring Host navigator's
+        // `host_tags.*`); fall back to the plain `tags.*` convention the classic item widgets use so
+        // whichever the widget actually persists is applied. A missing field just means no filter.
+        var tags = Self.tagFilters(from: widget.fields, prefix: "item_tags")
+        var tagEvalType = Self.tagEvalType(from: widget.fields, field: "item_tags_evaltype")
+        if tags.isEmpty {
+            tags = Self.tagFilters(from: widget.fields)
+            tagEvalType = Self.tagEvalType(from: widget.fields)
+        }
+
         let items = try await itemsMatchingPatterns(
             itemPatterns,
             groupIDs: groupIDs.isEmpty ? nil : groupIDs,
             hostIDs: hostIDs.isEmpty ? nil : hostIDs,
+            tags: tags,
+            evalType: tagEvalType,
             serverBaseURL: serverBaseURL,
             authToken: authToken
         )
@@ -1076,12 +1093,15 @@ extension DashboardManager {
     ) async throws -> DashboardWidgetKind {
         let groupIDs = Self.indexedValues(widget.fields, name: "groupids")
         let hostIDs = Self.indexedValues(widget.fields, name: "hostids")
+        let tags = Self.tagFilters(from: widget.fields)
 
         let items = try await zabbixAPIClient.itemsMatching(
             serverBaseURL: serverBaseURL,
             authToken: authToken,
             groupIDs: groupIDs.isEmpty ? nil : groupIDs,
-            hostIDs: hostIDs.isEmpty ? nil : hostIDs
+            hostIDs: hostIDs.isEmpty ? nil : hostIDs,
+            tags: tags,
+            evalType: Self.tagEvalType(from: widget.fields)
         )
 
         return .dataOverview(

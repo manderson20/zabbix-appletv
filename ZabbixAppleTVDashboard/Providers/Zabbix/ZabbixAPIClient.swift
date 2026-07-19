@@ -241,11 +241,13 @@ actor ZabbixAPIClient {
         authToken: String,
         groupIDs: [String]? = nil,
         hostIDs: [String]? = nil,
-        namePattern: String? = nil
+        namePattern: String? = nil,
+        tags: [ZabbixTagFilter]? = nil,
+        evalType: Int? = nil
     ) async throws -> [ZabbixItemWithHost] {
         try await send(
             method: "item.get",
-            params: ZabbixItemSearchParameters(groupIDs: groupIDs, hostIDs: hostIDs, namePattern: namePattern),
+            params: ZabbixItemSearchParameters(groupIDs: groupIDs, hostIDs: hostIDs, namePattern: namePattern, tags: tags, evaltype: evalType),
             serverBaseURL: serverBaseURL,
             authToken: authToken,
             resultType: [ZabbixItemWithHost].self
