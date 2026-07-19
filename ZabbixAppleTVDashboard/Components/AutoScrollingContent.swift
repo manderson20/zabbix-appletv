@@ -7,11 +7,22 @@
 
 import SwiftUI
 
+extension EnvironmentValues {
+    /// Whether widget content is allowed to auto-scroll. Set by the viewer from the user's scroll-mode
+    /// choice; when `false`, list widgets hold still (the page as a whole is scrolled by hand instead).
+    @Entry var dashboardAutoScrollEnabled: Bool = true
+}
+
 /// Wraps list-style widget content in a container that scrolls itself when the content is taller
 /// than the space available — an unattended kiosk display has no remote to scroll manually, so a
 /// plain `ScrollView` just permanently hides whatever doesn't fit in the first screenful. Content
 /// that already fits behaves exactly like a static view; nothing moves.
+///
+/// When the viewer is in manual-scroll mode (`dashboardAutoScrollEnabled` is `false`), this holds
+/// still too, leaving all scrolling to the remote-driven page scroll.
 struct AutoScrollingContent<Content: View>: View {
+    @Environment(\.dashboardAutoScrollEnabled) private var autoScrollEnabled
+
     @ViewBuilder let content: Content
 
     /// Pause before scrolling starts, so the first rows are readable immediately rather than
@@ -42,8 +53,13 @@ struct AutoScrollingContent<Content: View>: View {
                 .offset(y: -scrollOffset)
                 .frame(width: outerGeometry.size.width, height: outerGeometry.size.height, alignment: .top)
                 .clipped()
-                .task(id: overflow) {
-                    guard overflow > 0 else { return }
+                .task(id: "\(overflow)|\(autoScrollEnabled)") {
+                    // In manual mode, snap back to the top rather than freezing mid-scroll with the
+                    // first rows hidden — the page scroll, not this inner scroll, does the moving now.
+                    guard autoScrollEnabled, overflow > 0 else {
+                        scrollOffset = 0
+                        return
+                    }
 
                     try? await Task.sleep(nanoseconds: Self.pauseNanoseconds)
                     guard !Task.isCancelled else { return }

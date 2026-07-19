@@ -16,6 +16,13 @@ struct DashboardWidgetGridView: View {
     /// Widgets to lay out.
     let widgets: [RenderableDashboardWidget]
 
+    /// When `true`, an overflowing page scrolls itself; when `false`, it holds still and is scrolled
+    /// by hand with the remote's directional pad.
+    var autoScrollEnabled: Bool = true
+
+    /// Invoked when the remote's Play/Pause button is pressed — toggles the scroll mode.
+    var onToggleAutoScroll: () -> Void = {}
+
     /// Below this, a widget stops being legible — a graph needs room for its title, axes, and
     /// legend. Some Zabbix dashboard pages configure far more total grid rows than fit in one
     /// screen (verified live: one page stacks 13 full-width graphs across 63 rows), and dividing
@@ -24,12 +31,34 @@ struct DashboardWidgetGridView: View {
     /// page's content grows taller than the screen and auto-scrolls instead (see below).
     private static let minimumRowHeight: CGFloat = 60
 
-    /// How fast an overflowing page scrolls, in points per second — an unattended kiosk display
-    /// has no remote to scroll manually, so this is the only way every widget on a page like that
-    /// actually gets seen during its time on screen rather than just the first screenful.
+    /// How fast an overflowing page auto-scrolls, in points per second — an unattended kiosk display
+    /// has no one at the remote, so this is the only way every widget on a page like that actually
+    /// gets seen during its time on screen rather than just the first screenful.
     private static let autoScrollPointsPerSecond: CGFloat = 40
 
+    /// Auto-scroll is advanced in small per-frame steps (rather than one long animation) so that
+    /// flipping to manual mid-scroll freezes the page exactly where it is and the first remote nudge
+    /// continues from there, with no jump between the animated position and the model offset.
+    private static let autoScrollFramesPerSecond: Double = 30
+    private static var autoScrollFrameNanoseconds: UInt64 { UInt64(1_000_000_000 / autoScrollFramesPerSecond) }
+    private static var autoScrollPointsPerFrame: CGFloat { autoScrollPointsPerSecond / CGFloat(autoScrollFramesPerSecond) }
+
+    /// Pause before auto-scroll begins, so the first widgets are readable before the page moves.
+    private static let autoScrollStartPauseNanoseconds: UInt64 = 3 * 1_000_000_000
+
+    /// How much of the visible height one remote nudge scrolls in manual mode — a chunk big enough
+    /// to make progress, small enough to keep context between presses.
+    private static let manualScrollFraction: CGFloat = 0.25
+
     @State private var scrollOffset: CGFloat = 0
+    @FocusState private var isFocused: Bool
+
+    /// Keeps a scroll offset within the scrollable range: never above the content's overflow, never
+    /// below zero (and pinned to zero when the content fits, so a nudge on a non-overflowing page
+    /// does nothing).
+    static func clampedScrollOffset(_ proposed: CGFloat, overflow: CGFloat) -> CGFloat {
+        min(max(proposed, 0), max(overflow, 0))
+    }
 
     /// Computes the grid's column and row count as the furthest extent any widget reaches.
     static func gridExtent(for widgets: [RenderableDashboardWidget]) -> (columns: Int, rows: Int) {
@@ -69,16 +98,42 @@ struct DashboardWidgetGridView: View {
             }
             .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
             .clipped()
-            .task(id: overflow) {
-                guard overflow > 0 else { return }
+            // Focusable so the remote's Play/Pause (toggle mode) and directional (manual scroll)
+            // commands route here — the dashboard's own cards aren't focusable, so this is the only
+            // focus target. The focus effect is suppressed so the whole page doesn't get a highlight.
+            .focusable()
+            .focusEffectDisabled()
+            .focused($isFocused)
+            .onAppear { isFocused = true }
+            .onPlayPauseCommand(perform: onToggleAutoScroll)
+            .onMoveCommand { direction in
+                guard !autoScrollEnabled else { return }
+                let step = geometry.size.height * Self.manualScrollFraction
+                switch direction {
+                case .up:
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        scrollOffset = Self.clampedScrollOffset(scrollOffset - step, overflow: overflow)
+                    }
+                case .down:
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        scrollOffset = Self.clampedScrollOffset(scrollOffset + step, overflow: overflow)
+                    }
+                default:
+                    break
+                }
+            }
+            .task(id: "\(overflow)|\(autoScrollEnabled)") {
+                guard autoScrollEnabled, overflow > 0 else { return }
 
-                // A short pause so the first widgets are readable before scrolling starts, then a
-                // slow, steady scroll to the bottom, where it holds until the page itself rotates.
-                try? await Task.sleep(nanoseconds: 3 * 1_000_000_000)
-                guard !Task.isCancelled else { return }
-
-                withAnimation(.linear(duration: Double(overflow / Self.autoScrollPointsPerSecond))) {
-                    scrollOffset = overflow
+                // A short pause so the first widgets are readable, then a slow, steady crawl to the
+                // bottom in small per-frame steps (see `autoScrollPointsPerFrame`), holding there
+                // until the page rotates. Stepping keeps the model offset equal to what's on screen,
+                // so a switch to manual freezes exactly here.
+                try? await Task.sleep(nanoseconds: Self.autoScrollStartPauseNanoseconds)
+                while !Task.isCancelled && scrollOffset < overflow {
+                    try? await Task.sleep(nanoseconds: Self.autoScrollFrameNanoseconds)
+                    guard !Task.isCancelled else { return }
+                    scrollOffset = min(scrollOffset + Self.autoScrollPointsPerFrame, overflow)
                 }
             }
         }

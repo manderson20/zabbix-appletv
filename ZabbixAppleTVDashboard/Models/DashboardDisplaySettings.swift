@@ -23,6 +23,11 @@ nonisolated struct DashboardDisplaySettings: Codable, Equatable, Sendable {
 
     /// Indicates whether the app should try to keep the display awake.
     var preventsDisplaySleep: Bool
+
+    /// Whether a page taller than the screen scrolls itself automatically. `true` is the default
+    /// unattended-kiosk behavior; when `false` the viewer holds still and the page is scrolled by
+    /// hand with the remote. Toggled live from the remote's Play/Pause button while viewing.
+    var autoScrollEnabled: Bool = true
 }
 
 nonisolated extension DashboardDisplaySettings {
@@ -32,6 +37,7 @@ nonisolated extension DashboardDisplaySettings {
         showsStatusOverlay: false,
         usesFullScreen: true,
         isKioskModeEnabled: true,
-        preventsDisplaySleep: true
+        preventsDisplaySleep: true,
+        autoScrollEnabled: true
     )
 }

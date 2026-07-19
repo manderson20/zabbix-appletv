@@ -775,6 +775,19 @@ struct ZabbixAppleTVDashboardTests {
         #expect(zero.columns >= 1 && zero.rows >= 1)
     }
 
+    @MainActor
+    @Test func manualScrollOffsetStaysWithinTheScrollableRange() throws {
+        // A mid-range offset passes through untouched.
+        #expect(DashboardWidgetGridView.clampedScrollOffset(50, overflow: 200) == 50)
+        // Scrolling past the top pins to zero.
+        #expect(DashboardWidgetGridView.clampedScrollOffset(-30, overflow: 200) == 0)
+        // Scrolling past the bottom pins to the content's overflow.
+        #expect(DashboardWidgetGridView.clampedScrollOffset(500, overflow: 200) == 200)
+        // A page that fits (no overflow) can't scroll at all, even on a nudge.
+        #expect(DashboardWidgetGridView.clampedScrollOffset(50, overflow: 0) == 0)
+        #expect(DashboardWidgetGridView.clampedScrollOffset(50, overflow: -10) == 0)
+    }
+
     @Test func buildDataOverviewMatrixGroupsHostsAndItems() throws {
         // host1 has CPU+Mem; host2 has only CPU → host2's Mem cell is blank.
         let entries = [
