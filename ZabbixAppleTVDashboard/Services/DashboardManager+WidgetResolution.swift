@@ -1005,8 +1005,7 @@ extension DashboardManager {
             return .unsupported(rawType: widget.type)
         }
 
-        let historyWindowSeconds = Self.historyWindowSeconds(from: widget.fields)
-        let windowEnd = Date()
+        let (windowStart, windowEnd) = Self.timePeriod(from: widget.fields)
         var series: [ChartSeries] = []
 
         for dataset in datasets {
@@ -1029,7 +1028,7 @@ extension DashboardManager {
                     )
 
                     for item in items {
-                        let points = try await recentPoints(for: item.itemid, valueType: item.value_type?.intValue ?? 0, historyWindowSeconds: historyWindowSeconds, endDate: windowEnd, serverBaseURL: serverBaseURL, authToken: authToken)
+                        let points = try await recentPoints(for: item.itemid, valueType: item.value_type?.intValue ?? 0, windowStart: windowStart, windowEnd: windowEnd, serverBaseURL: serverBaseURL, authToken: authToken)
 
                         series.append(
                             ChartSeries(
@@ -1061,7 +1060,7 @@ extension DashboardManager {
             )
             guard let item = items.first else { continue }
 
-            let points = try await recentPoints(for: item.itemid, valueType: item.value_type?.intValue ?? 0, historyWindowSeconds: historyWindowSeconds, endDate: windowEnd, serverBaseURL: serverBaseURL, authToken: authToken)
+            let points = try await recentPoints(for: item.itemid, valueType: item.value_type?.intValue ?? 0, windowStart: windowStart, windowEnd: windowEnd, serverBaseURL: serverBaseURL, authToken: authToken)
 
             series.append(
                 ChartSeries(
@@ -1075,7 +1074,7 @@ extension DashboardManager {
             )
         }
 
-        let window = ChartTimeWindow(start: windowEnd.addingTimeInterval(-Double(historyWindowSeconds)), end: windowEnd)
+        let window = ChartTimeWindow(start: windowStart, end: windowEnd)
         return series.isEmpty ? .unsupported(rawType: widget.type) : .lineChart(series: series, window: window)
     }
 
@@ -1142,18 +1141,17 @@ extension DashboardManager {
         let items = try await zabbixAPIClient.items(serverBaseURL: serverBaseURL, authToken: authToken, itemIDs: graph.gitems.map(\.itemid))
         let itemsByID = Dictionary(uniqueKeysWithValues: items.map { ($0.itemid, $0) })
 
-        let historyWindowSeconds = Self.historyWindowSeconds(from: widget.fields)
-        let windowEnd = Date()
+        let (windowStart, windowEnd) = Self.timePeriod(from: widget.fields)
         var series: [ChartSeries] = []
         for gitem in graph.gitems {
             guard let item = itemsByID[gitem.itemid] else { continue }
 
-            let points = try await recentPoints(for: item.itemid, valueType: item.value_type?.intValue ?? 0, historyWindowSeconds: historyWindowSeconds, endDate: windowEnd, serverBaseURL: serverBaseURL, authToken: authToken)
+            let points = try await recentPoints(for: item.itemid, valueType: item.value_type?.intValue ?? 0, windowStart: windowStart, windowEnd: windowEnd, serverBaseURL: serverBaseURL, authToken: authToken)
 
             series.append(ChartSeries(id: "\(widget.widgetid).\(item.itemid)", name: item.name, colorHex: gitem.color, units: item.units ?? "", fillOpacity: 0.5, points: points))
         }
 
-        let window = ChartTimeWindow(start: windowEnd.addingTimeInterval(-Double(historyWindowSeconds)), end: windowEnd)
+        let window = ChartTimeWindow(start: windowStart, end: windowEnd)
         return series.isEmpty ? .unsupported(rawType: widget.type) : .lineChart(series: series, window: window)
     }
 
@@ -1209,13 +1207,11 @@ extension DashboardManager {
     private func recentPoints(
         for itemID: String,
         valueType: Int,
-        historyWindowSeconds: Int,
-        endDate: Date,
+        windowStart: Date,
+        windowEnd: Date,
         serverBaseURL: URL,
         authToken: String
     ) async throws -> [ChartPoint] {
-        let windowStart = endDate.addingTimeInterval(-Double(historyWindowSeconds))
-
         let values = try await zabbixAPIClient.history(
             serverBaseURL: serverBaseURL,
             authToken: authToken,
@@ -1237,7 +1233,7 @@ extension DashboardManager {
         // its most recent stretch — leaving the rest of the graph blank even though Zabbix's own
         // graph shows it. Fill the older part from trends (hourly min/avg/max, kept far longer),
         // exactly as Zabbix does: use trends for everything before the earliest raw sample.
-        let earliestHistory = points.first?.date ?? endDate
+        let earliestHistory = points.first?.date ?? windowEnd
         if earliestHistory.timeIntervalSince(windowStart) > Self.trendFillMinimumGapSeconds {
             let trendValues = try await zabbixAPIClient.trends(
                 serverBaseURL: serverBaseURL,
@@ -1256,7 +1252,7 @@ extension DashboardManager {
             points = (trendPoints + points).sorted { $0.date < $1.date }
         }
 
-        return Self.bucketedChartPoints(points, itemID: itemID, windowStart: windowStart, windowEnd: endDate, bucketCount: Self.chartBucketCount)
+        return Self.bucketedChartPoints(points, itemID: itemID, windowStart: windowStart, windowEnd: windowEnd, bucketCount: Self.chartBucketCount)
     }
 
     /// Reduces an item's raw, chronological samples to a render-friendly set of points, keeping the
@@ -1376,37 +1372,73 @@ extension DashboardManager {
     /// intervals (see `bucketedChartPoints`).
     private static let minimumGapSeconds: TimeInterval = 900
 
-    /// The widget's own configured graph time range ("time_period.from"), matching what a Zabbix
-    /// graph widget's name usually spells out (e.g. "Internet Usage Last Hour" is itself configured
-    /// with `time_period.from = now-1h`, verified live) — every graph on a dashboard is otherwise
-    /// free to set its own window independent of its neighbors, so a single hardcoded fetch window
-    /// silently ignored that and showed every graph the same window regardless of its own label.
-    /// Falls back to Zabbix's own 1-hour default when the widget doesn't set one, or uses a
-    /// relative-time expression more complex than the plain "now-<N><unit>" offset seen live.
-    static func historyWindowSeconds(from fields: [ZabbixWidgetField]) -> Int {
-        guard let fromRaw = fieldValue(fields, name: "time_period.from"),
-              let seconds = secondsBeforeNow(fromRelativeTime: fromRaw), seconds > 0 else {
-            return defaultHistoryWindowSeconds
+    /// Resolves a widget's configured time period (`time_period.from`/`time_period.to`) into an
+    /// absolute `(start, end)` range. Unlike the old duration-only parser this honors an explicit
+    /// `.to` (so a window can end in the past, e.g. "yesterday"), calendar-aligned expressions
+    /// ("now/d", "now-1d/d", "now/w"), and every offset unit including months and years.
+    ///
+    /// A missing bound — or one that references the dashboard's own time filter rather than an
+    /// absolute expression — falls back to Zabbix's global "last 1 hour" default (a kiosk has no
+    /// interactive dashboard time control to inherit). `now` is injectable for testing.
+    static func timePeriod(from fields: [ZabbixWidgetField], now: Date = Date()) -> (start: Date, end: Date) {
+        let end = fieldValue(fields, name: "time_period.to").flatMap { relativeTime($0, now: now, alignToEnd: true) } ?? now
+        let start = fieldValue(fields, name: "time_period.from").flatMap { relativeTime($0, now: now, alignToEnd: false) }
+            ?? end.addingTimeInterval(-Double(defaultHistoryWindowSeconds))
+
+        guard start < end else {
+            return (now.addingTimeInterval(-Double(defaultHistoryWindowSeconds)), now)
         }
-        return seconds
+        return (start, end)
     }
 
-    /// Parses Zabbix's relative time syntax in the common "now-<N><unit>" shape used by dashboard
-    /// widgets (verified live: "now-1h", "now-6h", "now-24h"). Returns `nil` for "now" itself (a
-    /// zero-length window) or any expression outside that shape (e.g. day-aligned "now/d"), so the
-    /// caller can fall back to its own default rather than fetching no history at all.
-    private static func secondsBeforeNow(fromRelativeTime raw: String) -> Int? {
+    /// Resolves a Zabbix relative-time expression to an absolute `Date`: "now", an offset like
+    /// "now-1h" / "now+2d", an alignment like "now/d" (start of today), or both ("now-1d/d", the
+    /// start of yesterday). `alignToEnd` selects the *end* of an aligned unit for a `.to` bound so
+    /// "now/d" covers the whole current day rather than collapsing to its first instant. Returns
+    /// `nil` for anything that isn't a plain relative-time expression (e.g. a dashboard reference).
+    static func relativeTime(_ raw: String, now: Date, alignToEnd: Bool) -> Date? {
         let trimmed = raw.trimmingCharacters(in: .whitespaces)
-        guard trimmed.hasPrefix("now-"), let unit = trimmed.last else { return nil }
-        let magnitudeSubstring = trimmed.dropFirst(4).dropLast()
-        guard let magnitude = Int(magnitudeSubstring) else { return nil }
+        guard trimmed.hasPrefix("now") else { return nil }
 
+        let segments = trimmed.dropFirst(3).split(separator: "/", maxSplits: 1, omittingEmptySubsequences: false)
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .current
+        var date = now
+
+        let offset = segments[0]
+        if !offset.isEmpty {
+            guard let shifted = applyRelativeOffset(String(offset), to: date, calendar: calendar) else { return nil }
+            date = shifted
+        }
+
+        if segments.count == 2, let unit = segments[1].first, let component = calendarComponent(for: unit),
+           let interval = calendar.dateInterval(of: component, for: date) {
+            date = alignToEnd ? interval.end : interval.start
+        }
+
+        return date
+    }
+
+    /// Applies a signed relative offset like "-1h", "+2d", "-1M" to a date via the calendar.
+    private static func applyRelativeOffset(_ raw: String, to date: Date, calendar: Calendar) -> Date? {
+        guard let sign = raw.first, sign == "-" || sign == "+", let unit = raw.last,
+              let component = calendarComponent(for: unit),
+              let magnitude = Int(raw.dropFirst().dropLast()) else {
+            return nil
+        }
+        return calendar.date(byAdding: component, value: (sign == "-" ? -1 : 1) * magnitude, to: date)
+    }
+
+    /// Maps Zabbix's relative-time unit letters to calendar components (s/m/h/d/w/M/y).
+    private static func calendarComponent(for unit: Character) -> Calendar.Component? {
         switch unit {
-        case "s": return magnitude
-        case "m": return magnitude * 60
-        case "h": return magnitude * 3600
-        case "d": return magnitude * 86400
-        case "w": return magnitude * 604800
+        case "s": return .second
+        case "m": return .minute
+        case "h": return .hour
+        case "d": return .day
+        case "w": return .weekOfYear
+        case "M": return .month
+        case "y": return .year
         default: return nil
         }
     }
