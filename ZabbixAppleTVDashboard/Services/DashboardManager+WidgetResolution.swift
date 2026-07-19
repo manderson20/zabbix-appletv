@@ -431,9 +431,13 @@ extension DashboardManager {
 
     // MARK: - Top hosts
 
-    /// Resolves at most 25 hosts, each requiring one item lookup per configured column, to bound
-    /// round trips on a TV with limited compute/network. Column field names ("columns.N.name",
-    /// "columns.N.item", "columns.N.text") are Zabbix's documented options, not yet verified.
+    /// Bounds how many candidate hosts are ranked, so a "top N" over a large group stays a few
+    /// dozen round trips on a TV rather than one per host on the whole server.
+    private static let topHostsCandidateCap = 50
+
+    /// Ranks hosts by a chosen column and shows the top/bottom N — the actual point of the widget.
+    /// Each item column is aggregated over the widget's time period when configured (`aggregate_
+    /// function`) rather than showing the instantaneous last value, and value-mapped for display.
     private func resolveTopHosts(
         _ widget: ZabbixWidget,
         serverBaseURL: URL,
@@ -452,33 +456,94 @@ extension DashboardManager {
         let columnGroups = Self.indexedFieldGroups(widget.fields, prefix: "columns")
         let columnTitles = columnGroups.isEmpty ? ["Host"] : columnGroups.map { $0["name"] ?? "Column" }
 
-        var rows: [TopHostsRow] = []
-        for host in hosts.prefix(25) {
+        // Ranking config: which column drives the order, whether it's top (highest) or bottom
+        // (lowest), and how many rows to show.
+        let sortColumnIndex = Self.fieldValue(widget.fields, name: "column").flatMap(Int.init) ?? 0
+        let isBottomN = Self.fieldValue(widget.fields, name: "order").flatMap(Int.init) == 3
+        let showLines = Self.fieldValue(widget.fields, name: "show_lines").flatMap(Int.init) ?? 10
+        let (from, to) = Self.timePeriod(from: widget.fields)
+
+        var ranked: [(row: TopHostsRow, sortValue: Double?)] = []
+        for host in hosts.prefix(Self.topHostsCandidateCap) {
             guard !columnGroups.isEmpty else {
-                rows.append(TopHostsRow(id: host.hostid, hostName: host.name, values: [host.name]))
+                ranked.append((TopHostsRow(id: host.hostid, hostName: host.name, values: [host.name]), nil))
                 continue
             }
 
             var values: [String] = []
-            for column in columnGroups {
-                if let itemPattern = column["item"], !itemPattern.isEmpty {
-                    let items = try await zabbixAPIClient.itemsMatching(
-                        serverBaseURL: serverBaseURL,
-                        authToken: authToken,
-                        hostIDs: [host.hostid],
-                        namePattern: itemPattern
-                    )
-                    values.append(Self.mappedItemValue(rawValue: items.first?.lastvalue, valueMap: items.first?.valuemap?.valueMap))
-                } else if let text = column["text"] {
-                    values.append(text)
-                } else {
-                    values.append(host.name)
-                }
+            var sortValue: Double?
+            for (index, column) in columnGroups.enumerated() {
+                let cell = try await topHostsColumnValue(column, host: host, from: from, to: to, serverBaseURL: serverBaseURL, authToken: authToken)
+                values.append(cell.display)
+                if index == sortColumnIndex { sortValue = cell.numeric }
             }
-            rows.append(TopHostsRow(id: host.hostid, hostName: host.name, values: values))
+            ranked.append((TopHostsRow(id: host.hostid, hostName: host.name, values: values), sortValue))
         }
 
-        return .topHosts(columns: columnTitles, rows: rows)
+        return .topHosts(columns: columnTitles, rows: Self.rankTopHostsRows(ranked, isBottomN: isBottomN, limit: showLines))
+    }
+
+    /// Orders scored Top hosts rows — highest first for top-N, lowest first for bottom-N — with
+    /// unscored rows (no numeric value in the ranking column) always last, then limits to `limit`.
+    static func rankTopHostsRows<Row>(
+        _ scored: [(row: Row, sortValue: Double?)],
+        isBottomN: Bool,
+        limit: Int
+    ) -> [Row] {
+        scored.sorted { lhs, rhs in
+            switch (lhs.sortValue, rhs.sortValue) {
+            case let (l?, r?): return isBottomN ? l < r : l > r
+            case (_?, nil): return true
+            case (nil, _?): return false
+            case (nil, nil): return false
+            }
+        }.prefix(limit).map(\.row)
+    }
+
+    /// Resolves one Top hosts cell to a display string plus, for item columns, the numeric value the
+    /// row is ranked by. Item columns aggregate over the widget's time period when configured;
+    /// otherwise they show the value-mapped last reading.
+    private func topHostsColumnValue(
+        _ column: [String: String],
+        host: ZabbixHostListEntry,
+        from: Date,
+        to: Date,
+        serverBaseURL: URL,
+        authToken: String
+    ) async throws -> (display: String, numeric: Double?) {
+        // A text column is a fixed label with nothing to rank by.
+        if let text = column["text"], !text.isEmpty, (column["item"] ?? "").isEmpty {
+            return (text, nil)
+        }
+
+        guard let itemPattern = column["item"], !itemPattern.isEmpty else {
+            return (host.name, nil)
+        }
+
+        let items = try await zabbixAPIClient.itemsMatching(
+            serverBaseURL: serverBaseURL,
+            authToken: authToken,
+            hostIDs: [host.hostid],
+            namePattern: itemPattern
+        )
+        guard let item = items.first else { return ("\u{2014}", nil) }
+
+        let aggregateFunction = column["aggregate_function"].flatMap(Int.init) ?? 0
+        if aggregateFunction > 0 {
+            let aggregated = try await aggregatedValue(
+                itemID: item.itemid,
+                valueType: item.value_type?.intValue ?? 0,
+                function: aggregateFunction,
+                from: from,
+                to: to,
+                serverBaseURL: serverBaseURL,
+                authToken: authToken
+            )
+            return (aggregated.map { String($0) } ?? "\u{2014}", aggregated)
+        }
+
+        let display = Self.mappedItemValue(rawValue: item.lastvalue, valueMap: item.valuemap?.valueMap)
+        return (display, item.lastvalue.flatMap(Double.init))
     }
 
     // MARK: - Top triggers
