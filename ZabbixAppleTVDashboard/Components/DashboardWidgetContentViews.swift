@@ -351,6 +351,7 @@ struct LineChartWidgetContentView: View {
     let series: [ChartSeries]
     let window: ChartTimeWindow
     var stacked: Bool = false
+    var showLegend: Bool = true
 
     private var units: String { series.first?.units ?? "" }
 
@@ -505,7 +506,7 @@ struct LineChartWidgetContentView: View {
                     styled(segmentedChart)
                 }
 
-                if series.count > 1 {
+                if showLegend, series.count > 1 {
                     ChartLegendView(series: series)
                 }
             }
