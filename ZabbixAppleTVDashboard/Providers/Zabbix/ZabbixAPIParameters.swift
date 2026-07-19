@@ -538,9 +538,39 @@ nonisolated struct ZabbixDiscoveryRuleGetParameters: Encodable, Sendable {
     /// Discovery rule fields to return.
     let output: [String]
 
-    init(output: [String] = ["druleid", "name", "status"]) {
+    /// When `true`, restricts to enabled rules (`filter: {status: 0}`) — Zabbix's Discovery status
+    /// widget lists only active rules, never disabled ones.
+    let activeOnly: Bool
+
+    /// Sort rules alphabetically by name, matching the widget's own ordering.
+    let sortfield: [String]
+    let sortorder: String
+
+    init(output: [String] = ["druleid", "name", "status"], activeOnly: Bool = true) {
         self.output = output
+        self.activeOnly = activeOnly
+        self.sortfield = ["name"]
+        self.sortorder = "ASC"
     }
+
+    private enum CodingKeys: String, CodingKey {
+        case output, filter, sortfield, sortorder
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(output, forKey: .output)
+        if activeOnly {
+            try container.encode(ZabbixDiscoveryRuleStatusFilter(), forKey: .filter)
+        }
+        try container.encode(sortfield, forKey: .sortfield)
+        try container.encode(sortorder, forKey: .sortorder)
+    }
+}
+
+/// Restricts `drule.get` to enabled (status 0) discovery rules.
+nonisolated struct ZabbixDiscoveryRuleStatusFilter: Encodable, Sendable {
+    let status = 0
 }
 
 /// Parameters for `dhost.get` when counting discovered hosts per rule.

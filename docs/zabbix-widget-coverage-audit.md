@@ -31,7 +31,7 @@ Sorted by worst impact (wrong-data first; renders-nothing / entirely-wrong-conte
 | Problems by severity | partial | wrong-data | 5 | `groupids`/tags/`ext_ack` ignored → inflated counts; `show_type` groups view collapsed |
 | Web monitoring | partial | wrong-data | 5 | Ok/Failed/Unknown status not derived; `exclude_groupids`/tags ignored |
 | System information | partial | wrong-data | 4 | `info_type` ignored (HA mode wrong); `isRunning` hardcoded true |
-| Discovery status | partial | wrong-data | 3 | No `status=active` filter → lists disabled discovery rules |
+| Discovery status | full | missing-detail | 1 | Now filters to enabled rules, sorted by name; only a no-permission/empty distinction remains |
 | Geomap | partial | wrong-data | 3 | Marker severity uses server-wide problems, ignores widget `tags` filter |
 | Clock | partial | wrong-data | 4 | `time_type=host`/`tzone_timezone` ignored → shows device local time, wrong |
 | Map | full | wrong-data | 5 | Non-host elements (submap/group/trigger) always colored OK/green |
@@ -57,7 +57,7 @@ Sorted by worst impact (wrong-data first; renders-nothing / entirely-wrong-conte
 - **Host availability — `maintenance` inverted + multi-interface classification bug.** Add the `maintenance_status` filter (default excludes maintenance) and fix `{available,unknown}`/`{unavailable,unknown}` categorization to match Zabbix's unknown/mixed rules.
 - **Acknowledgement filtering dropped.** Problems (`acknowledgement_status`) and Problems by severity (`ext_ack`) over-count acknowledged problems.
 - **Value maps dropped on the "search" fetch path.** Data overview, Top hosts, Honeycomb, Item navigator, Item history show raw numeric codes; request `selectValueMap` and apply `mappedText`.
-- **Discovery — no `status=active` filter.** Add it so disabled discovery rules stop appearing.
+- ~~**Discovery — no `status=active` filter.** Add it so disabled discovery rules stop appearing.~~ **Done** — `drule.get` now filters to `status: 0` (enabled) and sorts by name.
 - **System information — `isRunning` hardcoded true + `info_type` ignored.** The HA-nodes mode shows a version string; and "running" can display while the server is down.
 - **Graph (classic) — graph type lost + Simple-graph unsupported.** Fetch `graphtype` and render stacked/pie correctly; implement `source_type=1`/`itemid`.
 - **Web monitoring — scenario status not derived.** Fetch each scenario's status items to render Ok/Failed/Unknown; also apply `exclude_groupids`.
