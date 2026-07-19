@@ -11,7 +11,7 @@
 
 Coverage is broad and, since the original audit, materially deeper. Every widget renders
 *something*, and the count of widgets whose worst realistic-config behavior is **wrong-data** has
-dropped from 25/26 to **14/26**, with the other 12 down to **missing-detail** (renders correctly
+dropped from 25/26 to **13/26**, with the other 13 down to **missing-detail** (renders correctly
 but ignores a display or layout knob). The improvement came almost entirely from the cross-cutting
 helpers the original audit predicted would each fix a class of widgets:
 
@@ -50,7 +50,7 @@ cosmetic-leaning last).
 | Map navigation tree | rendered-only | wrong-data | 6 | Resolver takes no `widget`; ignores entire `navtree`, lists every map on the server |
 | SLA report | rendered-only | wrong-data | 1 | Shows static target SLO via `sla.get`, never the computed SLI (`sla.getsli`) — `slaid` mis-key now fixed |
 | Web monitoring | partial | wrong-data | 2 | `exclude_groupids` + tags ignored → shows a superset of scenarios; Ok/Failed/Unknown status now derived from `web.test.fail` |
-| Top triggers | partial | wrong-data | 2 | Wrong metric — ranks current problems by severity, not event-frequency over `time_period`; `groupids`/tags now scoped |
+| Top triggers | partial | missing-detail | 1 | Now ranks by problem-event frequency over `time_period` with a count column; only acknowledgement filtering remains |
 | Graph (svggraph) | partial | wrong-data | 8 | Per-dataset aggregation/`timeshift`/`approximation`/`axisy` all ignored |
 | Graph (classic) | partial | wrong-data | 7 | Graph type (stacked/pie) lost; Simple-graph mode (`itemid`) unsupported |
 | Honeycomb | partial | wrong-data | 3 | Hardcoded 60-cell cap; units/label templates dropped — `items.N` + value maps + item-tag filter + threshold cell coloring now applied |
@@ -81,6 +81,7 @@ cosmetic-leaning last).
 **Landed since the original audit:**
 
 - ~~**Web monitoring — scenario status not derived.**~~ **Done** — Ok/Failed/Unknown derived from each scenario's `web.test.fail[<name>]` item (fetched with `webitems: true`); `exclude_groupids` + tags scope still pending.
+- ~~**Top triggers — wrong metric.**~~ **Done** — ranks by problem-event count over `time_period` (`event.get` grouped by trigger, busiest-first) with a count column, replacing the current-problems-by-severity list.
 - ~~**Item value — thresholds ignored.**~~ **Done** — reads `thresholds.N` (shared `thresholdColorHex` helper) so a value crossing a band repaints the background with its alert color.
 - ~~**Honeycomb — thresholds/cell coloring absent.**~~ **Done** — each cell is tinted by the threshold band its reading meets (same `thresholdColorHex` helper).
 - ~~**Geomap — marker severity ignores widget `tags`.**~~ **Done** — `maxSeverityByHostID` now takes the widget's tag + severity filter, so a marker's color reflects only the problems the widget shows.
@@ -105,8 +106,6 @@ cosmetic-leaning last).
   `ZabbixWidget`, then render the authored `navtree` hierarchy instead of listing every server map.
 - **SLA report — wrong API.** Compute the report with `sla.getsli(serviceids, periods)` instead of
   returning the static target from `sla.get`.
-- **Top triggers — wrong metric.** Rank by problem-event count over `time_period` (`event.get`
-  grouped by `objectid`, ordered by count DESC) and surface the count column.
 - **Acknowledgement filtering dropped.** Problems (`acknowledgement_status`) and Problems by severity
   (`ext_ack`) still over-count acknowledged problems.
 - **Host availability — `maintenance` not honored.** Add the `maintenance_status` filter (default

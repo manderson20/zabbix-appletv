@@ -15,6 +15,11 @@ nonisolated struct ZabbixNumericString: Decodable, Equatable, Sendable {
     /// The decoded integer value.
     let intValue: Int
 
+    /// Wraps a known integer directly (used when constructing values in-memory, e.g. tests).
+    init(intValue: Int) {
+        self.intValue = intValue
+    }
+
     init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
 

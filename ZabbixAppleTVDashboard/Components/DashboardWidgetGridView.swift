@@ -412,16 +412,28 @@ private struct ProblemRow: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(problem.name)
-                .font(.system(size: 18, weight: .semibold, design: .rounded))
-                .foregroundStyle(.black.opacity(0.87))
-                .lineLimit(1)
+        HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(problem.name)
+                    .font(.system(size: 18, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.black.opacity(0.87))
+                    .lineLimit(1)
 
-            if let host = problem.host {
-                Text(host)
-                    .font(.system(size: 15, weight: .regular, design: .rounded))
-                    .foregroundStyle(.black.opacity(0.65))
+                if let host = problem.host {
+                    Text(host)
+                        .font(.system(size: 15, weight: .regular, design: .rounded))
+                        .foregroundStyle(.black.opacity(0.65))
+                        .lineLimit(1)
+                }
+            }
+
+            // For Top triggers, the trailing number is how many times the trigger fired over the
+            // window — the metric the widget ranks by. Absent for the live Problems list.
+            if let count = problem.problemCount {
+                Spacer(minLength: 4)
+                Text("\(count)")
+                    .font(.system(size: 22, weight: .bold, design: .rounded))
+                    .foregroundStyle(.black.opacity(0.87))
                     .lineLimit(1)
             }
         }

@@ -574,37 +574,71 @@ extension DashboardManager {
         serverBaseURL: URL,
         authToken: String
     ) async throws -> DashboardWidgetKind {
-        let limit = Self.fieldValue(widget.fields, name: "show_lines").flatMap(Int.init) ?? 20
+        // Zabbix's Top triggers ranks triggers by how many times they went into problem state over
+        // the widget's time period — a frequency count — not the current problem list sorted by
+        // severity. Count problem events per trigger over the window and show the busiest N.
+        let limit = Self.fieldValue(widget.fields, name: "show_lines").flatMap(Int.init) ?? 10
         let severities = Self.indexedValues(widget.fields, name: "severities").compactMap(Int.init)
+        let (from, to) = Self.timePeriod(from: widget.fields)
 
-        let problems = try await zabbixAPIClient.problems(
+        let events = try await zabbixAPIClient.problemEvents(
             serverBaseURL: serverBaseURL,
             authToken: authToken,
+            timeFrom: Int(from.timeIntervalSince1970),
+            timeTill: Int(to.timeIntervalSince1970),
             severities: severities.isEmpty ? nil : severities,
             groupIDs: try await scopedGroupIDs(from: widget, serverBaseURL: serverBaseURL, authToken: authToken),
             tags: Self.tagFilters(from: widget.fields),
             evalType: Self.tagEvalType(from: widget.fields)
         )
 
+        let ranked = Self.rankTriggersByFrequency(events).prefix(limit)
+
         let hostByTriggerID = try await hostNamesByTriggerID(
-            problems.map(\.objectid),
+            ranked.map(\.triggerID),
             serverBaseURL: serverBaseURL,
             authToken: authToken
         )
 
-        let sortedProblems = problems.sorted { $0.severity.intValue > $1.severity.intValue }.prefix(limit)
-
         return .topTriggers(
-            sortedProblems.map { problem in
+            ranked.map { trigger in
                 DashboardProblem(
-                    id: problem.eventid,
-                    name: problem.name,
-                    severity: problem.severity.intValue,
-                    host: hostByTriggerID[problem.objectid],
-                    since: Date(timeIntervalSince1970: TimeInterval(problem.clock) ?? 0)
+                    id: trigger.triggerID,
+                    name: trigger.name,
+                    severity: trigger.severity,
+                    host: hostByTriggerID[trigger.triggerID],
+                    since: Date(timeIntervalSince1970: trigger.latest),
+                    problemCount: trigger.count
                 )
             }
         )
+    }
+
+    /// Aggregates problem events into per-trigger frequency counts, ordered busiest-first (ties
+    /// broken by worst severity, then most-recent). Each trigger's display name/severity come from
+    /// its most recent event and its worst-seen severity respectively.
+    static func rankTriggersByFrequency(_ events: [ZabbixEventSummary]) -> [TriggerFrequency] {
+        var byTrigger: [String: TriggerFrequency] = [:]
+        for event in events {
+            let clock = Double(event.clock) ?? 0
+            let severity = event.severity.intValue
+            if let existing = byTrigger[event.objectid] {
+                byTrigger[event.objectid] = TriggerFrequency(
+                    triggerID: existing.triggerID,
+                    count: existing.count + 1,
+                    name: clock > existing.latest ? event.name : existing.name,
+                    severity: max(existing.severity, severity),
+                    latest: max(existing.latest, clock)
+                )
+            } else {
+                byTrigger[event.objectid] = TriggerFrequency(triggerID: event.objectid, count: 1, name: event.name, severity: severity, latest: clock)
+            }
+        }
+        return byTrigger.values.sorted { lhs, rhs in
+            if lhs.count != rhs.count { return lhs.count > rhs.count }
+            if lhs.severity != rhs.severity { return lhs.severity > rhs.severity }
+            return lhs.latest > rhs.latest
+        }
     }
 
     // MARK: - Trigger overview
