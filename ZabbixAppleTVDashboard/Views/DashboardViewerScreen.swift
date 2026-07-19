@@ -29,12 +29,26 @@ struct DashboardViewerScreen: View {
                 // Keying on the page id (rather than always reusing the same view identity) and
                 // animating on that id crossfades between pages during auto-rotation, matching
                 // Zabbix's own kiosk slideshow transition instead of cutting instantly.
-                DashboardWidgetGridView(widgets: viewModel.widgets)
+                DashboardWidgetGridView(
+                    widgets: viewModel.widgets,
+                    autoScrollEnabled: viewModel.autoScrollEnabled,
+                    onToggleAutoScroll: { viewModel.toggleAutoScroll() }
+                )
                     .id(viewModel.currentPageID)
                     .transition(.opacity)
                     .padding(8)
                     .ignoresSafeArea()
+                    .environment(\.dashboardAutoScrollEnabled, viewModel.autoScrollEnabled)
                     .animation(.easeInOut(duration: 0.6), value: viewModel.currentPageID)
+            }
+
+            // A quiet reminder, only while manual scrolling is on, that the page is under remote
+            // control now (and how to move it) — auto-scroll, the default kiosk state, stays silent.
+            if viewModel.renderingState == .ready, !viewModel.autoScrollEnabled {
+                manualScrollIndicator
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                    .padding(24)
+                    .transition(.opacity)
             }
 
             if viewModel.renderingState != .ready {
@@ -67,6 +81,7 @@ struct DashboardViewerScreen: View {
                 .padding(.bottom, DashboardTheme.verticalScreenPadding)
             }
         }
+        .animation(.easeInOut(duration: 0.3), value: viewModel.autoScrollEnabled)
         .task {
             await viewModel.prepareViewer()
         }
@@ -81,5 +96,21 @@ struct DashboardViewerScreen: View {
         .onDisappear {
             UIApplication.shared.isIdleTimerDisabled = false
         }
+    }
+
+    /// The unobtrusive "you're scrolling by hand" pill shown in manual mode.
+    private var manualScrollIndicator: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "hand.draw")
+            Text("Manual · swipe to scroll · Play/Pause to resume")
+                .font(.system(size: 18, weight: .medium, design: .rounded))
+        }
+        .foregroundStyle(DashboardTheme.primaryText.opacity(0.85))
+        .padding(.horizontal, 18)
+        .padding(.vertical, 12)
+        .background(
+            Capsule(style: .continuous)
+                .fill(DashboardTheme.secondaryCardBackground.opacity(0.9))
+        )
     }
 }

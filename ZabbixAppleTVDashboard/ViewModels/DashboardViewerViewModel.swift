@@ -58,8 +58,14 @@ final class DashboardViewerViewModel: ObservableObject {
     /// the account doesn't need to touch the Apple TV, it just recovers within half an hour.
     private static let credentialFailureRetryDelaySeconds = 30 * 60
 
+    /// Whether a page taller than the screen auto-scrolls (default) or is scrolled by hand with the
+    /// remote. Toggled live from the viewer and persisted, so a wall display keeps the chosen mode
+    /// across restarts.
+    @Published private(set) var autoScrollEnabled = true
+
     private let dashboardManager: DashboardManager
     private let zabbixSessionService: ZabbixSessionService
+    private let settingsService: SettingsService
     private var hasPrepared = false
     private var explicitDashboard: Dashboard?
     private var lastRefreshedAt: [String: Date] = [:]
@@ -74,9 +80,10 @@ final class DashboardViewerViewModel: ObservableObject {
     private var autoRotatesPages = false
 
     /// Creates a dashboard viewer view model.
-    init(dashboardManager: DashboardManager, zabbixSessionService: ZabbixSessionService) {
+    init(dashboardManager: DashboardManager, zabbixSessionService: ZabbixSessionService, settingsService: SettingsService) {
         self.dashboardManager = dashboardManager
         self.zabbixSessionService = zabbixSessionService
+        self.settingsService = settingsService
     }
 
     /// Prepares the viewer by connecting to Zabbix and resolving a dashboard to display.
@@ -94,12 +101,31 @@ final class DashboardViewerViewModel: ObservableObject {
         guard !hasPrepared else { return }
         hasPrepared = true
 
+        // Restore the saved scroll mode before the first frame, so a display configured for manual
+        // scrolling doesn't briefly auto-scroll on launch.
+        if let settings = try? await settingsService.loadDisplaySettings() {
+            autoScrollEnabled = settings.autoScrollEnabled
+        }
+
         let task = Task { [weak self] in
             guard let self else { return }
             await self.runPrepareLoop()
         }
         prepareTask = task
         await task.value
+    }
+
+    /// Flips between auto-scroll and manual (remote-driven) scrolling, persisting the choice so it
+    /// survives a restart. Bound to the remote's Play/Pause button in the viewer.
+    func toggleAutoScroll() {
+        autoScrollEnabled.toggle()
+        let enabled = autoScrollEnabled
+        Task { [weak self] in
+            guard let self else { return }
+            var settings = (try? await self.settingsService.loadDisplaySettings()) ?? .standard
+            settings.autoScrollEnabled = enabled
+            try? await self.settingsService.saveDisplaySettings(settings)
+        }
     }
 
     private func runPrepareLoop() async {

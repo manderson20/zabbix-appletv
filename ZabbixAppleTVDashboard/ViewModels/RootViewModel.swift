@@ -55,7 +55,8 @@ final class RootViewModel: ObservableObject {
         )
         dashboardViewerViewModel = DashboardViewerViewModel(
             dashboardManager: environment.dashboardManager,
-            zabbixSessionService: environment.zabbixSessionService
+            zabbixSessionService: environment.zabbixSessionService,
+            settingsService: environment.settingsService
         )
 
         if hasConfiguration {
