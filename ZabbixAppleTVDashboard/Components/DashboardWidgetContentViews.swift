@@ -590,7 +590,7 @@ struct HoneycombWidgetContentView: View {
                             .lineLimit(1)
                     }
                     .frame(maxWidth: .infinity, minHeight: 60)
-                    .background(DashboardTheme.secondaryCardBackground)
+                    .background(cell.backgroundColorHex.flatMap { Color(hex: $0) } ?? DashboardTheme.secondaryCardBackground)
                     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }
             }

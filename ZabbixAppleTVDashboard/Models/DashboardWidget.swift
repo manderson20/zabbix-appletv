@@ -229,6 +229,10 @@ nonisolated struct HoneycombCell: Identifiable, Sendable {
 
     /// Current value.
     let value: String
+
+    /// Threshold-driven cell color (hex, no leading '#'), or nil when the reading meets no
+    /// configured threshold — the cell then uses the default card background.
+    let backgroundColorHex: String?
 }
 
 /// A single host's row of column values in a top hosts widget.

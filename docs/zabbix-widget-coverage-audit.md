@@ -53,7 +53,7 @@ cosmetic-leaning last).
 | Top triggers | partial | wrong-data | 2 | Wrong metric — ranks current problems by severity, not event-frequency over `time_period`; `groupids`/tags now scoped |
 | Graph (svggraph) | partial | wrong-data | 8 | Per-dataset aggregation/`timeshift`/`approximation`/`axisy` all ignored |
 | Graph (classic) | partial | wrong-data | 7 | Graph type (stacked/pie) lost; Simple-graph mode (`itemid`) unsupported |
-| Honeycomb | partial | wrong-data | 4 | No thresholds/cell coloring; hardcoded 60-cell cap; units/label templates dropped — `items.N` + value maps + item-tag filter now applied |
+| Honeycomb | partial | wrong-data | 3 | Hardcoded 60-cell cap; units/label templates dropped — `items.N` + value maps + item-tag filter + threshold cell coloring now applied |
 | Item navigator | partial | missing-detail | 2 | `group_by` flattened; `show_lines` default 100 — `items.N` + value maps + item-tag filter now applied |
 | Data overview | partial | wrong-data | 3 | Arbitrary 100-item cap; hosts×items matrix flattened — `tags` + value maps now applied |
 | Geomap | partial | missing-detail | 2 | Marker severity now scoped to the widget's tag + severity filter; only `default_view` center/zoom and group-scoped severity remain |
@@ -81,6 +81,7 @@ cosmetic-leaning last).
 **Landed since the original audit:**
 
 - ~~**Item value — thresholds ignored.**~~ **Done** — reads `thresholds.N` (shared `thresholdColorHex` helper) so a value crossing a band repaints the background with its alert color.
+- ~~**Honeycomb — thresholds/cell coloring absent.**~~ **Done** — each cell is tinted by the threshold band its reading meets (same `thresholdColorHex` helper).
 - ~~**Geomap — marker severity ignores widget `tags`.**~~ **Done** — `maxSeverityByHostID` now takes the widget's tag + severity filter, so a marker's color reflects only the problems the widget shows.
 - ~~**Tag filtering on the item-search path.**~~ **Done** — `ZabbixItemSearchParameters` now carries `tags`/`evaltype` (forwarded to `item.get`); Data overview, Honeycomb, and Item navigator apply the widget's item-tag filter.
 - ~~**Item history — item selector reads the wrong field.**~~ **Done** — reads `columns.N.itemid`, honors `show_lines` (default 25), applies value maps, bounds to `time_period`.
@@ -115,7 +116,6 @@ cosmetic-leaning last).
   stacked/pie; implement `source_type=1`/`itemid`.
 - **Web monitoring — scenario status not derived.** Fetch each scenario's status items to render
   Ok/Failed/Unknown; also apply `exclude_groupids` + tags.
-- **Honeycomb — thresholds/cell coloring absent.** Evaluate `thresholds` per cell and color it.
 - **Map — non-host elements always OK.** Compute status for submap/host-group/trigger elements.
 - **Clock — `time_type=host` and `tzone_timezone` ignored.** Fetch the item's `lastclock` for
   host-time mode and honor the configured timezone.
