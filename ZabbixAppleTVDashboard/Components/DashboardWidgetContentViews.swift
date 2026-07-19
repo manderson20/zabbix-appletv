@@ -791,9 +791,11 @@ struct GaugeWidgetContentView: View {
             // at the arc ends (Scale), the bold value in the arc's mouth (moved below the base
             // line when the needle occupies it, as Zabbix reflows), and the description below.
             // `angle` opens the sweep to 180° or 270°.
-            // Capped so the arc + value + description stack (which extends ~0.28·d below the arc's
-            // flat edge) still fits the card height without clipping the description.
-            let diameter = max(min(geometry.size.width, geometry.size.height * 1.15), 40)
+            // The drawn stack spans from the arc's crown (−0.5·d) down to the description
+            // (+0.27·d) — 0.77·d tall. Sizing to height/0.8 and shifting the square down by
+            // +0.115·d keeps that whole extent inside the card's content box, so a tall gauge can
+            // never ride up under the card title or clip its description.
+            let diameter = max(min(geometry.size.width, geometry.size.height * 1.18), 40)
             let lineWidth = max(diameter * 0.13, 8)
             let angle = reading.angleDegrees.clamped(to: 90...359)
             let sweep = angle / 360
@@ -861,6 +863,8 @@ struct GaugeWidgetContentView: View {
                 }
             }
             .frame(width: diameter, height: diameter)
+            // Center the drawn extent (crown → description), not the geometric square.
+            .offset(y: diameter * 0.115)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         }
     }
@@ -970,21 +974,31 @@ struct HoneycombWidgetContentView: View {
     /// the used width spans `columns + 0.5` when there's more than one row). For each candidate
     /// column count the hexagon size is capped by both width and height; the candidate yielding the
     /// biggest hexagon wins. Returns the chosen columns/rows and that hexagon width.
+    /// Within this factor of the largest achievable hexagon, a layout with more rows wins the tie.
+    /// Calibrated against the live frontend: its honeycomb wraps to two offset rows even when a
+    /// single slightly-larger row would fit (12 cells in a TV-kiosk-shaped box), yet flattens to
+    /// one row when the box is genuinely too short for two (verified by probing the live widget at
+    /// two container shapes).
+    private static let rowPreferenceTolerance: CGFloat = 0.85
+
     static func honeycombLayout(count: Int, size: CGSize) -> (columns: Int, rows: Int, hexWidth: CGFloat) {
         guard count > 0, size.width > 0, size.height > 0 else { return (max(count, 1), 1, max(size.width, 0)) }
 
-        var best = (columns: 1, rows: count, hexWidth: CGFloat(0))
+        var candidates: [(columns: Int, rows: Int, hexWidth: CGFloat)] = []
         for columns in 1...count {
             let rows = Int((Double(count) / Double(columns)).rounded(.up))
             let rowShift: CGFloat = rows > 1 ? 0.5 : 0 // alternating rows shift right half a hex
             let widthLimited = size.width / (CGFloat(columns) + rowShift)
             let heightLimited = size.height / (hexHeightRatio * (0.75 * CGFloat(rows - 1) + 1))
-            let hexWidth = min(widthLimited, heightLimited)
-            if hexWidth > best.hexWidth {
-                best = (columns, rows, hexWidth)
-            }
+            candidates.append((columns, rows, min(widthLimited, heightLimited)))
         }
-        return best
+
+        let bestWidth = candidates.map(\.hexWidth).max() ?? 0
+        // Among near-maximal candidates, the most rows — matching the frontend's preference for a
+        // clustered honeycomb over a marginally-larger single strip.
+        return candidates
+            .filter { $0.hexWidth >= bestWidth * Self.rowPreferenceTolerance }
+            .max { ($0.rows, $0.hexWidth) < ($1.rows, $1.hexWidth) } ?? (max(count, 1), 1, 0)
     }
 
     var body: some View {

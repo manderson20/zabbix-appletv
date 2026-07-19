@@ -31,15 +31,16 @@ struct DashboardWidgetGridView: View {
     /// page's content grows taller than the screen and auto-scrolls instead (see below).
     private static let minimumRowHeight: CGFloat = 60
 
-    /// Zabbix's dashboard grid is always 72 columns wide, with a fixed 70px row height (measured
-    /// live: a full-width widget spans 1620px on the reference browser → 22.5px columns; a 5-row
-    /// widget is 350px tall). Widgets therefore keep a fixed row-to-column proportion regardless of
-    /// how tall the page gets — the page scrolls instead of squashing. Reproducing that proportion
-    /// (row height = columnWidth × 70 / 22.5) is what keeps every widget the same *shape* as the
-    /// frontend's, which matters beyond looks: aspect-driven layouts (the honeycomb's row packing)
-    /// pick the same arrangement as Zabbix only when the box has Zabbix's proportions.
+    /// Zabbix's dashboard grid is always 72 columns wide with a fixed 70px row height, and the
+    /// page scrolls when it doesn't fit. The layout anchor here is a 1080p TV running Zabbix's own
+    /// kiosk mode — the display this app replaces — where 70px rows on a 1920-wide screen map 1:1
+    /// to tvOS points. Dashboards the admin designed to fit a TV (≤ ~15 rows) therefore fit this
+    /// screen exactly as they fit the browser kiosk, with no scrolling and no guesswork about how
+    /// the TV will differ from the web; taller pages auto-scroll. (An earlier pass scaled row
+    /// height to the width of the admin's desktop browser window instead, which made every page
+    /// ~18% taller than a real TV kiosk shows it.)
     private static let zabbixGridColumns = 72
-    private static let zabbixRowHeightPerColumnWidth: CGFloat = 70.0 / 22.5
+    private static let zabbixRowHeightPoints: CGFloat = 70
 
     /// How fast an overflowing page auto-scrolls, in points per second — an unattended kiosk display
     /// has no one at the remote, so this is the only way every widget on a page like that actually
@@ -85,9 +86,9 @@ struct DashboardWidgetGridView: View {
             // same trailing space it leaves in the frontend, rather than stretching to fill.
             let columnCount = max(extentColumns, Self.zabbixGridColumns)
             let columnWidth = geometry.size.width / CGFloat(columnCount)
-            // Fixed Zabbix-proportional row height (the page auto-scrolls when it doesn't fit),
-            // so every widget keeps the frontend's shape at any page length.
-            let rowHeight = max(columnWidth * Self.zabbixRowHeightPerColumnWidth, Self.minimumRowHeight)
+            // Fixed 70pt rows — the 1080p-TV-kiosk geometry (see zabbixRowHeightPoints). Pages
+            // designed to fit a TV fit exactly; taller ones auto-scroll.
+            let rowHeight = max(Self.zabbixRowHeightPoints, Self.minimumRowHeight)
             let contentHeight = rowHeight * CGFloat(rowCount)
             let overflow = (contentHeight - geometry.size.height).rounded()
 
@@ -139,15 +140,26 @@ struct DashboardWidgetGridView: View {
             .task(id: "\(overflow)|\(autoScrollEnabled)") {
                 guard autoScrollEnabled, overflow > 0 else { return }
 
-                // A short pause so the first widgets are readable, then a slow, steady crawl to the
-                // bottom in small per-frame steps (see `autoScrollPointsPerFrame`), holding there
-                // until the page rotates. Stepping keeps the model offset equal to what's on screen,
-                // so a switch to manual freezes exactly here.
-                try? await Task.sleep(nanoseconds: Self.autoScrollStartPauseNanoseconds)
-                while !Task.isCancelled && scrollOffset < overflow {
-                    try? await Task.sleep(nanoseconds: Self.autoScrollFrameNanoseconds)
-                    guard !Task.isCancelled else { return }
-                    scrollOffset = min(scrollOffset + Self.autoScrollPointsPerFrame, overflow)
+                // A short pause so the first widgets are readable, then a slow, steady crawl to
+                // the bottom in small per-frame steps (see `autoScrollPointsPerFrame`), a dwell at
+                // the bottom, and a crawl back up — cycling until the page rotates, so a
+                // non-rotating dashboard never parks at the bottom with the top permanently
+                // hidden. Stepping keeps the model offset equal to what's on screen, so a switch
+                // to manual freezes exactly where it is.
+                while !Task.isCancelled {
+                    try? await Task.sleep(nanoseconds: Self.autoScrollStartPauseNanoseconds)
+                    while !Task.isCancelled && scrollOffset < overflow {
+                        try? await Task.sleep(nanoseconds: Self.autoScrollFrameNanoseconds)
+                        guard !Task.isCancelled else { return }
+                        scrollOffset = min(scrollOffset + Self.autoScrollPointsPerFrame, overflow)
+                    }
+
+                    try? await Task.sleep(nanoseconds: Self.autoScrollStartPauseNanoseconds)
+                    while !Task.isCancelled && scrollOffset > 0 {
+                        try? await Task.sleep(nanoseconds: Self.autoScrollFrameNanoseconds)
+                        guard !Task.isCancelled else { return }
+                        scrollOffset = max(scrollOffset - Self.autoScrollPointsPerFrame, 0)
+                    }
                 }
             }
         }

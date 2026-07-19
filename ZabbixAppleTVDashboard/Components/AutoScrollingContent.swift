@@ -61,11 +61,20 @@ struct AutoScrollingContent<Content: View>: View {
                         return
                     }
 
-                    try? await Task.sleep(nanoseconds: Self.pauseNanoseconds)
-                    guard !Task.isCancelled else { return }
-
-                    withAnimation(.linear(duration: Double(overflow / Self.pointsPerSecond))) {
-                        scrollOffset = overflow
+                    // Crawl to the bottom, dwell, crawl back up, and repeat — same cycle as the
+                    // page-level auto-scroll, so a long list never parks with its top rows hidden.
+                    while !Task.isCancelled {
+                        try? await Task.sleep(nanoseconds: Self.pauseNanoseconds)
+                        guard !Task.isCancelled else { return }
+                        withAnimation(.linear(duration: Double(overflow / Self.pointsPerSecond))) {
+                            scrollOffset = overflow
+                        }
+                        try? await Task.sleep(nanoseconds: UInt64(Double(overflow / Self.pointsPerSecond) * 1_000_000_000) + Self.pauseNanoseconds)
+                        guard !Task.isCancelled else { return }
+                        withAnimation(.linear(duration: Double(overflow / Self.pointsPerSecond))) {
+                            scrollOffset = 0
+                        }
+                        try? await Task.sleep(nanoseconds: UInt64(Double(overflow / Self.pointsPerSecond) * 1_000_000_000))
                     }
                 }
         }

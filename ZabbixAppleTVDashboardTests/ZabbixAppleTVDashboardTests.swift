@@ -797,6 +797,20 @@ struct ZabbixAppleTVDashboardTests {
         let zabbixTwelve = HoneycombWidgetContentView.honeycombLayout(count: 12, size: CGSize(width: 1500, height: 300))
         #expect(zabbixTwelve.columns == 6 && zabbixTwelve.rows == 2)
 
+        // 12 cells in a TV-kiosk-shaped box (wider than the browser case) still wrap to two rows —
+        // the near-tie row preference; a single row of 12 would be only marginally larger.
+        let tvTwelve = HoneycombWidgetContentView.honeycombLayout(count: 12, size: CGSize(width: 1878, height: 305))
+        #expect(tvTwelve.columns == 6 && tvTwelve.rows == 2)
+
+        // ...including at the card's real content height on-device (shorter after chrome).
+        let tvContent = HoneycombWidgetContentView.honeycombLayout(count: 12, size: CGSize(width: 1880, height: 285))
+        #expect(tvContent.columns == 6 && tvContent.rows == 2)
+
+        // A genuinely too-short box still flattens to one row (verified by probing the live
+        // frontend widget squashed to 1610×98).
+        let squashed = HoneycombWidgetContentView.honeycombLayout(count: 12, size: CGSize(width: 1610, height: 98))
+        #expect(squashed.rows == 1)
+
         // A short, wide widget with 11 cells packs them into a single row rather than the lopsided
         // 9-on-top / 2-on-bottom split the old near-square grid produced.
         let wideStrip = HoneycombWidgetContentView.honeycombLayout(count: 11, size: CGSize(width: 1800, height: 260))
