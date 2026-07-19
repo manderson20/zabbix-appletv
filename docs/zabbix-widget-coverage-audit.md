@@ -22,7 +22,7 @@ Sorted by worst impact (wrong-data first; renders-nothing / entirely-wrong-conte
 | Top hosts | partial | missing-detail | 3 | Ranking (`order`/`column`/`show_lines`) + per-column `aggregate_function` over `time_period` now honored; still missing tag/maintenance scope, exact-item match, units/thresholds |
 | Trigger overview | partial | wrong-data | 6 | `show` hardcoded to PROBLEM-only; no OK/green cells, ignores `show_suppressed` |
 | Item value | partial | wrong-data | 6 | `aggregate_function`+`time_period` and `thresholds` ignored → wrong number, no alert color |
-| Pie chart | partial | wrong-data | 8 | Aggregation ignored + pattern datasets collapsed to one slice → wrong proportions |
+| Pie chart | partial | missing-detail | 5 | Pattern datasets now expand to one slice per item (correct proportions) + per-dataset `aggregate_function`/`dataset_aggregation` over `time_period` honored; still missing merge/center-total, units, value maps |
 | Graph (svggraph) | partial | wrong-data | 8 | Per-dataset aggregation/`timeshift`/`approximation`/`axisy` all ignored |
 | Graph (classic) | partial | wrong-data | 7 | Graph type (stacked/pie) lost; Simple-graph mode (`itemid`) unsupported |
 | Data overview | partial | wrong-data | 5 | `tags` ignored + value maps dropped + 100-item arbitrary cap |
@@ -49,7 +49,7 @@ Sorted by worst impact (wrong-data first; renders-nothing / entirely-wrong-conte
 - **Problem hosts / Action log / Map navigation tree — resolvers don't receive the widget.** Change the resolver signatures to accept `ZabbixWidget` so any field can be read at all; then apply group/host/tag scope (problemhosts), `time_period`+filters (actionlog), and the authored `navtree` (navtree).
 - **Positive `groupids` scoping dropped.** Apply it in Problems, Problems by severity, Problem hosts, Top triggers, Host availability (the `problem.get`/`host.get` param structs need a `groupids` key where missing). This is the most common cause of inflated counts/extra rows.
 - **Tag filtering (`tags`+`evaltype`) unimplemented everywhere.** Add a shared tag-param builder and apply to Problems, Problems by severity, Problem hosts, Trigger overview, Top triggers, Top hosts, Data overview, Honeycomb, Web, Geomap, Host/Item navigator.
-- **Aggregation over a window ignored.** Item value, Pie chart, Graph (svg), Top hosts must compute `aggregate_function` over `time_period` (via history/trends) instead of showing `lastvalue`.
+- **Aggregation over a window ignored.** ~~Item value, Pie chart, ~~Graph (svg)~~, Top hosts~~ must compute `aggregate_function` over `time_period` (via history/trends) instead of showing `lastvalue`. **Item value, Top hosts, Pie chart done**; Graph (svg) still hardcodes `avg` backfill regardless of `approximation`.
 - **Top triggers — wrong metric.** Rank by problem-event count over `time_period` (`event.get` grouped by `objectid`, ordered by count DESC) and surface the count column; currently sorts current problems by severity.
 - ~~**Top hosts — ranking unimplemented.** Honor `column` (order-by), `order` (Top/Bottom N), and `show_lines` instead of default hostid order capped at 25.~~ **Done** — ranks up to 50 candidate hosts by the configured column (Top/Bottom N), limited to `show_lines` (default 10); per-column `aggregate_function` computed over `time_period`.
 - **Trigger overview — only PROBLEM state fetched.** Honor `show` (Recent/Problems/Any) so OK/green cells render, and apply `show_suppressed`.

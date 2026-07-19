@@ -1240,7 +1240,11 @@ extension DashboardManager {
     // MARK: - Pie chart
 
     /// Reuses the same "ds.N.*" dataset fields as svggraph (Zabbix's newer chart widgets share the
-    /// dataset concept), showing each dataset's latest value rather than its history.
+    /// dataset concept). Each dataset can match many items via patterns; every matched item becomes
+    /// its own slice — so a wildcard `*` produces one slice per item and the proportions are correct
+    /// — unless `dataset_aggregation` collapses the dataset into a single combined slice. Each
+    /// item's value is aggregated over the widget's `time_period` when `aggregate_function` is set,
+    /// rather than its instantaneous last sample.
     private func resolvePieChart(
         _ widget: ZabbixWidget,
         serverBaseURL: URL,
@@ -1251,22 +1255,62 @@ extension DashboardManager {
             return .unsupported(rawType: widget.type)
         }
 
+        let (windowStart, windowEnd) = Self.timePeriod(from: widget.fields)
         var slices: [ChartSlice] = []
-        for dataset in datasets {
-            guard let hostName = dataset["hosts.0"], let itemPattern = dataset["items.0"] else { continue }
 
-            let hosts = try await zabbixAPIClient.hostsByName(serverBaseURL: serverBaseURL, authToken: authToken, names: [hostName])
-            guard let host = hosts.first else { continue }
+        for (datasetIndex, dataset) in datasets.enumerated() {
+            let hostNames = Self.valuesWithNumberedSuffix(dataset, prefix: "hosts.")
+            let itemPatterns = Self.valuesWithNumberedSuffix(dataset, prefix: "items.")
+            guard !hostNames.isEmpty, !itemPatterns.isEmpty else { continue }
 
-            let items = try await zabbixAPIClient.itemsMatching(
-                serverBaseURL: serverBaseURL,
-                authToken: authToken,
-                hostIDs: [host.hostid],
-                namePattern: itemPattern
-            )
-            guard let item = items.first, let value = item.lastvalue.flatMap(Double.init) else { continue }
+            let baseColorHex = dataset["color"] ?? "3DC9B0"
+            let aggregateFunction = dataset["aggregate_function"].flatMap(Int.init) ?? 0
+            let datasetAggregation = dataset["dataset_aggregation"].flatMap(Int.init) ?? 0
 
-            slices.append(ChartSlice(id: "\(widget.widgetid).\(item.itemid)", name: "\(host.name): \(item.name)", colorHex: dataset["color"] ?? "3DC9B0", value: value))
+            let hosts = try await zabbixAPIClient.hostsByName(serverBaseURL: serverBaseURL, authToken: authToken, names: hostNames)
+
+            // One (id, label, value) per matched item across every host/pattern in the dataset.
+            var matched: [(id: String, label: String, value: Double)] = []
+            for host in hosts {
+                for itemPattern in itemPatterns {
+                    let items = try await zabbixAPIClient.itemsMatching(
+                        serverBaseURL: serverBaseURL,
+                        authToken: authToken,
+                        hostIDs: [host.hostid],
+                        namePattern: itemPattern
+                    )
+                    for item in items {
+                        let value: Double?
+                        if aggregateFunction > 0 {
+                            value = try await aggregatedValue(
+                                itemID: item.itemid,
+                                valueType: item.value_type?.intValue ?? 0,
+                                function: aggregateFunction,
+                                from: windowStart,
+                                to: windowEnd,
+                                serverBaseURL: serverBaseURL,
+                                authToken: authToken
+                            )
+                        } else {
+                            value = item.lastvalue.flatMap(Double.init)
+                        }
+                        guard let value else { continue }
+                        matched.append((id: item.itemid, label: "\(host.name): \(item.name)", value: value))
+                    }
+                }
+            }
+            guard !matched.isEmpty else { continue }
+
+            if datasetAggregation > 0 {
+                // Collapse every matched item into one combined slice for this dataset.
+                guard let combined = Self.aggregate(matched.map { (clock: 0, value: $0.value) }, function: datasetAggregation) else { continue }
+                slices.append(ChartSlice(id: "\(widget.widgetid).ds\(datasetIndex)", name: matched.first?.label ?? "Data set \(datasetIndex + 1)", colorHex: baseColorHex, value: combined))
+            } else {
+                // One slice per matched item, shaded so items sharing a dataset color stay distinct.
+                for (index, entry) in matched.enumerated() {
+                    slices.append(ChartSlice(id: "\(widget.widgetid).\(entry.id)", name: entry.label, colorHex: Self.shadedColorHex(baseColorHex, index: index), value: entry.value))
+                }
+            }
         }
 
         return slices.isEmpty ? .unsupported(rawType: widget.type) : .pieChart(slices)
