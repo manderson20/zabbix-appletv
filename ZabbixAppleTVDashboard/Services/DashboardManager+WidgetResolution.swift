@@ -48,11 +48,16 @@ extension DashboardManager {
         result.reserveCapacity(widgets.count)
 
         for widget in widgets {
+            pendingDefaultTitle = nil
             let kind = try await resolveWidgetKind(widget, serverBaseURL: serverBaseURL, authToken: authToken)
+            // A custom widget name always wins; otherwise a resolver-provided data-driven title
+            // (Zabbix's "HOST: item name" style defaults), then the widget-type fallback.
+            let dataDrivenTitle = pendingDefaultTitle
+            pendingDefaultTitle = nil
             result.append(
                 RenderableDashboardWidget(
                     id: widget.widgetid,
-                    title: widget.name?.isEmpty == false ? widget.name! : Self.defaultTitle(forWidgetType: widget.type),
+                    title: widget.name?.isEmpty == false ? widget.name! : (dataDrivenTitle ?? Self.defaultTitle(forWidgetType: widget.type)),
                     frame: DashboardWidgetFrame(
                         x: widget.x.intValue,
                         y: widget.y.intValue,
@@ -104,11 +109,15 @@ extension DashboardManager {
             let timeZoneIdentifier = Self.clockTimeZoneIdentifier(from: widget.fields)
 
             var hostTimeOffset: TimeInterval?
+            var clockHostName: String?
             if timeType == 2, let itemID = Self.firstIndexedValue(widget.fields, name: "itemid") {
                 let items = try await zabbixAPIClient.items(serverBaseURL: serverBaseURL, authToken: authToken, itemIDs: [itemID])
                 hostTimeOffset = Self.hostTimeOffset(lastValue: items.first?.lastvalue, lastClock: items.first?.lastclock)
+                clockHostName = items.first?.hosts?.first?.name
             }
 
+            // Zabbix's default clock header names the time source: "Local", "Server", or the host.
+            pendingDefaultTitle = timeType == 2 ? (clockHostName ?? "Host") : (timeType == 1 ? "Server" : "Local")
             return .clock(ClockConfiguration(style: style, timeZoneIdentifier: timeZoneIdentifier, hostTimeOffset: hostTimeOffset))
 
         case "problems":
@@ -231,6 +240,8 @@ extension DashboardManager {
                 decimalPlaces: decimalPlaces
             )
 
+            // Zabbix's default item-value header is "HOST: item name".
+            pendingDefaultTitle = Self.hostPrefixedTitle(host: item.hosts?.first?.name, name: item.name)
             return .itemValue(
                 name: label,
                 value: displayValue,
@@ -480,6 +491,8 @@ extension DashboardManager {
             decimalPlaces: decimalPlaces
         )
 
+        // Zabbix's default gauge header is "HOST: item name".
+        pendingDefaultTitle = Self.hostPrefixedTitle(host: item.hosts?.first?.name, name: item.name)
         return .gauge(
             GaugeReading(
                 name: label,
@@ -1800,6 +1813,8 @@ extension DashboardManager {
             guard let item = items.first else { return .referencedObjectUnavailable }
             let points = try await recentPoints(for: item.itemid, valueType: item.value_type?.intValue ?? 0, windowStart: windowStart, windowEnd: windowEnd, serverBaseURL: serverBaseURL, authToken: authToken)
             let series = [ChartSeries(id: "\(widget.widgetid).\(item.itemid)", name: item.name, colorHex: "3DC9B0", units: item.units ?? "", fillOpacity: 0.5, points: points)]
+            // Zabbix's default Simple-graph header is "HOST: item name".
+            pendingDefaultTitle = Self.hostPrefixedTitle(host: item.hosts?.first?.name, name: item.name)
             return .lineChart(series: series, window: ChartTimeWindow(start: windowStart, end: windowEnd), stacked: false, showLegend: Self.fieldValue(widget.fields, name: "legend") != "0", showLegendStats: true, yMin: nil, yMax: nil)
         }
 
@@ -1829,6 +1844,8 @@ extension DashboardManager {
                 guard let item = itemsByID[gitem.itemid], let value = item.lastvalue.flatMap(Double.init) else { return nil }
                 return ChartSlice(id: "\(widget.widgetid).\(item.itemid)", name: item.name, colorHex: gitem.color, value: value)
             }
+            // Zabbix's default classic-graph header is "HOST: graph name".
+            pendingDefaultTitle = Self.hostPrefixedTitle(host: graph.gitems.first.flatMap { itemsByID[$0.itemid]?.hosts?.first?.name }, name: graph.name)
             return slices.isEmpty ? .unsupported(rawType: widget.type) : .pieChart(slices, isDonut: false)
         }
 
@@ -1851,6 +1868,8 @@ extension DashboardManager {
         let yMax = graph.ymax_type?.intValue == 1 ? graph.yaxismax.flatMap(Double.init) : nil
         // Classic graph type 1 is a stacked graph; 0 is a normal overlaid line chart. Classic graphs
         // render Zabbix's stats legend (last/min/avg/max per series).
+        // Zabbix's default classic-graph header is "HOST: graph name".
+        pendingDefaultTitle = Self.hostPrefixedTitle(host: graph.gitems.first.flatMap { itemsByID[$0.itemid]?.hosts?.first?.name }, name: graph.name)
         return series.isEmpty ? .unsupported(rawType: widget.type) : .lineChart(series: series, window: window, stacked: graphType == 1, showLegend: Self.fieldValue(widget.fields, name: "legend") != "0", showLegendStats: true, yMin: yMin, yMax: yMax)
     }
 
@@ -2447,6 +2466,13 @@ extension DashboardManager {
         case 4: "JMX"
         default: "Interface Type \(type)"
         }
+    }
+
+    /// Zabbix's data-driven default header for object-referencing widgets: "HOST: name", or just
+    /// the name when the host is unknown.
+    static func hostPrefixedTitle(host: String?, name: String) -> String {
+        guard let host, !host.isEmpty else { return name }
+        return "\(host): \(name)"
     }
 
     /// Zabbix's own default widget title, shown for a widget with no custom name set — matches

@@ -304,6 +304,14 @@ struct ZabbixAppleTVDashboardTests {
         #expect(Int(count) == 912)
     }
 
+    @Test func hostPrefixedTitleMatchesZabbixDefaultHeaders() throws {
+        // Zabbix's default header for object-referencing widgets is "HOST: name".
+        #expect(DashboardManager.hostPrefixedTitle(host: "BSD-DNS1", name: "Available memory") == "BSD-DNS1: Available memory")
+        // Unknown host falls back to the bare name, never a dangling separator.
+        #expect(DashboardManager.hostPrefixedTitle(host: nil, name: "Available memory") == "Available memory")
+        #expect(DashboardManager.hostPrefixedTitle(host: "", name: "CPU utilization") == "CPU utilization")
+    }
+
     @Test func widgetFieldHelpersParseScalarAndIndexedFields() throws {
         let fields = [
             ZabbixWidgetField(name: "min", value: "0"),

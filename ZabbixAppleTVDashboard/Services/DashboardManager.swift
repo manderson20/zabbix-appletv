@@ -17,6 +17,15 @@ actor DashboardManager {
     /// fetched once rather than on every dashboard/refresh load.
     var hasFetchedSeverityPalette = false
 
+    /// Data-driven default title for the widget most recently resolved — Zabbix's own default
+    /// headers name the data, not the widget type ("BSD-DNS1: Available memory", a clock's
+    /// "Local"). A resolver that knows the better title sets this synchronously immediately before
+    /// returning, and `renderableWidgets` consumes (and clears) it synchronously right after each
+    /// `resolveWidgetKind` returns; with no suspension point between set→return→read on this
+    /// actor, concurrent resolutions can't cross-contaminate. Nil means "use the widget-type
+    /// fallback title".
+    var pendingDefaultTitle: String?
+
     /// Creates a dashboard manager backed by the Zabbix stack.
     init(
         settingsService: SettingsService,
