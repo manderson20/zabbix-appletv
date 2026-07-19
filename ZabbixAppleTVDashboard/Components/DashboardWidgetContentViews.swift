@@ -658,7 +658,7 @@ struct TriggerOverviewWidgetContentView: View {
                             HStack(spacing: 4) {
                                 ForEach(row.triggers.prefix(20)) { trigger in
                                     RoundedRectangle(cornerRadius: 3, style: .continuous)
-                                        .fill(severityIndicatorColor(for: trigger.severity))
+                                        .fill(trigger.isProblem ? severityIndicatorColor(for: trigger.severity) : Color.green)
                                         .frame(width: 14, height: 14)
                                 }
                             }

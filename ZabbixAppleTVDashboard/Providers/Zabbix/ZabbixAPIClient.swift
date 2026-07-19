@@ -187,11 +187,21 @@ actor ZabbixAPIClient {
         authToken: String,
         groupIDs: [String]? = nil,
         hostIDs: [String]? = nil,
+        onlyProblems: Bool = true,
+        tags: [ZabbixTagFilter]? = nil,
+        evalType: Int? = nil,
         limit: Int = 100
     ) async throws -> [ZabbixTriggerSummary] {
         try await send(
             method: "trigger.get",
-            params: ZabbixActiveTriggerGetParameters(groupids: groupIDs, hostids: hostIDs, limit: limit),
+            params: ZabbixActiveTriggerGetParameters(
+                groupids: groupIDs,
+                hostids: hostIDs,
+                onlyProblems: onlyProblems,
+                tags: tags,
+                evaltype: evalType,
+                limit: limit
+            ),
             serverBaseURL: serverBaseURL,
             authToken: authToken,
             resultType: [ZabbixTriggerSummary].self

@@ -18,6 +18,11 @@ nonisolated struct ZabbixTriggerSummary: Decodable, Sendable {
     /// Severity, from 0 (not classified) to 5 (disaster).
     let priority: ZabbixNumericString
 
+    /// Current trigger state: 0 = OK, 1 = PROBLEM. Present only when requested in `output`; when the
+    /// query already restricts to PROBLEM-state triggers this is left unrequested and defaults to
+    /// PROBLEM at the call site.
+    let value: ZabbixNumericString?
+
     /// Hosts the trigger is defined on.
     let hosts: [ZabbixHostReference]
 }
