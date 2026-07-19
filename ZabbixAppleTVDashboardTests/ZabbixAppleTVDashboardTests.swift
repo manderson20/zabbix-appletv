@@ -849,6 +849,17 @@ struct ZabbixAppleTVDashboardTests {
         #expect(DashboardManager.formattedItemValue(rawValue: nil, units: "%", valueMap: nil, decimalPlaces: 2) == "\u{2014}")
     }
 
+    @Test func legendStatFormattingKeepsSmallReadingsVisible() throws {
+        // Zabbix's classic-graph legend shows ~4 significant digits — a 0.07917% CPU reading must
+        // not collapse to "0 %" the way the coarser axis-label rounding would.
+        #expect(ZabbixValueFormatting.formatLegendStat(0.07917, units: "%") == "0.07917 %")
+        #expect(ZabbixValueFormatting.formatLegendStat(1.9836, units: "%") == "1.984 %")
+        // Large byte readings still scale to the metric suffix.
+        #expect(ZabbixValueFormatting.formatLegendStat(15_100_000_000, units: "B") == "15.1 GB")
+        // Unit-less values carry no dangling space.
+        #expect(ZabbixValueFormatting.formatLegendStat(111.25, units: "") == "111.2")
+    }
+
     @Test func itemValueFormattingHonorsDecimalPlacesAndUnits() throws {
         // Default 2 decimals with a unit suffix.
         #expect(ZabbixValueFormatting.formatItemValue(1, units: "%") == "1.00 %")
