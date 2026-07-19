@@ -33,6 +33,19 @@ helpers the original audit predicted would each fix a class of widgets:
 - **Resolver signatures** were standardized to receive the widget: Problem hosts and Action log now
   do (and honor their scope/`show_lines`). **Map navigation tree still does not.**
 
+**Final parity sweep (2026-07-19):** the QA dashboard was captured end-to-end in the Zabbix
+frontend (kiosk mode, via the user's browser) and on the tvOS simulator, and compared widget by
+widget. Every widget on the page now renders in Zabbix's own visual language: pointy-top honeycomb
+(sampled colors), auto-scaled graphs with color-key/stats legends and dashed trigger threshold
+lines (macro-expanded labels), full pie with bottom legend, host×trigger matrix with rotated
+headers, groups×severity table, colored availability header blocks with Agent (active)/(passive)
+rows, the full System information Parameter/Value/Details table, rotated Data-overview headers,
+data-driven default titles ("HOST: item", clock "Local"), centered item values with trend arrows,
+and the needle-less arc gauge. Rendering degrades account-relatively (Zabbix's own no-permission
+wording for unresolvable references). Remaining known deltas are listed per-row below — all are
+either deliberate TV adaptations (fit-maximized honeycomb packing on the wider TV aspect, safety
+row caps) or API-unavailable data (server binary version, users online).
+
 The genuine strengths are unchanged: everything fetches under the session token, so server-side
 permissions hold and nothing leaks. The wrong-data set is down to 2, and both are the **Data-overview / Honeycomb `prefix(N)` row caps** —
 deliberate TV safety limits with no corresponding Zabbix field (they bound how many cells/rows render
@@ -55,10 +68,10 @@ cosmetic-leaning last).
 | Web monitoring | partial | missing-detail | 1 | Status (`web.test.fail`) + full scope (`groupids`/`hostids`/tags/`exclude_groupids`) honored; only the 15-row view cap remains |
 | Top triggers | partial | missing-detail | 1 | Now ranks by problem-event frequency over `time_period` with a count column; only acknowledgement filtering remains |
 | Graph (svggraph) | partial | missing-detail | 1 | Per-dataset `aggregate_function`/`aggregate_interval`, `timeshift`, and `approximation` all honored; only left/right `axisy` assignment remains |
-| Graph (classic) | full | missing-detail | 1 | Line/stacked/pie/exploded-pie `graphtype` and Simple-graph (`itemid`) mode all rendered; the graph reference is read from the indexed `graphid.0` field (verified live — an exact-name read missed it and rendered "not supported"); only legend/color cosmetics remain |
-| Honeycomb | partial | wrong-data | 1 | `primary_label`/`secondary_label` macro templates, `items.N`, value maps, item-tag filter, threshold coloring, and unit/decimal formatting all applied; cells are now tessellated flat-top **hexagons** (offset-column honeycomb packing sized to fill the widget), not a rectangle grid; only the hardcoded 60-cell cap remains |
+| Graph (classic) | full | missing-detail | 1 | Line/stacked/pie/exploded-pie `graphtype` and Simple-graph (`itemid`) mode all rendered; indexed `graphid.0` read verified live; stats legend, fixed-axis bounds, and dashed trigger threshold lines (simple constant expressions, macro-expanded labels, severity-colored) all drawn — verified on-device against the frontend |
+| Honeycomb | partial | wrong-data | 1 | `primary_label`/`secondary_label` macro templates, `items.N`, value maps, item-tag filter, threshold coloring, and unit/decimal formatting all applied; cells are tessellated pointy-top **hexagons** in offset rows (geometry, #3D5059 fill, and label emphasis sampled from the live frontend's SVG; fit-maximizing packing, so the wider TV aspect may pick a different row split than the browser); only the hardcoded 60-cell cap remains |
 | Item navigator | partial | missing-detail | 1 | `group_by` now sections the list (by host); `items.N` + value maps + item-tag filter applied — only the specific group-by attribute (tag vs host) isn't distinguished |
-| Data overview | partial | wrong-data | 1 | Renders the hosts×items matrix (with `style` orientation) + tags + value maps + unit/decimal formatting, values in Zabbix's plain foreground color (not link-blue); only the arbitrary 100-item cap remains |
+| Data overview | partial | wrong-data | 1 | Renders the hosts×items matrix (with `style` orientation) + tags + value maps + unit/decimal formatting, values in Zabbix's plain foreground color and column headers rotated vertically like Zabbix's; only the arbitrary 100-item cap remains |
 | Geomap | full | missing-detail | 0 | Marker severity scoped to the widget's tag + severity filter, and `default_view` initial center/zoom honored |
 | Problems | partial | missing-detail | 1 | `groupids`/tags/suppression/acknowledgement and per-problem `show_tags` (event tag chips) honored — verified live; only `show`(recent/history) mode and the `show_lines` default (20 vs 25) remain |
 | Problems by severity | full | missing-detail | 1 | `show_type` mapping corrected against the live widget (0/default = per-group table, 1 = totals — previously inverted); the groups table lists every in-scope group with hosts (empty ones too, honoring `hide_empty_groups`), sorted by name, with severity-colored count cells; only the `layout` (horizontal/vertical) cosmetic remains |
@@ -69,7 +82,7 @@ cosmetic-leaning last).
 | Item value | partial | missing-detail | 1 | aggregation, `thresholds`, unit/decimal formatting, `description` label-macros, and Zabbix's centered time/value/description layout (trend arrow beside the value) all done; only explicit position/size cosmetics remain |
 | Gauge | partial | missing-detail | 4 | unit/decimal formatting, `description` label-macros, and Zabbix's arc-fill design (value sector on the dark track, no needle; value in the arc's mouth, min/max at the ends, description below — colors sampled from the live frontend) all done; only cosmetic color/size knobs remain |
 | Pie chart | partial | missing-detail | 4 | Pattern expansion + per-dataset aggregation + legend value labels (units/decimals) honored; still missing merge/center-total and value maps |
-| Host availability | partial | missing-detail | 3 | Renders Zabbix's colored header blocks and "Total Hosts"/"Agent (passive)" row labels; still ignores maintenance, active-check availability (`active_available` — the "Agent (active)" row), and layout |
+| Host availability | partial | missing-detail | 3 | Renders Zabbix's colored header blocks and the full row set — "Total Hosts", "Agent (active)" (from the 7.0 `active_available` host field, "-" in Mixed), "Agent (passive)", per-interface rows; still ignores maintenance and layout |
 | Host navigator | partial | missing-detail | 1 | `group_by` now sections the list (by host group); `hosts.N`/`status`/host-tags honored — only the specific group-by attribute (group vs tag vs severity) isn't distinguished |
 | Problem hosts | partial | missing-detail | 1 | Per-severity count columns now rendered (host counted in its worst-severity column); groups(nested)/tags/severity/suppression/exclude all applied — only explicit `hostids` scoping remains |
 | Top hosts | partial | missing-detail | 2 | Ranking + per-column aggregation + per-column units/decimals honored; still missing tag/maintenance scope and exact-item match |
