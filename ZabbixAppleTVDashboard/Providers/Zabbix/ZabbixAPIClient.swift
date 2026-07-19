@@ -129,6 +129,35 @@ actor ZabbixAPIClient {
         return dashboard
     }
 
+    /// Counts objects of a `*.get` method matching an exact-value filter (`countOutput`), scoped —
+    /// like every API result — to what the authenticated account can see. Used by the System
+    /// information widget's tallies.
+    func objectCount(method: String, filter: [String: String]?, serverBaseURL: URL, authToken: String) async throws -> Int {
+        let count = try await send(
+            method: method,
+            params: ZabbixCountParameters(filter: filter),
+            serverBaseURL: serverBaseURL,
+            authToken: authToken,
+            resultType: String.self
+        )
+        guard let value = Int(count) else {
+            throw DashboardOpsError.invalidServerResponse
+        }
+        return value
+    }
+
+    /// Fetches a single item by its exact key (e.g. the Zabbix server's internal
+    /// `zabbix[requiredperformance]`), returning nil when no matching item is visible.
+    func itemByKey(serverBaseURL: URL, authToken: String, key: String) async throws -> ZabbixItemSummary? {
+        try await send(
+            method: "item.get",
+            params: ZabbixItemByKeyParameters(key: key),
+            serverBaseURL: serverBaseURL,
+            authToken: authToken,
+            resultType: [ZabbixItemSummary].self
+        ).first
+    }
+
     /// Fetches item metadata and last values for a set of item identifiers.
     func items(serverBaseURL: URL, authToken: String, itemIDs: [String]) async throws -> [ZabbixItemSummary] {
         try await send(

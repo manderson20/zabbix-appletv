@@ -335,30 +335,7 @@ extension DashboardManager {
             return .hostAvailability(rows)
 
         case "systeminfo":
-            let serverVersion = try await zabbixAPIClient.apiVersion(serverBaseURL: serverBaseURL)
-
-            // "info_type": 0 = server stats, 1 = high-availability nodes. hanode.get (6.0+) both
-            // populates the HA-nodes list and gives a real running signal (some node active). It's
-            // best-effort: a standalone server returns no nodes, and older servers error — either
-            // way we fall back to the API-success proxy below.
-            let infoType = Self.fieldValue(widget.fields, name: "info_type").flatMap(Int.init) ?? 0
-            let nodes = (try? await zabbixAPIClient.haNodes(serverBaseURL: serverBaseURL, authToken: authToken)) ?? []
-
-            // Zabbix's frontend checks "server is running" via a direct socket to the trapper port,
-            // unreachable here. When HA nodes are known, an active node means the server is up;
-            // otherwise a live authenticated session is the closest available proxy.
-            let isRunning = Self.isServerRunning(fromHANodeStatuses: nodes.map { $0.status.intValue }) ?? true
-
-            let haNodes = infoType == 1 ? nodes.enumerated().map { index, node -> SystemHANode in
-                SystemHANode(
-                    id: node.name.isEmpty ? "node-\(index)" : node.name,
-                    name: node.name.isEmpty ? "Standalone" : node.name,
-                    statusLabel: Self.haNodeStatusLabel(node.status.intValue),
-                    isActive: node.status.intValue == 3
-                )
-            } : []
-
-            return .systemInformation(serverVersion: serverVersion, isRunning: isRunning, haNodes: haNodes)
+            return try await resolveSystemInformation(widget, serverBaseURL: serverBaseURL, authToken: authToken)
 
         case "gauge":
             return try await resolveGauge(widget, serverBaseURL: serverBaseURL, authToken: authToken)
@@ -1934,6 +1911,111 @@ extension DashboardManager {
 
         // Zabbix's pie chart is a full pie by default; `draw_type` 1 switches to a doughnut.
         return slices.isEmpty ? .unsupported(rawType: widget.type) : .pieChart(slices, isDonut: Self.fieldValue(widget.fields, name: "draw_type") == "1")
+    }
+
+    // MARK: - System information
+
+    /// Builds Zabbix's System information table: server-running status, the frontend/API version,
+    /// and host/template/item/trigger tallies via `countOutput` queries, plus the server's required
+    /// performance reading. Every count is computed server-side and scoped to the authenticated
+    /// account's visibility — a limited account sees its own (smaller) numbers, exactly as Zabbix's
+    /// frontend scopes what it shows that account — and each count is best-effort, so a row the
+    /// account can't compute is omitted rather than failing the widget.
+    private func resolveSystemInformation(
+        _ widget: ZabbixWidget,
+        serverBaseURL: URL,
+        authToken: String
+    ) async throws -> DashboardWidgetKind {
+        // "info_type": 0 = server stats, 1 = high-availability nodes. hanode.get (6.0+) both
+        // populates the HA-nodes list and gives a real running signal (some node active). It's
+        // best-effort: a standalone server returns no nodes, and older servers error — either
+        // way we fall back to the API-success proxy below.
+        let infoType = Self.fieldValue(widget.fields, name: "info_type").flatMap(Int.init) ?? 0
+        let nodes = (try? await zabbixAPIClient.haNodes(serverBaseURL: serverBaseURL, authToken: authToken)) ?? []
+
+        if infoType == 1 {
+            let haNodes = nodes.enumerated().map { index, node -> SystemHANode in
+                SystemHANode(
+                    id: node.name.isEmpty ? "node-\(index)" : node.name,
+                    name: node.name.isEmpty ? "Standalone" : node.name,
+                    statusLabel: Self.haNodeStatusLabel(node.status.intValue),
+                    isActive: node.status.intValue == 3
+                )
+            }
+            return .systemInformation(rows: [], haNodes: haNodes)
+        }
+
+        // Zabbix's frontend checks "server is running" via a direct socket to the trapper port,
+        // unreachable here. When HA nodes are known, an active node means the server is up;
+        // otherwise a live authenticated session is the closest available proxy.
+        let isRunning = Self.isServerRunning(fromHANodeStatuses: nodes.map { $0.status.intValue }) ?? true
+
+        let frontendVersion = try await zabbixAPIClient.apiVersion(serverBaseURL: serverBaseURL)
+
+        // The tallies, concurrently. Filters mirror Zabbix's own System information report:
+        // items split enabled (status 0, state 0) / disabled (status 1) / not supported (status 0,
+        // state 1); triggers split enabled/disabled with the enabled ones sub-split problem/ok.
+        async let hostsEnabled = try? zabbixAPIClient.objectCount(method: "host.get", filter: ["status": "0"], serverBaseURL: serverBaseURL, authToken: authToken)
+        async let hostsDisabled = try? zabbixAPIClient.objectCount(method: "host.get", filter: ["status": "1"], serverBaseURL: serverBaseURL, authToken: authToken)
+        async let templates = try? zabbixAPIClient.objectCount(method: "template.get", filter: nil, serverBaseURL: serverBaseURL, authToken: authToken)
+        async let itemsEnabled = try? zabbixAPIClient.objectCount(method: "item.get", filter: ["status": "0", "state": "0"], serverBaseURL: serverBaseURL, authToken: authToken)
+        async let itemsDisabled = try? zabbixAPIClient.objectCount(method: "item.get", filter: ["status": "1"], serverBaseURL: serverBaseURL, authToken: authToken)
+        async let itemsNotSupported = try? zabbixAPIClient.objectCount(method: "item.get", filter: ["status": "0", "state": "1"], serverBaseURL: serverBaseURL, authToken: authToken)
+        async let triggersEnabled = try? zabbixAPIClient.objectCount(method: "trigger.get", filter: ["status": "0"], serverBaseURL: serverBaseURL, authToken: authToken)
+        async let triggersDisabled = try? zabbixAPIClient.objectCount(method: "trigger.get", filter: ["status": "1"], serverBaseURL: serverBaseURL, authToken: authToken)
+        async let triggersProblem = try? zabbixAPIClient.objectCount(method: "trigger.get", filter: ["status": "0", "value": "1"], serverBaseURL: serverBaseURL, authToken: authToken)
+        async let triggersOK = try? zabbixAPIClient.objectCount(method: "trigger.get", filter: ["status": "0", "value": "0"], serverBaseURL: serverBaseURL, authToken: authToken)
+        async let requiredPerformance = try? zabbixAPIClient.itemByKey(serverBaseURL: serverBaseURL, authToken: authToken, key: "zabbix[requiredperformance]")
+
+        var rows: [SystemInfoRow] = [
+            SystemInfoRow(id: "running", parameter: "Zabbix server is running", value: isRunning ? "Yes" : "No", valueTint: isRunning ? .green : .red)
+        ]
+
+        // apiinfo.version reports the frontend/API version (what Zabbix's own table labels
+        // "Zabbix frontend version"); the server binary's version isn't exposed via the JSON-RPC
+        // API, so that row is omitted rather than mislabeled.
+        rows.append(SystemInfoRow(id: "frontend", parameter: "Zabbix frontend version", value: frontendVersion))
+
+        if let enabled = await hostsEnabled, let disabled = await hostsDisabled {
+            rows.append(SystemInfoRow(id: "hosts", parameter: "Number of hosts (enabled/disabled)", value: "\(enabled + disabled)", details: [
+                SystemInfoDetailSegment(id: "e", text: "\(enabled)", tint: .green),
+                SystemInfoDetailSegment(id: "s1", text: " / "),
+                SystemInfoDetailSegment(id: "d", text: "\(disabled)", tint: .red)
+            ]))
+        }
+
+        if let templates = await templates {
+            rows.append(SystemInfoRow(id: "templates", parameter: "Number of templates", value: "\(templates)"))
+        }
+
+        if let enabled = await itemsEnabled, let disabled = await itemsDisabled, let notSupported = await itemsNotSupported {
+            rows.append(SystemInfoRow(id: "items", parameter: "Number of items (enabled/disabled/not supported)", value: "\(enabled + disabled + notSupported)", details: [
+                SystemInfoDetailSegment(id: "e", text: "\(enabled)", tint: .green),
+                SystemInfoDetailSegment(id: "s1", text: " / "),
+                SystemInfoDetailSegment(id: "d", text: "\(disabled)", tint: .red),
+                SystemInfoDetailSegment(id: "s2", text: " / "),
+                SystemInfoDetailSegment(id: "n", text: "\(notSupported)", tint: .gray)
+            ]))
+        }
+
+        if let enabled = await triggersEnabled, let disabled = await triggersDisabled, let problem = await triggersProblem, let ok = await triggersOK {
+            rows.append(SystemInfoRow(id: "triggers", parameter: "Number of triggers (enabled/disabled [problem/ok])", value: "\(enabled + disabled)", details: [
+                SystemInfoDetailSegment(id: "e", text: "\(enabled)", tint: .green),
+                SystemInfoDetailSegment(id: "s1", text: " / "),
+                SystemInfoDetailSegment(id: "d", text: "\(disabled)", tint: .red),
+                SystemInfoDetailSegment(id: "s2", text: " ["),
+                SystemInfoDetailSegment(id: "p", text: "\(problem)", tint: .red),
+                SystemInfoDetailSegment(id: "s3", text: " / "),
+                SystemInfoDetailSegment(id: "o", text: "\(ok)", tint: .green),
+                SystemInfoDetailSegment(id: "s4", text: "]")
+            ]))
+        }
+
+        if let nvps = await requiredPerformance?.lastvalue.flatMap(Double.init) {
+            rows.append(SystemInfoRow(id: "nvps", parameter: "Required server performance, new values per second", value: String(format: "%.2f", nvps)))
+        }
+
+        return .systemInformation(rows: rows, haNodes: [])
     }
 
     // MARK: - Shared helpers

@@ -128,7 +128,7 @@ nonisolated enum DashboardWidgetKind: Sendable {
     case problems([DashboardProblem])
     case problemsBySeverity([SeverityCount])
     case hostAvailability([HostInterfaceAvailability])
-    case systemInformation(serverVersion: String, isRunning: Bool, haNodes: [SystemHANode])
+    case systemInformation(rows: [SystemInfoRow], haNodes: [SystemHANode])
     case gauge(GaugeReading)
     case honeycomb([HoneycombCell])
     case topHosts(columns: [String], rows: [TopHostsRow])
@@ -712,6 +712,42 @@ nonisolated struct ItemListEntry: Identifiable, Sendable {
 
     /// Unit label, e.g. "%" or "°F".
     let units: String
+}
+
+/// One Parameter/Value/Details row of the System information widget, mirroring Zabbix's own table
+/// (e.g. "Number of hosts (enabled/disabled)" | "958" | "958 / 0").
+nonisolated struct SystemInfoRow: Identifiable, Sendable {
+    /// Stable row identifier.
+    let id: String
+
+    /// The Parameter column ("Zabbix server is running", "Number of templates", ...).
+    let parameter: String
+
+    /// The Value column, already formatted.
+    let value: String
+
+    /// Zabbix's color for the value ("Yes" renders green, "No" red; counts plain).
+    var valueTint: SystemInfoTint = .normal
+
+    /// The Details column as colored segments (Zabbix colors the enabled count green, disabled
+    /// red, not-supported gray). Empty when the row has no details.
+    var details: [SystemInfoDetailSegment] = []
+}
+
+/// One colored fragment of a System information row's Details column.
+nonisolated struct SystemInfoDetailSegment: Identifiable, Sendable {
+    /// Stable segment identifier within its row.
+    let id: String
+
+    /// Segment text (including any separator glyphs).
+    let text: String
+
+    var tint: SystemInfoTint = .normal
+}
+
+/// Zabbix's System information color roles.
+nonisolated enum SystemInfoTint: Sendable {
+    case normal, green, red, gray
 }
 
 /// A single SLA's configured target, shown in an SLA report widget.
