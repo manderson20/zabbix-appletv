@@ -352,10 +352,34 @@ extension DashboardManager {
         )
     }
 
+    /// Fetches items matching any of a widget's item name patterns (`items.N`), unioned and
+    /// de-duplicated by item ID. An empty pattern list means "all items in the group/host scope",
+    /// matching Zabbix; each pattern's wildcards are honored by `item.get`'s search.
+    private func itemsMatchingPatterns(
+        _ patterns: [String],
+        groupIDs: [String]?,
+        hostIDs: [String]?,
+        serverBaseURL: URL,
+        authToken: String
+    ) async throws -> [ZabbixItemWithHost] {
+        let cleaned = patterns.filter { !$0.isEmpty }
+        guard !cleaned.isEmpty else {
+            return try await zabbixAPIClient.itemsMatching(serverBaseURL: serverBaseURL, authToken: authToken, groupIDs: groupIDs, hostIDs: hostIDs, namePattern: nil)
+        }
+
+        var result: [ZabbixItemWithHost] = []
+        var seen = Set<String>()
+        for pattern in cleaned {
+            let matched = try await zabbixAPIClient.itemsMatching(serverBaseURL: serverBaseURL, authToken: authToken, groupIDs: groupIDs, hostIDs: hostIDs, namePattern: pattern)
+            for item in matched where seen.insert(item.itemid).inserted {
+                result.append(item)
+            }
+        }
+        return result
+    }
+
     // MARK: - Honeycomb
 
-    /// The "itempatterns.N.itemname" field name is Zabbix's documented honeycomb configuration
-    /// option, not yet verified against a live example.
     private func resolveHoneycomb(
         _ widget: ZabbixWidget,
         serverBaseURL: URL,
@@ -363,14 +387,17 @@ extension DashboardManager {
     ) async throws -> DashboardWidgetKind {
         let groupIDs = Self.indexedValues(widget.fields, name: "groupids")
         let hostIDs = Self.indexedValues(widget.fields, name: "hostids")
-        let namePattern = Self.indexedFieldGroups(widget.fields, prefix: "itempatterns").first?["itemname"]
+        // The item pattern lives in `items.N` (Zabbix's CWidgetFieldPatternSelectItem), not the
+        // "itempatterns.N.itemname" this used to read — so the pattern was never applied and an
+        // unfiltered fetch returned every item on the server.
+        let itemPatterns = Self.indexedValues(widget.fields, name: "items")
 
-        let items = try await zabbixAPIClient.itemsMatching(
-            serverBaseURL: serverBaseURL,
-            authToken: authToken,
+        let items = try await itemsMatchingPatterns(
+            itemPatterns,
             groupIDs: groupIDs.isEmpty ? nil : groupIDs,
             hostIDs: hostIDs.isEmpty ? nil : hostIDs,
-            namePattern: namePattern
+            serverBaseURL: serverBaseURL,
+            authToken: authToken
         )
 
         return .honeycomb(
@@ -744,18 +771,21 @@ extension DashboardManager {
     ) async throws -> DashboardWidgetKind {
         let groupIDs = Self.indexedValues(widget.fields, name: "groupids")
         let hostIDs = Self.indexedValues(widget.fields, name: "hostids")
-        let namePattern = Self.fieldValue(widget.fields, name: "item")
+        // The item pattern lives in `items.N`, not the singular `item` field this used to read, so
+        // the pattern was never applied and the navigator listed every item in scope.
+        let itemPatterns = Self.indexedValues(widget.fields, name: "items")
+        let showLines = Self.fieldValue(widget.fields, name: "show_lines").flatMap(Int.init) ?? 100
 
-        let items = try await zabbixAPIClient.itemsMatching(
-            serverBaseURL: serverBaseURL,
-            authToken: authToken,
+        let items = try await itemsMatchingPatterns(
+            itemPatterns,
             groupIDs: groupIDs.isEmpty ? nil : groupIDs,
             hostIDs: hostIDs.isEmpty ? nil : hostIDs,
-            namePattern: namePattern
+            serverBaseURL: serverBaseURL,
+            authToken: authToken
         )
 
         return .itemList(
-            items.prefix(100).map { item in
+            items.prefix(showLines).map { item in
                 ItemListEntry(
                     id: item.itemid,
                     name: item.name,
