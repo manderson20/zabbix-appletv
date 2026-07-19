@@ -210,7 +210,7 @@ struct ZabbixAppleTVDashboardTests {
                 frame: DashboardWidgetFrame(x: 0, y: 0, width: 4, height: 2),
                 refreshIntervalSeconds: 60,
                 hasHiddenHeader: false,
-                kind: .clock(.analog)
+                kind: .clock(ClockConfiguration(style: .analog, timeZoneIdentifier: nil, hostTimeOffset: nil))
             ),
             RenderableDashboardWidget(
                 id: "2",
@@ -390,6 +390,25 @@ struct ZabbixAppleTVDashboardTests {
 
         #expect(triggers.first?.priority.intValue == 3)
         #expect(triggers.first?.hosts.first?.hostid == "10461")
+    }
+
+    @Test func clockTimeZoneIdentifierIgnoresLocalSentinels() throws {
+        func identifier(_ value: String?) -> String? {
+            DashboardManager.clockTimeZoneIdentifier(from: value.map { [ZabbixWidgetField(name: "tzone_timezone", value: $0)] } ?? [])
+        }
+        #expect(identifier("America/New_York") == "America/New_York")
+        #expect(identifier("local") == nil)
+        #expect(identifier("system") == nil)
+        #expect(identifier("") == nil)
+        #expect(identifier(nil) == nil)
+    }
+
+    @Test func hostTimeOffsetIsReportedMinusCollected() throws {
+        // Host reported 1700000600 when the sample was collected at 1700000000 → +600s ahead.
+        #expect(DashboardManager.hostTimeOffset(lastValue: "1700000600", lastClock: "1700000000") == 600)
+        // Missing or non-numeric → no offset (fall back to local time).
+        #expect(DashboardManager.hostTimeOffset(lastValue: nil, lastClock: "1700000000") == nil)
+        #expect(DashboardManager.hostTimeOffset(lastValue: "not-a-number", lastClock: "1700000000") == nil)
     }
 
     @Test func problemsAcknowledgedFilterMapsStatus() throws {

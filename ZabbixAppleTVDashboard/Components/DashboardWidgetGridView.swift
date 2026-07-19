@@ -118,8 +118,8 @@ private struct DashboardWidgetCardView: View {
     @ViewBuilder
     private var content: some View {
         switch widget.kind {
-        case let .clock(style):
-            ClockWidgetContentView(style: style)
+        case let .clock(configuration):
+            ClockWidgetContentView(configuration: configuration)
         case let .itemValue(name, value, units, _, trend, lastUpdated, mappedText):
             ItemValueWidgetContentView(name: name, value: value, units: units, trend: trend, lastUpdated: lastUpdated, mappedText: mappedText)
         case let .problems(problems):
@@ -177,22 +177,25 @@ private struct DashboardWidgetCardView: View {
 }
 
 private struct ClockWidgetContentView: View {
-    let style: ClockStyle
+    let configuration: ClockConfiguration
 
     var body: some View {
-        switch style {
+        switch configuration.style {
         case .analog:
-            AnalogClockView()
+            AnalogClockView(configuration: configuration)
         case .digital:
-            DigitalClockView()
+            DigitalClockView(configuration: configuration)
         }
     }
 }
 
 private struct DigitalClockView: View {
+    let configuration: ClockConfiguration
+
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
-            Text(context.date, format: .dateTime.hour().minute().second())
+            let displayedTime = context.date.addingTimeInterval(configuration.hostTimeOffset ?? 0)
+            Text(displayedTime, format: configuration.timeFormat)
                 .font(.system(size: 40, weight: .semibold, design: .rounded))
                 .foregroundStyle(DashboardTheme.primaryText)
                 .monospacedDigit()
@@ -203,12 +206,15 @@ private struct DigitalClockView: View {
 
 /// A hand-drawn analog face, since SwiftUI has no built-in clock control.
 private struct AnalogClockView: View {
+    let configuration: ClockConfiguration
+
     var body: some View {
         GeometryReader { geometry in
             let diameter = min(geometry.size.width, geometry.size.height)
 
             TimelineView(.periodic(from: .now, by: 1)) { context in
-                let components = Calendar.current.dateComponents([.hour, .minute, .second], from: context.date)
+                let displayedTime = context.date.addingTimeInterval(configuration.hostTimeOffset ?? 0)
+                let components = configuration.calendar.dateComponents([.hour, .minute, .second], from: displayedTime)
                 let hour = Double(components.hour ?? 0)
                 let minute = Double(components.minute ?? 0)
                 let second = Double(components.second ?? 0)

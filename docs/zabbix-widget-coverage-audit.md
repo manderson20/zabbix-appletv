@@ -11,7 +11,7 @@
 
 Coverage is broad and, since the original audit, materially deeper. Every widget renders
 *something*, and the count of widgets whose worst realistic-config behavior is **wrong-data** has
-dropped from 25/26 to **10/26**, with the other 16 down to **missing-detail** (renders correctly
+dropped from 25/26 to **9/26**, with the other 17 down to **missing-detail** (renders correctly
 but ignores a display or layout knob). The improvement came almost entirely from the cross-cutting
 helpers the original audit predicted would each fix a class of widgets:
 
@@ -61,7 +61,7 @@ cosmetic-leaning last).
 | Problems by severity | partial | missing-detail | 1 | `groupids`/tags/`ext_ack` acknowledgement now honored; only `show_type=GROUPS` (collapsed to a flat tally) remains |
 | Action log | partial | wrong-data | 4 | Hardcoded 7-day window; content filters (recipients/severities/statuses) ignored — now receives widget + honors `show_lines` |
 | System information | partial | wrong-data | 2 | `info_type` ignored (HA-nodes mode wrong); `isRunning` hardcoded true |
-| Clock | partial | wrong-data | 2 | `time_type=host` / `tzone_timezone` ignored → shows device local time |
+| Clock | partial | missing-detail | 1 | `time_type=host` (via `system.localtime` offset) and `tzone_timezone` now honored; server-time mode still falls back to local |
 | Map | full | wrong-data | 1 | Non-host elements (submap/group/trigger) always colored OK/green |
 | Item value | partial | missing-detail | 4 | units/`units_show`/`decimal_places`/`description` overrides ignored — aggregation + `thresholds` alert color now honored |
 | Gauge | partial | missing-detail | 8 | `description`/`units`/`units_show`/`decimal_places` overrides ignored (value + threshold arc correct) |
@@ -83,6 +83,7 @@ cosmetic-leaning last).
 - ~~**Web monitoring — scenario status not derived.**~~ **Done** — Ok/Failed/Unknown derived from each scenario's `web.test.fail[<name>]` item (fetched with `webitems: true`); `exclude_groupids` + tags scope still pending.
 - ~~**Top triggers — wrong metric.**~~ **Done** — ranks by problem-event count over `time_period` (`event.get` grouped by trigger, busiest-first) with a count column, replacing the current-problems-by-severity list.
 - ~~**Acknowledgement filtering dropped.**~~ **Done** — Problems (`acknowledgement_status`) and Problems by severity (`ext_ack`) map to `problem.get`'s `acknowledged` filter, so "unacknowledged only" no longer counts acked problems.
+- ~~**Clock — `time_type=host` / `tzone_timezone` ignored.**~~ **Done** — host time is derived from the host's `system.localtime` item (reported-minus-collected offset) and the configured timezone is applied to both faces; server-time mode still falls back to local.
 - ~~**Item value — thresholds ignored.**~~ **Done** — reads `thresholds.N` (shared `thresholdColorHex` helper) so a value crossing a band repaints the background with its alert color.
 - ~~**Honeycomb — thresholds/cell coloring absent.**~~ **Done** — each cell is tinted by the threshold band its reading meets (same `thresholdColorHex` helper).
 - ~~**Geomap — marker severity ignores widget `tags`.**~~ **Done** — `maxSeverityByHostID` now takes the widget's tag + severity filter, so a marker's color reflects only the problems the widget shows.
@@ -116,8 +117,6 @@ cosmetic-leaning last).
 - **Web monitoring — `exclude_groupids` + tags dropped.** Status is now derived; the remaining gap
   is scope — a widget with an exclude/tag filter still shows a superset of scenarios.
 - **Map — non-host elements always OK.** Compute status for submap/host-group/trigger elements.
-- **Clock — `time_type=host` and `tzone_timezone` ignored.** Fetch the item's `lastclock` for
-  host-time mode and honor the configured timezone.
 - **System information — `isRunning` hardcoded true + `info_type` ignored.** Support the HA-nodes
   mode and reflect actual server-running state.
 

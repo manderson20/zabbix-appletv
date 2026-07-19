@@ -95,7 +95,21 @@ extension DashboardManager {
             // clock widget with no fields configured at all that still renders as an analog face,
             // matching Zabbix's own stock default for this widget.
             let isDigital = Self.fieldValue(widget.fields, name: "clock_type") == "1"
-            return .clock(isDigital ? .digital : .analog)
+            let style: ClockStyle = isDigital ? .digital : .analog
+
+            // "time_type": 0 = local, 1 = server, 2 = host. Host time reads the selected host's own
+            // clock from its system.localtime item; local/server fall through to the device clock
+            // (optionally shifted by the configured timezone).
+            let timeType = Self.fieldValue(widget.fields, name: "time_type").flatMap(Int.init) ?? 0
+            let timeZoneIdentifier = Self.clockTimeZoneIdentifier(from: widget.fields)
+
+            var hostTimeOffset: TimeInterval?
+            if timeType == 2, let itemID = Self.firstIndexedValue(widget.fields, name: "itemid") {
+                let items = try await zabbixAPIClient.items(serverBaseURL: serverBaseURL, authToken: authToken, itemIDs: [itemID])
+                hostTimeOffset = Self.hostTimeOffset(lastValue: items.first?.lastvalue, lastClock: items.first?.lastclock)
+            }
+
+            return .clock(ClockConfiguration(style: style, timeZoneIdentifier: timeZoneIdentifier, hostTimeOffset: hostTimeOffset))
 
         case "problems":
             let severities = Self.indexedValues(widget.fields, name: "severities").compactMap(Int.init)
@@ -2126,6 +2140,23 @@ extension DashboardManager {
     /// its And/Or default). `field` defaults to "evaltype"; host widgets use "host_tags_evaltype".
     static func tagEvalType(from fields: [ZabbixWidgetField], field: String = "evaltype") -> Int? {
         fieldValue(fields, name: field).flatMap(Int.init)
+    }
+
+    /// The Clock widget's configured display timezone (`tzone_timezone`), or nil to use the device's
+    /// local zone. Zabbix's "local"/"system" sentinels (and an empty value) all mean local.
+    static func clockTimeZoneIdentifier(from fields: [ZabbixWidgetField]) -> String? {
+        guard let value = fieldValue(fields, name: "tzone_timezone"), !value.isEmpty else { return nil }
+        return (value == "local" || value == "system") ? nil : value
+    }
+
+    /// Seconds to add to the device clock to read as a host's own time, from its `system.localtime`
+    /// item: the host's reported time (`lastvalue`, a Unix timestamp) minus when it was collected
+    /// (`lastclock`). Nil when either is missing or non-numeric, so the caller falls back to local.
+    static func hostTimeOffset(lastValue: String?, lastClock: String?) -> TimeInterval? {
+        guard let reported = lastValue.flatMap(Double.init), let collected = lastClock.flatMap(Double.init) else {
+            return nil
+        }
+        return reported - collected
     }
 
     /// Maps the Problems widget's `acknowledgement_status` (0 = all, 1 = unacknowledged, 2 =
