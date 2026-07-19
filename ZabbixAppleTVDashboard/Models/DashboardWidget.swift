@@ -341,15 +341,15 @@ nonisolated struct HostGroupProblemSummary: Identifiable, Sendable {
     /// Host group display name.
     let groupName: String
 
-    /// Per-severity problem-host counts (index 0…5 = Not classified…Disaster): each distinct host is
-    /// counted once, in the column of its worst active problem in this group. The row total is thus
-    /// the number of distinct problem hosts — a host with several open problems still counts once.
+    /// Per-severity counts for this group (index 0…5 = Not classified…Disaster). For Problem hosts
+    /// each distinct host is counted once, in the column of its worst active problem; for grouped
+    /// Problems-by-severity each problem is counted at its own severity.
     let countsBySeverity: [Int]
 
-    /// Total distinct hosts with an active problem in this group.
+    /// Row total — distinct problem hosts (Problem hosts) or total problems (grouped Problems-by-sv).
     var count: Int { countsBySeverity.reduce(0, +) }
 
-    /// Highest severity with any problem host in this group.
+    /// Highest severity with any count in this group.
     var maxSeverity: Int { countsBySeverity.lastIndex(where: { $0 > 0 }) ?? 0 }
 }
 

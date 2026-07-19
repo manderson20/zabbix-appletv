@@ -61,7 +61,7 @@ cosmetic-leaning last).
 | Data overview | partial | wrong-data | 1 | Renders the hosts×items matrix (with `style` orientation) + tags + value maps + unit/decimal formatting; only the arbitrary 100-item cap remains |
 | Geomap | partial | missing-detail | 1 | Marker severity scoped to the widget's tag + severity filter; only `default_view` initial center/zoom (cosmetic) remains |
 | Problems | partial | missing-detail | 1 | `groupids`/tags/suppression/acknowledgement all honored; only `show_lines` default (20 vs 25) remains |
-| Problems by severity | partial | missing-detail | 1 | `groupids`/tags/`ext_ack` acknowledgement now honored; only `show_type=GROUPS` (collapsed to a flat tally) remains |
+| Problems by severity | full | missing-detail | 1 | `groupids`/tags/`ext_ack`, the totals tally, and `show_type=GROUPS` (per-group × per-severity problem-count table) all honored; only the `layout` (horizontal/vertical) cosmetic remains |
 | Action log | partial | missing-detail | 1 | Content filters (`actionids`/`mediatypeids`/`userids`/`statuses` → `alert.get`) **verified against a live widget**; the widget has no time period to honor. Only failed-status (2) styling and the last-N-vs-7-day lookback edge remain |
 | System information | partial | missing-detail | 1 | `info_type=1` shows HA nodes and `isRunning` is derived from them (`hanode.get`); standalone still uses the API-success proxy for running |
 | Clock | partial | missing-detail | 1 | `time_type=host` (via `system.localtime` offset) and `tzone_timezone` now honored; server-time mode still falls back to local |
@@ -126,8 +126,8 @@ cosmetic-leaning last).
   (done, 25) fixed. Host nav / Item nav read `show_lines` but default 100; Honeycomb hardcodes
   `prefix(60)` and Data overview `prefix(100)` — these two are **safety caps with no corresponding
   Zabbix field**, left as-is. Problems default 20 vs 25; Top triggers 20 vs 10 — minor.
-- **Grouping/tree structure flattened.** `group_by` (Host/Item navigator) and `show_type=GROUPS`
-  (Problems by severity) are still rendered as flat lists. (Problem hosts' per-severity columns, the
+- **Grouping/tree structure flattened.** `group_by` (Host/Item navigator) is still rendered as a flat
+  list. (Problems-by-severity `show_type=GROUPS`, Problem hosts' per-severity columns, the
   Data-overview hosts×items matrix, and the `navtree` hierarchy are now rendered.)
 - **`time_period.to` and non-relative expressions.** ~~Item history~~ (done). Classic/svg graphs and
   Action log still always end at `now()` and drop `now/d`/absolute windows.
