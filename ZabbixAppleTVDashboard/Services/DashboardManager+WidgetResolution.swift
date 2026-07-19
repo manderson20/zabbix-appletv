@@ -256,6 +256,33 @@ extension DashboardManager {
             )
             let problems = try await problemsExcludingGroups(allProblems, excludedGroupIDs: excludedGroupIDs, serverBaseURL: serverBaseURL, authToken: authToken)
 
+            // "show_type" = 1 breaks the tally out by host group (a table of groups × severities);
+            // the default (0 / absent) is the single totals column. Groups mode resolves each
+            // problem's host and counts it in every group that host belongs to.
+            if Self.fieldValue(widget.fields, name: "show_type").flatMap(Int.init) == 1 {
+                let triggerHosts = try await zabbixAPIClient.triggerHosts(serverBaseURL: serverBaseURL, authToken: authToken, triggerIDs: Array(Set(problems.map(\.objectid))))
+                let hostIDByTriggerID = Dictionary(uniqueKeysWithValues: triggerHosts.compactMap { entry in entry.hosts.first.map { (entry.triggerid, $0.hostid) } })
+                let hostGroups = try await zabbixAPIClient.hostGroups(serverBaseURL: serverBaseURL, authToken: authToken, hostIDs: Array(Set(hostIDByTriggerID.values)))
+                let groupsByHostID = Dictionary(uniqueKeysWithValues: hostGroups.map { ($0.hostid, $0.hostgroups) })
+
+                var byGroup: [String: (name: String, counts: [Int])] = [:]
+                for problem in problems {
+                    guard let hostID = hostIDByTriggerID[problem.objectid], let groups = groupsByHostID[hostID] else { continue }
+                    let severity = min(max(problem.severity.intValue, 0), 5)
+                    for group in groups {
+                        var entry = byGroup[group.groupid] ?? (name: group.name, counts: Array(repeating: 0, count: 6))
+                        entry.counts[severity] += 1
+                        byGroup[group.groupid] = entry
+                    }
+                }
+
+                return .problemsByHostGroup(
+                    byGroup.map { groupID, entry in
+                        HostGroupProblemSummary(id: groupID, groupName: entry.name, countsBySeverity: entry.counts)
+                    }.sorted { $0.maxSeverity == $1.maxSeverity ? $0.count > $1.count : $0.maxSeverity > $1.maxSeverity }
+                )
+            }
+
             var countsBySeverity = [Int: Int](uniqueKeysWithValues: (0...5).map { ($0, 0) })
             for problem in problems {
                 countsBySeverity[problem.severity.intValue, default: 0] += 1
