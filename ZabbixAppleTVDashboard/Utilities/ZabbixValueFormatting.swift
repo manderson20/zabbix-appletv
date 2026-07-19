@@ -71,4 +71,14 @@ enum ZabbixValueFormatting {
         }
         return String(format: "%.1f", value)
     }
+
+    /// Formats a graph-legend statistic the way Zabbix's classic-graph legend does: roughly four
+    /// significant digits with trailing noise dropped ("0.07917 %", "14.07 GB", "1.9836 %"), rather
+    /// than the axis labels' coarser 0–1 decimal rounding that collapses small readings to "0 %".
+    static func formatLegendStat(_ value: Double, units: String) -> String {
+        let scale = scale(forMaxMagnitude: value, units: units)
+        let suffix = "\(scale.prefix)\(units)"
+        let formattedNumber = String(format: "%.4g", value / scale.divisor)
+        return suffix.isEmpty ? formattedNumber : "\(formattedNumber) \(suffix)"
+    }
 }

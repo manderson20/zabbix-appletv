@@ -1705,7 +1705,7 @@ extension DashboardManager {
         }
 
         let window = ChartTimeWindow(start: windowStart, end: windowEnd)
-        return series.isEmpty ? .unsupported(rawType: widget.type) : .lineChart(series: series, window: window, stacked: false, showLegend: Self.fieldValue(widget.fields, name: "legend") != "0", yMin: Self.fieldValue(widget.fields, name: "lefty_min").flatMap(Double.init), yMax: Self.fieldValue(widget.fields, name: "lefty_max").flatMap(Double.init))
+        return series.isEmpty ? .unsupported(rawType: widget.type) : .lineChart(series: series, window: window, stacked: false, showLegend: Self.fieldValue(widget.fields, name: "legend") != "0", showLegendStats: false, yMin: Self.fieldValue(widget.fields, name: "lefty_min").flatMap(Double.init), yMax: Self.fieldValue(widget.fields, name: "lefty_max").flatMap(Double.init))
     }
 
     /// Returns all values for keys like "prefix0", "prefix1", ... in a dataset dictionary, in
@@ -1769,7 +1769,7 @@ extension DashboardManager {
             guard let item = items.first else { return .unsupported(rawType: widget.type) }
             let points = try await recentPoints(for: item.itemid, valueType: item.value_type?.intValue ?? 0, windowStart: windowStart, windowEnd: windowEnd, serverBaseURL: serverBaseURL, authToken: authToken)
             let series = [ChartSeries(id: "\(widget.widgetid).\(item.itemid)", name: item.name, colorHex: "3DC9B0", units: item.units ?? "", fillOpacity: 0.5, points: points)]
-            return .lineChart(series: series, window: ChartTimeWindow(start: windowStart, end: windowEnd), stacked: false, showLegend: Self.fieldValue(widget.fields, name: "legend") != "0", yMin: nil, yMax: nil)
+            return .lineChart(series: series, window: ChartTimeWindow(start: windowStart, end: windowEnd), stacked: false, showLegend: Self.fieldValue(widget.fields, name: "legend") != "0", showLegendStats: true, yMin: nil, yMax: nil)
         }
 
         guard let graphID = Self.firstIndexedValue(widget.fields, name: "graphid") else {
@@ -1794,7 +1794,7 @@ extension DashboardManager {
                 guard let item = itemsByID[gitem.itemid], let value = item.lastvalue.flatMap(Double.init) else { return nil }
                 return ChartSlice(id: "\(widget.widgetid).\(item.itemid)", name: item.name, colorHex: gitem.color, value: value)
             }
-            return slices.isEmpty ? .unsupported(rawType: widget.type) : .pieChart(slices)
+            return slices.isEmpty ? .unsupported(rawType: widget.type) : .pieChart(slices, isDonut: false)
         }
 
         var series: [ChartSeries] = []
@@ -1807,8 +1807,16 @@ extension DashboardManager {
         }
 
         let window = ChartTimeWindow(start: windowStart, end: windowEnd)
-        // Classic graph type 1 is a stacked graph; 0 is a normal overlaid line chart.
-        return series.isEmpty ? .unsupported(rawType: widget.type) : .lineChart(series: series, window: window, stacked: graphType == 1, showLegend: Self.fieldValue(widget.fields, name: "legend") != "0", yMin: Self.fieldValue(widget.fields, name: "lefty_min").flatMap(Double.init), yMax: Self.fieldValue(widget.fields, name: "lefty_max").flatMap(Double.init))
+        // The graph object's own fixed Y-axis bounds (ymin_type/ymax_type == 1) pin the chart's
+        // scale the way Zabbix draws it — e.g. a CPU graph fixed 0–100 renders the full band even
+        // when the data hugs zero. Calculated (0) and item-tied (2) modes leave the bound to the
+        // data. (The old code read svggraph's lefty_min/lefty_max here, fields a classic graph
+        // widget never carries.)
+        let yMin = graph.ymin_type?.intValue == 1 ? graph.yaxismin.flatMap(Double.init) : nil
+        let yMax = graph.ymax_type?.intValue == 1 ? graph.yaxismax.flatMap(Double.init) : nil
+        // Classic graph type 1 is a stacked graph; 0 is a normal overlaid line chart. Classic graphs
+        // render Zabbix's stats legend (last/min/avg/max per series).
+        return series.isEmpty ? .unsupported(rawType: widget.type) : .lineChart(series: series, window: window, stacked: graphType == 1, showLegend: Self.fieldValue(widget.fields, name: "legend") != "0", showLegendStats: true, yMin: yMin, yMax: yMax)
     }
 
     // MARK: - Pie chart
@@ -1889,7 +1897,8 @@ extension DashboardManager {
             }
         }
 
-        return slices.isEmpty ? .unsupported(rawType: widget.type) : .pieChart(slices)
+        // Zabbix's pie chart is a full pie by default; `draw_type` 1 switches to a doughnut.
+        return slices.isEmpty ? .unsupported(rawType: widget.type) : .pieChart(slices, isDonut: Self.fieldValue(widget.fields, name: "draw_type") == "1")
     }
 
     // MARK: - Shared helpers

@@ -523,7 +523,7 @@ nonisolated struct ZabbixGraphGetParameters: Encodable, Sendable {
     /// Requests each graph's member items and their configured colors.
     let selectGraphItems: [String]
 
-    init(graphIDs: [String], output: [String] = ["graphid", "name", "graphtype"], selectGraphItems: [String] = ["itemid", "color"]) {
+    init(graphIDs: [String], output: [String] = ["graphid", "name", "graphtype", "ymin_type", "ymax_type", "yaxismin", "yaxismax"], selectGraphItems: [String] = ["itemid", "color"]) {
         self.graphids = graphIDs
         self.output = output
         self.selectGraphItems = selectGraphItems

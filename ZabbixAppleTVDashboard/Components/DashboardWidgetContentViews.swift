@@ -352,20 +352,40 @@ struct LineChartWidgetContentView: View {
     let window: ChartTimeWindow
     var stacked: Bool = false
     var showLegend: Bool = true
+    var showLegendStats: Bool = false
     var yMin: Double? = nil
     var yMax: Double? = nil
 
     private var units: String { series.first?.units ?? "" }
 
-    /// The widget's fixed left Y-axis range (`lefty_min`/`lefty_max`), when either bound is set:
-    /// an unset lower bound defaults to 0, an unset upper bound to the data's own max, so a graph
-    /// that pins only a maximum still starts at 0 like Zabbix.
+    /// The chart's Y-axis range. A fixed bound (`lefty_min`/`lefty_max`, or a classic graph's fixed
+    /// axis) wins: an unset lower bound defaults to 0, an unset upper bound to the data's own max.
+    /// With no fixed bounds, the axis auto-scales to the data the way Zabbix's own graphs do — the
+    /// lower bound rides up near the data's minimum instead of anchoring at zero, so a series
+    /// hovering around 14 GB draws as a readable band (13.85–14.15) rather than a solid block over
+    /// a 0-based axis. Data at or below zero, and stacked graphs (whose baseline is the sum
+    /// floor), keep the zero anchor.
     private var yScaleDomain: ClosedRange<Double>? {
-        guard yMin != nil || yMax != nil else { return nil }
-        let dataMax = series.flatMap(\.points).compactMap(\.value).max() ?? 0
-        let lower = yMin ?? 0
-        let upper = yMax ?? max(dataMax, lower)
-        return lower <= upper ? lower...upper : lower...(lower + 1)
+        if yMin != nil || yMax != nil {
+            let dataMax = series.flatMap(\.points).compactMap(\.value).max() ?? 0
+            let lower = yMin ?? 0
+            let upper = yMax ?? max(dataMax, lower)
+            return lower <= upper ? lower...upper : lower...(lower + 1)
+        }
+
+        guard !stacked else { return nil }
+        let values = series.flatMap(\.points).compactMap(\.value)
+        guard let minValue = values.min(), let maxValue = values.max(), minValue > 0 else { return nil }
+        let span = maxValue - minValue
+        let padding = span > 0 ? span * 0.05 : max(maxValue * 0.01, 0.5)
+        return max(0, minValue - padding)...(maxValue + padding)
+    }
+
+    /// Where the area fill anchors: the resolved axis floor. Pinning to 0 when the axis floor is
+    /// higher would silently drag the whole scale back down to zero (marks participate in Swift
+    /// Charts' automatic domain), undoing the auto-scaled minimum above.
+    private var areaBaseline: Double {
+        yScaleDomain?.lowerBound ?? 0
     }
 
     private var yAxisScale: ZabbixValueFormatting.Scale {
@@ -426,9 +446,10 @@ struct LineChartWidgetContentView: View {
         // automatic stacking baseline — with a plain `y:` value, grouping by `foregroundStyle(by:)`
         // makes each series' baseline the sum of the ones before it (as if plotting composition),
         // which was inflating the visible peak to the sum of every series rather than each one's
-        // own value. Pinning yStart to 0 draws each series' fill independently from the bottom.
-        // `point.value` is non-nil within a segment by construction.
-        AreaMark(x: .value("Time", point.date), yStart: .value("Baseline", 0), yEnd: .value(segment.seriesName, point.value ?? 0))
+        // own value. yStart anchors at the resolved axis floor (`areaBaseline`), not a hardcoded 0
+        // — a 0 mark would drag an auto-scaled axis back down to zero. `point.value` is non-nil
+        // within a segment by construction.
+        AreaMark(x: .value("Time", point.date), yStart: .value("Baseline", areaBaseline), yEnd: .value(segment.seriesName, point.value ?? 0))
             .foregroundStyle(by: .value("Series", segment.id))
             .opacity(segment.fillOpacity)
 
@@ -524,8 +545,10 @@ struct LineChartWidgetContentView: View {
                     styled(segmentedChart)
                 }
 
-                if showLegend, series.count > 1 {
-                    ChartLegendView(series: series)
+                // Zabbix shows the legend whenever it's enabled — including single-series graphs,
+                // where the color key is what names the series ("— BSD-DNS1: Available memory").
+                if showLegend {
+                    ChartLegendView(series: series, showStats: showLegendStats)
                 }
             }
         }
@@ -546,31 +569,87 @@ private extension View {
 
 /// A wrapping legend for `LineChartWidgetContentView`, since Swift Charts' built-in legend can
 /// run long labels (full Zabbix item names) off the edge of the card instead of wrapping them.
+///
+/// Two forms, matching Zabbix's two graph legends:
+/// - names-only (svggraph): a short color dash + the series name, wrapping across columns;
+/// - stats (classic graph): one row per series with `[avg]` and its last/min/avg/max over the
+///   drawn window, under a small header row, exactly as Zabbix's classic-graph legend tabulates.
 private struct ChartLegendView: View {
     let series: [ChartSeries]
+    var showStats: Bool = false
 
     private let columns = [GridItem(.adaptive(minimum: 240, maximum: 360), spacing: 12, alignment: .leading)]
 
-    var body: some View {
-        LazyVGrid(columns: columns, alignment: .leading, spacing: 6) {
-            ForEach(series) { line in
-                HStack(alignment: .top, spacing: 5) {
-                    Circle()
-                        .fill(Color(hex: line.colorHex) ?? DashboardTheme.accent)
-                        .frame(width: 8, height: 8)
-                        // Nudge the swatch down onto the first line's center when the label wraps.
-                        .padding(.top, 3)
+    /// A series' legend stats over the drawn window, formatted with the series' units.
+    static func stats(for line: ChartSeries) -> (last: String, min: String, avg: String, max: String)? {
+        let values = line.points.compactMap(\.value)
+        guard let last = values.last, let minValue = values.min(), let maxValue = values.max(), !values.isEmpty else { return nil }
+        let average = values.reduce(0, +) / Double(values.count)
+        let format = { (value: Double) in ZabbixValueFormatting.formatLegendStat(value, units: line.units) }
+        return (format(last), format(minValue), format(average), format(maxValue))
+    }
 
-                    // Show the full series name, wrapping to as many lines as needed rather than
-                    // truncating. Zabbix names differ in different places — the "sent/received"
-                    // suffix on interface graphs, but the "Department/Specialists/Maintenance"
-                    // middle on others — so any truncation (tail *or* middle) can hide exactly the
-                    // part that tells two series apart. Wrapping the full text is the only form that
-                    // always keeps them distinguishable.
-                    Text(line.name)
-                        .font(.system(size: 11, weight: .regular, design: .rounded))
-                        .foregroundStyle(DashboardTheme.secondaryText)
-                        .fixedSize(horizontal: false, vertical: true)
+    /// The short line-dash color key Zabbix uses (not a dot).
+    private func swatch(_ line: ChartSeries) -> some View {
+        RoundedRectangle(cornerRadius: 1.5)
+            .fill(Color(hex: line.colorHex) ?? DashboardTheme.accent)
+            .frame(width: 14, height: 3)
+    }
+
+    var body: some View {
+        if showStats {
+            Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 2) {
+                GridRow {
+                    Color.clear.frame(width: 1, height: 1).gridCellUnsizedAxes([.horizontal, .vertical])
+                    ForEach(["last", "min", "avg", "max"], id: \.self) { header in
+                        Text(header)
+                            .font(.system(size: 11, weight: .regular, design: .rounded))
+                            .foregroundStyle(DashboardTheme.secondaryText)
+                    }
+                }
+
+                ForEach(series) { line in
+                    GridRow {
+                        HStack(spacing: 5) {
+                            swatch(line)
+                            Text("\(line.name) [avg]")
+                                .font(.system(size: 11, weight: .regular, design: .rounded))
+                                .foregroundStyle(DashboardTheme.secondaryText)
+                                .lineLimit(1)
+                        }
+
+                        if let stats = Self.stats(for: line) {
+                            // Keyed by position, not value — two equal stats (a flat series' last
+                            // and min, say) would collide as ForEach identifiers.
+                            ForEach(Array([stats.last, stats.min, stats.avg, stats.max].enumerated()), id: \.offset) { _, value in
+                                Text(value)
+                                    .font(.system(size: 11, weight: .regular, design: .rounded))
+                                    .foregroundStyle(DashboardTheme.primaryText)
+                                    .lineLimit(1)
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            LazyVGrid(columns: columns, alignment: .leading, spacing: 6) {
+                ForEach(series) { line in
+                    HStack(alignment: .top, spacing: 5) {
+                        swatch(line)
+                            // Nudge the swatch down onto the first line's center when the label wraps.
+                            .padding(.top, 4)
+
+                        // Show the full series name, wrapping to as many lines as needed rather than
+                        // truncating. Zabbix names differ in different places — the "sent/received"
+                        // suffix on interface graphs, but the "Department/Specialists/Maintenance"
+                        // middle on others — so any truncation (tail *or* middle) can hide exactly the
+                        // part that tells two series apart. Wrapping the full text is the only form that
+                        // always keeps them distinguishable.
+                        Text(line.name)
+                            .font(.system(size: 11, weight: .regular, design: .rounded))
+                            .foregroundStyle(DashboardTheme.secondaryText)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             }
         }
@@ -579,6 +658,9 @@ private struct ChartLegendView: View {
 
 struct PieChartWidgetContentView: View {
     let slices: [ChartSlice]
+    var isDonut: Bool = false
+
+    private let legendColumns = [GridItem(.adaptive(minimum: 170, maximum: 280), spacing: 12, alignment: .leading)]
 
     var body: some View {
         if slices.isEmpty {
@@ -586,28 +668,30 @@ struct PieChartWidgetContentView: View {
                 .font(.system(size: 16, weight: .regular, design: .rounded))
                 .foregroundStyle(DashboardTheme.secondaryText)
         } else {
-            HStack(spacing: 12) {
+            // Zabbix's layout: the pie fills the widget, centered, with the color-key legend in a
+            // wrapping strip along the bottom. A full pie by default — the doughnut hole only when
+            // the widget's draw_type asks for one.
+            VStack(spacing: 8) {
                 Chart(slices) { slice in
-                    SectorMark(angle: .value("Value", slice.value), innerRadius: .ratio(0.5))
+                    SectorMark(angle: .value("Value", slice.value), innerRadius: .ratio(isDonut ? 0.5 : 0))
                         .foregroundStyle(Color(hex: slice.colorHex) ?? DashboardTheme.accent)
                 }
-                .frame(maxWidth: 110)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                VStack(alignment: .leading, spacing: 4) {
-                    ForEach(slices.prefix(6)) { slice in
+                LazyVGrid(columns: legendColumns, alignment: .leading, spacing: 4) {
+                    ForEach(slices) { slice in
                         HStack(spacing: 6) {
-                            Circle()
+                            RoundedRectangle(cornerRadius: 1.5)
                                 .fill(Color(hex: slice.colorHex) ?? DashboardTheme.accent)
-                                .frame(width: 10, height: 10)
+                                .frame(width: 14, height: 3)
                             Text(slice.name)
-                                .font(.system(size: 13, weight: .regular, design: .rounded))
+                                .font(.system(size: 12, weight: .regular, design: .rounded))
                                 .foregroundStyle(DashboardTheme.secondaryText)
                                 .lineLimit(1)
 
                             if let valueLabel = slice.valueLabel {
-                                Spacer(minLength: 4)
                                 Text(valueLabel)
-                                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                    .font(.system(size: 12, weight: .semibold, design: .rounded))
                                     .foregroundStyle(DashboardTheme.primaryText)
                                     .lineLimit(1)
                             }
