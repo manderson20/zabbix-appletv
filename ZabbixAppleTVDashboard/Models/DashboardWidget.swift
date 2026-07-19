@@ -145,6 +145,7 @@ nonisolated enum DashboardWidgetKind: Sendable {
     case geomap([GeoMapMarker])
     case networkMap(NetworkMapDiagram)
     case mapList([MapListEntry])
+    case navigationTree([NavTreeNode])
     case hostList([HostListEntry])
     case itemList([ItemListEntry])
     case slaReport([SLAReportEntry])
@@ -599,6 +600,21 @@ nonisolated struct MapListEntry: Identifiable, Sendable {
 
     /// Map display name.
     let name: String
+}
+
+/// One node in a Map navigation tree, flattened into a depth-tagged row (depth 0 = top level).
+nonisolated struct NavTreeNode: Identifiable, Sendable {
+    /// Stable node identifier (the node's navtree index).
+    let id: String
+
+    /// Node label.
+    let name: String
+
+    /// Indentation depth in the tree.
+    let depth: Int
+
+    /// Whether this node links to a map (vs. being a grouping folder).
+    let linksToMap: Bool
 }
 
 /// A single host shown in a static host navigator list.

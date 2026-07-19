@@ -392,6 +392,52 @@ struct ZabbixAppleTVDashboardTests {
         #expect(triggers.first?.hosts.first?.hostid == "10461")
     }
 
+    @Test func buildNavTreeOrdersByHierarchyAndDepth() throws {
+        // Node 1 (root, order 1) with child 3; node 2 (root, order 0) linking a map.
+        let fields = [
+            ZabbixWidgetField(name: "navtree.1.name", value: "Datacenters"),
+            ZabbixWidgetField(name: "navtree.1.parent", value: "0"),
+            ZabbixWidgetField(name: "navtree.1.order", value: "1"),
+            ZabbixWidgetField(name: "navtree.1.sysmapid", value: "0"),
+            ZabbixWidgetField(name: "navtree.2.name", value: "Overview"),
+            ZabbixWidgetField(name: "navtree.2.parent", value: "0"),
+            ZabbixWidgetField(name: "navtree.2.order", value: "0"),
+            ZabbixWidgetField(name: "navtree.2.sysmapid", value: "5"),
+            ZabbixWidgetField(name: "navtree.3.name", value: "East"),
+            ZabbixWidgetField(name: "navtree.3.parent", value: "1"),
+            ZabbixWidgetField(name: "navtree.3.order", value: "0"),
+            ZabbixWidgetField(name: "navtree.3.sysmapid", value: "7")
+        ]
+
+        let tree = DashboardManager.buildNavTree(from: fields)
+
+        // Roots ordered by `order`: Overview (0) before Datacenters (1); East nested under it.
+        #expect(tree.map(\.name) == ["Overview", "Datacenters", "East"])
+        #expect(tree.map(\.depth) == [0, 0, 1])
+        // sysmapid 0 → folder; non-zero → map link.
+        #expect(tree.first(where: { $0.name == "Datacenters" })?.linksToMap == false)
+        #expect(tree.first(where: { $0.name == "Overview" })?.linksToMap == true)
+    }
+
+    @Test func buildNavTreeHandlesOrphansAndCycles() throws {
+        // Node 5's parent (9) doesn't exist → emitted at top level. Nodes 1↔2 form a cycle.
+        let fields = [
+            ZabbixWidgetField(name: "navtree.5.name", value: "Orphan"),
+            ZabbixWidgetField(name: "navtree.5.parent", value: "9"),
+            ZabbixWidgetField(name: "navtree.1.name", value: "A"),
+            ZabbixWidgetField(name: "navtree.1.parent", value: "2"),
+            ZabbixWidgetField(name: "navtree.2.name", value: "B"),
+            ZabbixWidgetField(name: "navtree.2.parent", value: "1")
+        ]
+
+        let tree = DashboardManager.buildNavTree(from: fields)
+        // Every node appears exactly once despite the broken parent ref and the cycle.
+        #expect(tree.count == 3)
+        #expect(Set(tree.map(\.name)) == ["Orphan", "A", "B"])
+
+        #expect(DashboardManager.buildNavTree(from: []).isEmpty)
+    }
+
     @Test func mapElementSeverityByType() throws {
         func ref(host: String? = nil, trigger: String? = nil, group: String? = nil) -> ZabbixMapElementReference {
             ZabbixMapElementReference(hostid: host, triggerid: trigger, groupid: group, sysmapid: nil)
