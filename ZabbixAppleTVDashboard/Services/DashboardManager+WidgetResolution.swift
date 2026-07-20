@@ -175,7 +175,9 @@ extension DashboardManager {
                         since: Date(timeIntervalSince1970: TimeInterval(problem.clock) ?? 0),
                         tags: showTags > 0 ? (problem.tags ?? []).prefix(showTags).map { ProblemTag(tag: $0.tag, value: $0.value) } : []
                     )
-                }
+                },
+                // "show_timeline" (default on) draws the hour/day separators down the Time column.
+                showTimeline: Self.fieldValue(widget.fields, name: "show_timeline") != "0"
             )
 
         case "item":

@@ -913,6 +913,36 @@ struct ZabbixAppleTVDashboardTests {
         #expect(DashboardManager.formattedItemValue(rawValue: nil, units: "%", valueMap: nil, decimalPlaces: 2) == "\u{2014}")
     }
 
+    @Test func problemTimelineFormatsMatchZabbix() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "America/Chicago")!
+        var components = DateComponents(timeZone: calendar.timeZone, year: 2026, month: 7, day: 20, hour: 8, minute: 54, second: 53)
+        let now = calendar.date(from: components)!
+
+        // Time column: bare clock for today, date-prefixed for older (verified live).
+        #expect(ProblemTimelineFormat.timeLabel(for: now, now: now, calendar: calendar) == "08:54:53 AM")
+        components.day = 19; components.hour = 2; components.minute = 3; components.second = 50
+        let yesterday = calendar.date(from: components)!
+        #expect(ProblemTimelineFormat.timeLabel(for: yesterday, now: now, calendar: calendar) == "2026-07-19 02:03:50 AM")
+
+        // Duration: three consecutive units from the largest non-zero one (verified live).
+        #expect(ProblemTimelineFormat.ageLabel(from: now.addingTimeInterval(-47), to: now) == "47s")
+        #expect(ProblemTimelineFormat.ageLabel(from: now.addingTimeInterval(-(2 * 3600 + 28 * 60 + 7)), to: now) == "2h 28m 7s")
+        #expect(ProblemTimelineFormat.ageLabel(from: now.addingTimeInterval(-(86_400 + 6 * 3600 + 51 * 60)), to: now) == "1d 6h 51m")
+
+        // Timeline separators: an hour boundary marks the newer row's whole hour; a day boundary
+        // labels the newer row's day.
+        components.day = 20; components.hour = 6; components.minute = 27; components.second = 33
+        let earlierToday = calendar.date(from: components)!
+        #expect(ProblemTimelineFormat.separatorLabel(newer: now, older: earlierToday, now: now, calendar: calendar) == "08:00")
+        #expect(ProblemTimelineFormat.separatorLabel(newer: earlierToday, older: yesterday, now: now, calendar: calendar) == "Today")
+        components.day = 17; components.hour = 19
+        let older = calendar.date(from: components)!
+        #expect(ProblemTimelineFormat.separatorLabel(newer: yesterday, older: older, now: now, calendar: calendar) == "Yesterday")
+        // Same hour: no separator.
+        #expect(ProblemTimelineFormat.separatorLabel(newer: now, older: now.addingTimeInterval(-60), now: now, calendar: calendar) == nil)
+    }
+
     @Test func thresholdColorInterpolationBlendsBetweenBands() throws {
         let fields = [
             ZabbixWidgetField(name: "thresholds.0.threshold", value: "50"),
