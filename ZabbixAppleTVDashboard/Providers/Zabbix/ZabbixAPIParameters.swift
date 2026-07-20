@@ -331,6 +331,10 @@ nonisolated struct ZabbixActiveTriggerGetParameters: Encodable, Sendable {
     /// Tag evaluation type (`evaltype`): 0 = And/Or, 2 = Or. Only sent alongside a non-empty `tags`.
     let evaltype: Int?
 
+    /// Requests each trigger's dependencies, so the overview can mark dependent triggers with
+    /// Zabbix's arrow icon.
+    let selectDependencies: [String]
+
     /// Maximum number of triggers to return.
     let limit: Int
 
@@ -342,6 +346,7 @@ nonisolated struct ZabbixActiveTriggerGetParameters: Encodable, Sendable {
         onlyProblems: Bool = true,
         tags: [ZabbixTagFilter]? = nil,
         evaltype: Int? = nil,
+        selectDependencies: [String] = ["triggerid"],
         limit: Int = 100
     ) {
         self.output = output
@@ -351,11 +356,12 @@ nonisolated struct ZabbixActiveTriggerGetParameters: Encodable, Sendable {
         self.onlyProblems = onlyProblems
         self.tags = (tags?.isEmpty == false) ? tags : nil
         self.evaltype = (tags?.isEmpty == false) ? evaltype : nil
+        self.selectDependencies = selectDependencies
         self.limit = limit
     }
 
     private enum CodingKeys: String, CodingKey {
-        case output, selectHosts, groupids, hostids, filter, tags, evaltype, limit
+        case output, selectHosts, groupids, hostids, filter, tags, evaltype, selectDependencies, limit
     }
 
     // Custom encoding so the PROBLEM-state filter is present only when `onlyProblems` is set, and a
@@ -371,6 +377,7 @@ nonisolated struct ZabbixActiveTriggerGetParameters: Encodable, Sendable {
         }
         try container.encodeIfPresent(tags, forKey: .tags)
         try container.encodeIfPresent(evaltype, forKey: .evaltype)
+        try container.encode(selectDependencies, forKey: .selectDependencies)
         try container.encode(limit, forKey: .limit)
     }
 }
