@@ -1055,7 +1055,10 @@ extension DashboardManager {
         serverBaseURL: URL,
         authToken: String
     ) async throws -> DashboardWidgetKind {
-        guard let mapID = Self.fieldValue(widget.fields, name: "sysmapid") else {
+        // The map reference is stored as the indexed field "sysmapid.0" (verified live: the API
+        // returns sysmapid as a one-element array), the same convention as "graphid.0"/"slaid.0" —
+        // an exact-name lookup missed it and every real map widget rendered as unsupported.
+        guard let mapID = Self.firstIndexedValue(widget.fields, name: "sysmapid") else {
             return .unsupported(rawType: widget.type)
         }
         guard let map = try await zabbixAPIClient.networkMap(serverBaseURL: serverBaseURL, authToken: authToken, mapID: mapID) else {
