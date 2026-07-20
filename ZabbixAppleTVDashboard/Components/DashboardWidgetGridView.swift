@@ -523,14 +523,22 @@ private struct ProblemsWidgetContentView: View {
                     }
 
                     ForEach(Array(problems.enumerated()), id: \.element.id) { index, problem in
-                        // The timeline marker ("08:00", "Today", ...) rides inline in the Time
-                        // cell of the first row past the boundary rather than on its own row —
-                        // the white-on-blue color contrast separates it, and the table stays
-                        // dense (no separator-only rows spending a line on mostly empty space).
-                        let timelinePrefix: String? = (showTimeline && index > 0)
-                            ? ProblemTimelineFormat.separatorLabel(newer: problems[index - 1].since, older: problem.since, now: context.date)
-                            : nil
-                        ProblemTableRow(problem: problem, now: context.date, timelinePrefix: timelinePrefix)
+                        // The timeline marker ("08:00", "Today", ...) gets its own thin row in the
+                        // Time column, left-aligned with the timestamps below it — the white-vs-
+                        // blue contrast distinguishes it, and the row spends no extra padding, so
+                        // it stays a single tight line rather than stretching the Time column the
+                        // way an inline prefix did.
+                        if showTimeline, index > 0,
+                           let label = ProblemTimelineFormat.separatorLabel(newer: problems[index - 1].since, older: problem.since, now: context.date) {
+                            GridRow {
+                                Text(label)
+                                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                    .foregroundStyle(DashboardTheme.secondaryText)
+                                    .lineLimit(1)
+                            }
+                        }
+
+                        ProblemTableRow(problem: problem, now: context.date)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -544,7 +552,6 @@ private struct ProblemsWidgetContentView: View {
 private struct ProblemTableRow: View {
     let problem: DashboardProblem
     let now: Date
-    var timelinePrefix: String? = nil
 
     @State private var isBlinkPhaseOn = false
 
@@ -554,18 +561,10 @@ private struct ProblemTableRow: View {
 
     var body: some View {
         GridRow {
-            HStack(spacing: 6) {
-                if let timelinePrefix {
-                    Text(timelinePrefix)
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
-                        .foregroundStyle(DashboardTheme.secondaryText)
-                        .lineLimit(1)
-                }
-                Text(ProblemTimelineFormat.timeLabel(for: problem.since, now: now))
-                    .font(.system(size: 15, weight: .regular, design: .rounded))
-                    .foregroundStyle(Color(hex: "4796C4") ?? .blue)
-                    .lineLimit(1)
-            }
+            Text(ProblemTimelineFormat.timeLabel(for: problem.since, now: now))
+                .font(.system(size: 15, weight: .regular, design: .rounded))
+                .foregroundStyle(Color(hex: "4796C4") ?? .blue)
+                .lineLimit(1)
 
             // Hosts are white with a dotted underline in the frontend (a hint-on-hover affordance),
             // not link blue — only the Time column is blue (verified in a zoomed live capture).
@@ -749,7 +748,7 @@ private struct ProblemsBySeverityWidgetContentView: View {
 private struct HostAvailabilityWidgetContentView: View {
     let breakdown: [HostInterfaceAvailability]
 
-    private static let nameColumnWidth: CGFloat = 160
+    private static let nameColumnWidth: CGFloat = 120
 
     private struct Column {
         let title: String
@@ -768,7 +767,10 @@ private struct HostAvailabilityWidgetContentView: View {
         // Sized to fill whatever grid height the dashboard's own layout allotted the widget,
         // rather than sitting compact at the top with dead space below — this is an unattended
         // kiosk display, so that space is otherwise wasted rather than reclaimable by scrolling.
-        Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 0) {
+        // Typography sized to the frontend's own compact table so the grid always fits its card
+        // (oversized TV fonts made narrow/short placements clip, which the web never does), with
+        // shrink-to-fit as the safety net for the tightest layouts.
+        Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 0) {
             GridRow {
                 Text("")
                     .frame(width: Self.nameColumnWidth, alignment: .leading)
@@ -777,6 +779,8 @@ private struct HostAvailabilityWidgetContentView: View {
                 ForEach(Self.columns, id: \.title) { column in
                     Text(column.title)
                         .foregroundStyle(.black.opacity(0.8))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -785,27 +789,32 @@ private struct HostAvailabilityWidgetContentView: View {
                 Text("Total")
                     .foregroundStyle(DashboardTheme.secondaryText)
             }
-            .font(.system(size: 16, weight: .semibold, design: .rounded))
-            .padding(.bottom, 8)
+            .font(.system(size: 14, weight: .semibold, design: .rounded))
+            .padding(.bottom, 6)
 
             ForEach(breakdown) { row in
                 GridRow {
                     Text(row.interfaceTypeName)
-                        .font(.system(size: 20, weight: .semibold, design: .rounded))
+                        .font(.system(size: 16, weight: .semibold, design: .rounded))
                         .foregroundStyle(DashboardTheme.secondaryText)
                         .frame(width: Self.nameColumnWidth, alignment: .leading)
                         .lineLimit(1)
+                        .minimumScaleFactor(0.6)
 
                     // The active-checks row has no interface-based Mixed state — Zabbix shows "-".
                     ForEach(Self.columns, id: \.title) { column in
                         Text(row.isActiveChecksRow && column.title == "Mixed" ? "-" : "\(row[keyPath: column.keyPath])")
-                            .font(.system(size: 22, weight: .bold, design: .rounded))
+                            .font(.system(size: 18, weight: .bold, design: .rounded))
                             .foregroundStyle(DashboardTheme.primaryText)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.6)
                     }
 
                     Text("\(row.total)")
-                        .font(.system(size: 22, weight: .bold, design: .rounded))
+                        .font(.system(size: 18, weight: .bold, design: .rounded))
                         .foregroundStyle(DashboardTheme.primaryText)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
                 }
                 .frame(maxHeight: .infinity)
             }
