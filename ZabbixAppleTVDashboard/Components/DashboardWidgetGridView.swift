@@ -852,9 +852,13 @@ private struct SystemInformationWidgetContentView: View {
 
                     ForEach(rows) { row in
                         GridRow {
+                            // One line like the frontend's table — wrapping parameter names grew
+                            // rows until the last ones fell off the card in narrow placements.
                             Text(row.parameter)
                                 .font(.system(size: 15, weight: .regular, design: .rounded))
                                 .foregroundStyle(DashboardTheme.primaryText)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.6)
                                 .frame(maxWidth: .infinity, alignment: .leading)
 
                             Text(row.value)

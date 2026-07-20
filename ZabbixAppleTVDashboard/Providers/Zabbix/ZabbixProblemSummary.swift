@@ -22,6 +22,15 @@ nonisolated struct ZabbixProblemSummary: Decodable, Sendable {
     /// Severity, from 0 (not classified) to 5 (disaster).
     let severity: ZabbixNumericString
 
+    /// The cause event this problem is a symptom of ("0" or absent for a cause problem).
+    /// Zabbix's widgets count and list only CAUSE problems at the top level — symptoms nest
+    /// under their cause — so counting symptoms too inflated every tally (verified live: the
+    /// Monitor Wall totals read ~300 high until symptoms were filtered).
+    let cause_eventid: String?
+
+    /// True when this problem is a top-level cause (not a symptom of another event).
+    var isCause: Bool { cause_eventid == nil || cause_eventid == "0" }
+
     /// Unix timestamp the problem started, as a string per Zabbix API convention.
     let clock: String
 
