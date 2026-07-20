@@ -71,6 +71,21 @@ struct DashboardWidgetGridView: View {
         min(max(proposed, 0), max(overflow, 0))
     }
 
+    /// A page slightly taller than the screen zooms out uniformly to fit — the same effect as
+    /// zooming out a TV browser running Zabbix's kiosk, which is how these dashboards are commonly
+    /// squeezed onto a TV — but only down to this floor; smaller than that and text stops being
+    /// readable from across the room, so the page stays full-size and auto-scrolls instead.
+    static let minimumAutoFitScale: CGFloat = 0.8
+
+    /// The uniform zoom for a page at the anchor layout size: 1 when it already fits, a
+    /// fit-to-height scale while the overflow is within the zoom margin, and 1 (scroll instead)
+    /// beyond it.
+    static func fitScale(anchorContentHeight: CGFloat, availableHeight: CGFloat) -> CGFloat {
+        guard anchorContentHeight > 0, anchorContentHeight > availableHeight else { return 1 }
+        let needed = availableHeight / anchorContentHeight
+        return needed >= minimumAutoFitScale ? needed : 1
+    }
+
     /// Computes the grid's column and row count as the furthest extent any widget reaches.
     static func gridExtent(for widgets: [RenderableDashboardWidget]) -> (columns: Int, rows: Int) {
         let columns = max(widgets.map { $0.frame.x + $0.frame.width }.max() ?? 1, 1)
@@ -82,15 +97,21 @@ struct DashboardWidgetGridView: View {
         let (extentColumns, rowCount) = Self.gridExtent(for: widgets)
 
         GeometryReader { geometry in
+            // Fixed 70pt rows — the 1080p-TV-kiosk geometry (see zabbixRowHeightPoints). Pages
+            // designed to fit a TV fit exactly; slightly-taller ones zoom out to fit (below);
+            // genuinely tall ones auto-scroll at full size.
+            let rowHeight = max(Self.zabbixRowHeightPoints, Self.minimumRowHeight)
+            let anchorContentHeight = rowHeight * CGFloat(rowCount)
+            let scale = Self.fitScale(anchorContentHeight: anchorContentHeight, availableHeight: geometry.size.height)
+            // Zooming out lays the page out on a proportionally wider canvas and scales it down,
+            // exactly like browser zoom: the width still fills the screen, and everything in the
+            // widgets (text included) shrinks uniformly.
+            let layoutWidth = geometry.size.width / scale
             // Zabbix's fixed 72-column grid: a page that doesn't span the full width leaves the
             // same trailing space it leaves in the frontend, rather than stretching to fill.
             let columnCount = max(extentColumns, Self.zabbixGridColumns)
-            let columnWidth = geometry.size.width / CGFloat(columnCount)
-            // Fixed 70pt rows — the 1080p-TV-kiosk geometry (see zabbixRowHeightPoints). Pages
-            // designed to fit a TV fit exactly; taller ones auto-scroll.
-            let rowHeight = max(Self.zabbixRowHeightPoints, Self.minimumRowHeight)
-            let contentHeight = rowHeight * CGFloat(rowCount)
-            let overflow = (contentHeight - geometry.size.height).rounded()
+            let columnWidth = layoutWidth / CGFloat(columnCount)
+            let overflow = max(0, anchorContentHeight * scale - geometry.size.height).rounded()
 
             ZStack(alignment: .topLeading) {
                 ForEach(widgets) { widget in
@@ -107,10 +128,13 @@ struct DashboardWidgetGridView: View {
                         .clipped()
                         .offset(
                             x: columnWidth * CGFloat(widget.frame.x),
-                            y: rowHeight * CGFloat(widget.frame.y) - scrollOffset
+                            y: rowHeight * CGFloat(widget.frame.y)
                         )
                 }
             }
+            .frame(width: layoutWidth, height: anchorContentHeight, alignment: .topLeading)
+            .scaleEffect(scale, anchor: .topLeading)
+            .offset(y: -scrollOffset)
             .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
             .clipped()
             // Focusable so the remote's Play/Pause (toggle mode) and directional (manual scroll)

@@ -828,6 +828,27 @@ struct ZabbixAppleTVDashboardTests {
     }
 
     @MainActor
+    @Test func fitScaleZoomsSlightOverflowAndScrollsBeyondTheMargin() throws {
+        // A page that fits (or is shorter) stays at full size.
+        #expect(DashboardWidgetGridView.fitScale(anchorContentHeight: 900, availableHeight: 1064) == 1)
+        #expect(DashboardWidgetGridView.fitScale(anchorContentHeight: 1064, availableHeight: 1064) == 1)
+
+        // Slight overflow (within the zoom margin) scales down to exactly fit.
+        let slight = DashboardWidgetGridView.fitScale(anchorContentHeight: 1200, availableHeight: 1064)
+        #expect(abs(slight - 1064.0 / 1200.0) < 0.0001)
+
+        // At the margin's edge, still zooms.
+        let edge = DashboardWidgetGridView.fitScale(anchorContentHeight: 1330, availableHeight: 1064)
+        #expect(edge == 0.8)
+
+        // Beyond the margin, full size — the page scrolls instead of shrinking unreadably.
+        #expect(DashboardWidgetGridView.fitScale(anchorContentHeight: 3000, availableHeight: 1064) == 1)
+
+        // Degenerate content height never divides by zero.
+        #expect(DashboardWidgetGridView.fitScale(anchorContentHeight: 0, availableHeight: 1064) == 1)
+    }
+
+    @MainActor
     @Test func manualScrollOffsetStaysWithinTheScrollableRange() throws {
         // A mid-range offset passes through untouched.
         #expect(DashboardWidgetGridView.clampedScrollOffset(50, overflow: 200) == 50)
