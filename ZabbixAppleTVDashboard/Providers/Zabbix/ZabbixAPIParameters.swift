@@ -199,7 +199,7 @@ nonisolated struct ZabbixProblemGetParameters: Encodable, Sendable {
     let acknowledged: Bool?
 
     init(
-        output: [String] = ["eventid", "name", "severity", "clock", "objectid"],
+        output: [String] = ["eventid", "name", "severity", "clock", "objectid", "cause_eventid"],
         severities: [Int]? = nil,
         groupids: [String]? = nil,
         sortfield: [String] = ["eventid"],
@@ -260,10 +260,33 @@ nonisolated struct ZabbixTriggerGetParameters: Encodable, Sendable {
     /// Requests each trigger's associated hosts.
     let selectHosts: [String]
 
-    init(triggerIDs: [String], output: [String] = ["triggerid"], selectHosts: [String] = ["name"]) {
+    /// When `true`, restricts to triggers on monitored (enabled) hosts with enabled items —
+    /// Zabbix's own "monitored" flag. Omitted when nil.
+    let monitored: Bool?
+
+    /// When `true`, drops problem-state triggers that depend on another trigger currently in
+    /// problem — the same "skipDependent" flag the frontend's problem views apply. Omitted when nil.
+    let skipDependent: Bool?
+
+    init(triggerIDs: [String], output: [String] = ["triggerid"], selectHosts: [String] = ["name"], monitored: Bool? = nil, skipDependent: Bool? = nil) {
         self.triggerids = triggerIDs
         self.output = output
         self.selectHosts = selectHosts
+        self.monitored = monitored
+        self.skipDependent = skipDependent
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case triggerids, output, selectHosts, monitored, skipDependent
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(triggerids, forKey: .triggerids)
+        try container.encode(output, forKey: .output)
+        try container.encode(selectHosts, forKey: .selectHosts)
+        try container.encodeIfPresent(monitored, forKey: .monitored)
+        try container.encodeIfPresent(skipDependent, forKey: .skipDependent)
     }
 }
 
@@ -743,7 +766,7 @@ nonisolated struct ZabbixProblemEventGetParameters: Encodable, Sendable {
         groupIDs: [String]? = nil,
         tags: [ZabbixTagFilter]? = nil,
         evaltype: Int? = nil,
-        output: [String] = ["eventid", "objectid", "severity", "name", "clock"],
+        output: [String] = ["eventid", "objectid", "severity", "name", "clock", "cause_eventid"],
         sortfield: [String] = ["clock"],
         sortorder: String = "DESC",
         limit: Int = 5000

@@ -174,13 +174,34 @@ actor ZabbixAPIClient {
     /// match Zabbix's own problem widgets; pass `showSuppressed: true` for a widget configured to
     /// show them.
     func problems(serverBaseURL: URL, authToken: String, severities: [Int]? = nil, groupIDs: [String]? = nil, tags: [ZabbixTagFilter]? = nil, evalType: Int? = nil, showSuppressed: Bool = false, acknowledged: Bool? = nil) async throws -> [ZabbixProblemSummary] {
-        try await send(
+        let all = try await send(
             method: "problem.get",
             params: ZabbixProblemGetParameters(severities: severities, groupids: groupIDs, suppressed: showSuppressed ? nil : false, tags: tags, evaltype: evalType, acknowledged: acknowledged),
             serverBaseURL: serverBaseURL,
             authToken: authToken,
             resultType: [ZabbixProblemSummary].self
         )
+        // problem.get returns symptom events alongside their causes (6.4+ event correlation), but
+        // every Zabbix problem widget lists and counts only top-level CAUSE problems — symptoms
+        // nest under their cause row.
+        let causes = all.filter(\.isCause)
+        guard !causes.isEmpty else { return causes }
+
+        // problem.get also returns problems the frontend never shows: stale ones whose trigger or
+        // host has since been disabled, and ones whose trigger depends on another trigger that is
+        // itself in problem. The frontend joins problems against MONITORED triggers with
+        // "skipDependent" — without this join the Monitor Wall's severity totals ran ~290 problems
+        // high (disabled hosts) plus ~50 (dependent triggers) against the frontend's own tallies,
+        // verified live.
+        let monitoredTriggers = try await send(
+            method: "trigger.get",
+            params: ZabbixTriggerGetParameters(triggerIDs: Array(Set(causes.map(\.objectid))), selectHosts: [], monitored: true, skipDependent: true),
+            serverBaseURL: serverBaseURL,
+            authToken: authToken,
+            resultType: [ZabbixTriggerIDOnly].self
+        )
+        let monitoredIDs = Set(monitoredTriggers.map(\.triggerid))
+        return causes.filter { monitoredIDs.contains($0.objectid) }
     }
 
     /// Fetches the enabled triggers defined on a set of items, with expressions expanded — for a

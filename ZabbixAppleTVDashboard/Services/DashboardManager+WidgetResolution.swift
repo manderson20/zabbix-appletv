@@ -337,23 +337,28 @@ extension DashboardManager {
             )
 
         case "hostavail":
+            // The row set matches Zabbix's, verified on two live widgets: an explicit
+            // "interface_type" filter shows exactly those interface rows (a [Agent, SNMP] filter
+            // renders Agent (passive) + SNMP and hides Agent (active)); no filter shows every
+            // interface type present on any host plus the Agent (active) row.
             let interfaceTypes = Self.indexedValues(widget.fields, name: "interface_type").compactMap(Int.init)
-            let requestedTypes = interfaceTypes.isEmpty ? [1] : interfaceTypes
 
             let hosts = try await zabbixAPIClient.hostsWithInterfaces(serverBaseURL: serverBaseURL, authToken: authToken, groupIDs: try await scopedGroupIDs(from: widget, serverBaseURL: serverBaseURL, authToken: authToken))
+            let presentTypes = Set(hosts.flatMap { host in host.interfaces.map { $0.type.intValue } }).sorted()
+            let requestedTypes = interfaceTypes.isEmpty ? presentTypes : interfaceTypes
 
             var rows: [HostInterfaceAvailability] = [
                 Self.hostAvailabilityRow(name: "Total Hosts", interfacesByHost: hosts.map(\.interfaces))
             ]
 
-            // "Agent (active)" sits between Total Hosts and the interface rows when the agent type
-            // is shown, counting each host's active-check availability (the 7.0 host-level
-            // `active_available` field: 1 = available, 2 = unavailable). Status 0 covers both "no
-            // active checks" and "not yet known", which the API can't distinguish — those hosts are
-            // left uncounted rather than inflating Unknown with every passive-only host (Zabbix's
-            // own row counts only hosts that use active checks). Active checks aren't
-            // interface-based, so the Mixed column renders Zabbix's "-".
-            if requestedTypes.contains(1) {
+            // "Agent (active)" sits between Total Hosts and the interface rows when no interface
+            // filter is configured, counting each host's active-check availability (the 7.0
+            // host-level `active_available` field: 1 = available, 2 = unavailable). Status 0
+            // covers both "no active checks" and "not yet known", which the API can't distinguish
+            // — those hosts are left uncounted rather than inflating Unknown with every
+            // passive-only host (Zabbix's own row counts only hosts that use active checks).
+            // Active checks aren't interface-based, so the Mixed column renders Zabbix's "-".
+            if interfaceTypes.isEmpty {
                 let statuses = hosts.compactMap { $0.active_available?.intValue }
                 rows.append(HostInterfaceAvailability(
                     interfaceTypeName: "Agent (active)",
