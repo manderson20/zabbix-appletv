@@ -18,24 +18,34 @@ enum ZabbixValueFormatting {
         let prefix: String
     }
 
-    private static let scales: [Scale] = [
-        Scale(divisor: 1e12, prefix: "T"),
-        Scale(divisor: 1e9, prefix: "G"),
-        Scale(divisor: 1e6, prefix: "M"),
-        Scale(divisor: 1e3, prefix: "K"),
+    private static let prefixesLargestFirst: [(power: Double, prefix: String)] = [
+        (4, "T"), (3, "G"), (2, "M"), (1, "K"),
     ]
 
     /// Units where a metric prefix would confuse rather than clarify (percentages, unit-less
     /// counts, raw timestamps).
     private static let unscaledUnits: Set<String> = ["%", "", "unixtime"]
 
+    /// The step between K/M/G/T for a unit. Zabbix scales the byte family — exactly the units "B"
+    /// and "Bps" — by 1024 (binary prefixes: 16106127360 B → "15 GB"), and everything else (bps
+    /// included) by 1000. Using 1000 for bytes inflated every memory/disk label ~7.4% versus the
+    /// frontend (16.68 GB where Zabbix shows 15.53 GB for the same reading) — verified against
+    /// live values whose ratio was exactly 1024³/1000³.
+    private static func base(forUnits units: String) -> Double {
+        units == "B" || units == "Bps" ? 1024 : 1000
+    }
+
     /// Chooses a single scale for a whole series/axis, based on the largest magnitude present.
     static func scale(forMaxMagnitude maxValue: Double, units: String) -> Scale {
         guard !unscaledUnits.contains(units) else { return Scale(divisor: 1, prefix: "") }
 
+        let base = base(forUnits: units)
         let magnitude = abs(maxValue)
-        for candidate in scales where magnitude / candidate.divisor >= 1 {
-            return candidate
+        for candidate in prefixesLargestFirst {
+            let divisor = pow(base, candidate.power)
+            if magnitude / divisor >= 1 {
+                return Scale(divisor: divisor, prefix: candidate.prefix)
+            }
         }
         return Scale(divisor: 1, prefix: "")
     }

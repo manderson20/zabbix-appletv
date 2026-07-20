@@ -903,7 +903,9 @@ struct ZabbixAppleTVDashboardTests {
         #expect(DashboardManager.formattedItemValue(rawValue: "42", units: "%", valueMap: nil, decimalPlaces: 1) == "42.0 %")
         // A large byte reading is scaled + unit-suffixed, not shown raw — the Item history fix, which
         // renders each reading through this helper at `itemHistoryDecimalPlaces` precision.
-        #expect(DashboardManager.formattedItemValue(rawValue: "4928110592", units: "B", valueMap: nil, decimalPlaces: DashboardManager.itemHistoryDecimalPlaces) == "4.93 GB")
+        // 4928110592 / 1024³ = 4.59 — the binary-base figure Zabbix's own frontend shows for
+        // this reading (a decimal 1000³ base printed "4.93 GB", ~7.4% high).
+        #expect(DashboardManager.formattedItemValue(rawValue: "4928110592", units: "B", valueMap: nil, decimalPlaces: DashboardManager.itemHistoryDecimalPlaces) == "4.59 GB")
         // Value-mapped → "Label (raw)", unchanged regardless of precision.
         #expect(DashboardManager.formattedItemValue(rawValue: "1", units: "", valueMap: map, decimalPlaces: 2) == "Up (1)")
         // Non-numeric text → passed through as-is.
@@ -918,7 +920,10 @@ struct ZabbixAppleTVDashboardTests {
         #expect(ZabbixValueFormatting.formatLegendStat(0.07917, units: "%") == "0.07917 %")
         #expect(ZabbixValueFormatting.formatLegendStat(1.9836, units: "%") == "1.984 %")
         // Large byte readings still scale to the metric suffix.
-        #expect(ZabbixValueFormatting.formatLegendStat(15_100_000_000, units: "B") == "15.1 GB")
+        #expect(ZabbixValueFormatting.formatLegendStat(15_100_000_000, units: "B") == "14.06 GB")
+        // The byte family ("B"/"Bps") scales by 1024 like Zabbix; bits-per-second stays decimal.
+        #expect(ZabbixValueFormatting.formatLegendStat(16_106_127_360, units: "B") == "15 GB")
+        #expect(ZabbixValueFormatting.formatLegendStat(1_500_000, units: "bps") == "1.5 Mbps")
         // Unit-less values carry no dangling space.
         #expect(ZabbixValueFormatting.formatLegendStat(111.25, units: "") == "111.2")
     }
