@@ -797,6 +797,20 @@ struct ZabbixAppleTVDashboardTests {
         let zabbixTwelve = HoneycombWidgetContentView.honeycombLayout(count: 12, size: CGSize(width: 1500, height: 300))
         #expect(zabbixTwelve.columns == 6 && zabbixTwelve.rows == 2)
 
+        // 12 cells in a TV-kiosk-shaped box (wider than the browser case) still wrap to two rows —
+        // the near-tie row preference; a single row of 12 would be only marginally larger.
+        let tvTwelve = HoneycombWidgetContentView.honeycombLayout(count: 12, size: CGSize(width: 1878, height: 305))
+        #expect(tvTwelve.columns == 6 && tvTwelve.rows == 2)
+
+        // ...including at the card's real content height on-device (shorter after chrome).
+        let tvContent = HoneycombWidgetContentView.honeycombLayout(count: 12, size: CGSize(width: 1880, height: 285))
+        #expect(tvContent.columns == 6 && tvContent.rows == 2)
+
+        // A genuinely too-short box still flattens to one row (verified by probing the live
+        // frontend widget squashed to 1610×98).
+        let squashed = HoneycombWidgetContentView.honeycombLayout(count: 12, size: CGSize(width: 1610, height: 98))
+        #expect(squashed.rows == 1)
+
         // A short, wide widget with 11 cells packs them into a single row rather than the lopsided
         // 9-on-top / 2-on-bottom split the old near-square grid produced.
         let wideStrip = HoneycombWidgetContentView.honeycombLayout(count: 11, size: CGSize(width: 1800, height: 260))
@@ -811,6 +825,27 @@ struct ZabbixAppleTVDashboardTests {
         // Zero size (GeometryReader's first pass) doesn't divide by zero.
         let zero = HoneycombWidgetContentView.honeycombLayout(count: 4, size: CGSize(width: 0, height: 0))
         #expect(zero.columns >= 1 && zero.rows >= 1)
+    }
+
+    @MainActor
+    @Test func fitScaleZoomsSlightOverflowAndScrollsBeyondTheMargin() throws {
+        // A page that fits (or is shorter) stays at full size.
+        #expect(DashboardWidgetGridView.fitScale(anchorContentHeight: 900, availableHeight: 1064) == 1)
+        #expect(DashboardWidgetGridView.fitScale(anchorContentHeight: 1064, availableHeight: 1064) == 1)
+
+        // Slight overflow (within the zoom margin) scales down to exactly fit.
+        let slight = DashboardWidgetGridView.fitScale(anchorContentHeight: 1200, availableHeight: 1064)
+        #expect(abs(slight - 1064.0 / 1200.0) < 0.0001)
+
+        // At the margin's edge, still zooms.
+        let edge = DashboardWidgetGridView.fitScale(anchorContentHeight: 1330, availableHeight: 1064)
+        #expect(edge == 0.8)
+
+        // Beyond the margin, full size — the page scrolls instead of shrinking unreadably.
+        #expect(DashboardWidgetGridView.fitScale(anchorContentHeight: 3000, availableHeight: 1064) == 1)
+
+        // Degenerate content height never divides by zero.
+        #expect(DashboardWidgetGridView.fitScale(anchorContentHeight: 0, availableHeight: 1064) == 1)
     }
 
     @MainActor
