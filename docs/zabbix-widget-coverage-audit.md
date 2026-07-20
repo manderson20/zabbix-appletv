@@ -46,6 +46,33 @@ wording for unresolvable references). Remaining known deltas are listed per-row 
 either deliberate TV adaptations (fit-maximized honeycomb packing on the wider TV aspect, safety
 row caps) or API-unavailable data (server binary version, users online).
 
+**Parity round 2 (2026-07-19, after user-reported web-vs-app value differences):** a second
+same-moment sweep found and closed the systematic *numeric* deltas the first sweep missed:
+
+- **Byte units scale by 1024.** Zabbix divides exactly the units "B" and "Bps" by 1024 per
+  K/M/G/T step (everything else, bps included, by 1000); the app's uniform 1000 inflated every
+  memory/disk label ~7.4% (16.68 GB where the frontend showed 15.53 GB — ratio exactly 1024³/1000³).
+- **Default `convert_units` precision.** Data overview and Item history have no decimal-places
+  setting: cells keep 4 significant fractional digits unscaled ("90.7381 %", "0.002083 %"), at
+  most 2 (trimmed) once a prefix applies ("4 GB", "14.1 GB") — replacing fixed two decimals.
+  Verified cell-for-cell against a same-minute capture ("264.9163", "490.7182", "0.07086 %").
+- **Axis grids.** Both graph renderers now grid Y on nice steps with step-derived label decimals
+  ("14.095 GB", never a repeated "14.1 GB"); svggraph labels X horizontally with date-prefixed
+  zero-padded times ("7-19 09:52 PM") on an even grid with ~55pt Y rows, while the classic image
+  graph rotates a label per nice time step, brackets the window in red boundary timestamps, and
+  keeps Y sparse (0/50/100 %).
+- **Widget visuals.** Item-value change indicator draws with theme green/red defaults (a "show"
+  flag, not gated on custom colors); item-value timestamps zero-pad the hour; pie datasets sort
+  matches by name and use Zabbix's −64…+64 per-channel color variations with a value-free legend
+  (unless `legend_value`); Top hosts centers columns and drops hosts with no in-window data;
+  Trigger overview sorts hosts ascending, models dependency icons and the truncation note;
+  Problems-by-severity group names use the frontend's link blue.
+
+The remaining known deltas after round 2: the System information "Zabbix server version" row
+(the JSON-RPC API exposes only the frontend/API version), and the trigger-overview dependency
+icons/truncation note render only what the app's account can see (the admin browser sees more) —
+both account-relative or API-bounded, not rendering defects.
+
 The genuine strengths are unchanged: everything fetches under the session token, so server-side
 permissions hold and nothing leaks. The wrong-data set is down to 2, and both are the **Data-overview / Honeycomb `prefix(N)` row caps** —
 deliberate TV safety limits with no corresponding Zabbix field (they bound how many cells/rows render
