@@ -471,7 +471,7 @@ nonisolated struct ZabbixItemSearchParameters: Encodable, Sendable {
         namePattern: String? = nil,
         tags: [ZabbixTagFilter]? = nil,
         evaltype: Int? = nil,
-        output: [String] = ["itemid", "name", "lastvalue", "units", "value_type"],
+        output: [String] = ["itemid", "name", "lastvalue", "lastclock", "units", "value_type"],
         selectHosts: [String] = ["hostid", "name"],
         selectValueMap: [String] = ["mappings"]
     ) {

@@ -74,6 +74,38 @@ enum ZabbixValueFormatting {
         return suffix.isEmpty ? formattedNumber : "\(formattedNumber) \(suffix)"
     }
 
+    /// Formats a value the way Zabbix's `convert_units` does when a widget has no decimal-places
+    /// setting of its own (Data overview cells, Item history rows): a K/M/G/T-scaled number keeps
+    /// at most 2 fractional digits, an unscaled number keeps 4 significant fractional digits
+    /// counting from the first non-zero decimal ("0.002083", "0.03124"), and trailing zeros are
+    /// always trimmed ("4 GB", "8", "99.9375 %") — verified cell-by-cell against the live
+    /// frontend's Data overview, which showed "90.7659 %" and "4 GB" where fixed two-decimal
+    /// formatting produced "90.77 %" and "4.00 GB".
+    static func formatDefault(_ value: Double, units: String) -> String {
+        let scale = scale(forMaxMagnitude: value, units: units)
+        let scaled = value / scale.divisor
+        let decimals: Int
+        if scale.divisor > 1 {
+            decimals = 2
+        } else {
+            let magnitude = abs(scaled)
+            if magnitude > 0, magnitude < 1 {
+                // Leading fractional zeros don't count against the 4 significant digits.
+                let leadingZeros = -Int(floor(log10(magnitude))) - 1
+                decimals = 4 + max(0, leadingZeros)
+            } else {
+                decimals = 4
+            }
+        }
+        var text = String(format: "%.\(decimals)f", scaled)
+        if text.contains(".") {
+            while text.hasSuffix("0") { text.removeLast() }
+            if text.hasSuffix(".") { text.removeLast() }
+        }
+        let suffix = "\(scale.prefix)\(units)"
+        return suffix.isEmpty ? text : "\(text) \(suffix)"
+    }
+
     private static func formattedNumber(_ value: Double) -> String {
         let rounded = value.rounded()
         if abs(value - rounded) < 0.05 {

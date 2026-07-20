@@ -646,11 +646,21 @@ extension DashboardManager {
 
             var values: [String] = []
             var sortValue: Double?
+            var hasItemColumn = false
+            var hasItemData = false
             for (index, column) in columnGroups.enumerated() {
                 let cell = try await topHostsColumnValue(column, host: host, from: from, to: to, serverBaseURL: serverBaseURL, authToken: authToken)
-                values.append(cell.display)
+                values.append(cell.display ?? "")
+                if cell.isItemColumn {
+                    hasItemColumn = true
+                    if cell.display != nil { hasItemData = true }
+                }
                 if index == sortColumnIndex { sortValue = cell.numeric }
             }
+            // Zabbix drops a host from the table entirely when none of its item columns have data
+            // in the widget's time period (verified live: a host whose only reading was a stale
+            // "0 B" outside the window is simply absent, not shown as "0.00 B" or an empty row).
+            guard !hasItemColumn || hasItemData else { continue }
             ranked.append((TopHostsRow(id: host.hostid, hostName: host.name, values: values), sortValue))
         }
 
@@ -676,7 +686,9 @@ extension DashboardManager {
 
     /// Resolves one Top hosts cell to a display string plus, for item columns, the numeric value the
     /// row is ranked by. Item columns aggregate over the widget's time period when configured;
-    /// otherwise they show the value-mapped last reading.
+    /// otherwise they show the value-mapped last reading. A nil `display` means an item column had
+    /// no data within the widget's time period — the caller uses that to drop dataless hosts the
+    /// way Zabbix does.
     private func topHostsColumnValue(
         _ column: [String: String],
         host: ZabbixHostListEntry,
@@ -684,14 +696,14 @@ extension DashboardManager {
         to: Date,
         serverBaseURL: URL,
         authToken: String
-    ) async throws -> (display: String, numeric: Double?) {
+    ) async throws -> (display: String?, numeric: Double?, isItemColumn: Bool) {
         // A text column is a fixed label with nothing to rank by.
         if let text = column["text"], !text.isEmpty, (column["item"] ?? "").isEmpty {
-            return (text, nil)
+            return (text, nil, false)
         }
 
         guard let itemPattern = column["item"], !itemPattern.isEmpty else {
-            return (host.name, nil)
+            return (host.name, nil, false)
         }
 
         let items = try await zabbixAPIClient.itemsMatching(
@@ -700,7 +712,7 @@ extension DashboardManager {
             hostIDs: [host.hostid],
             namePattern: itemPattern
         )
-        guard let item = items.first else { return ("\u{2014}", nil) }
+        guard let item = items.first else { return (nil, nil, true) }
 
         // Per-column display precision; units come from the item (or the column's units override).
         let decimalPlaces = column["decimal_places"].flatMap(Int.init) ?? 2
@@ -717,12 +729,21 @@ extension DashboardManager {
                 serverBaseURL: serverBaseURL,
                 authToken: authToken
             )
-            let display = aggregated.map { ZabbixValueFormatting.formatItemValue($0, units: units, decimalPlaces: decimalPlaces) } ?? "\u{2014}"
-            return (display, aggregated)
+            let display = aggregated.map { ZabbixValueFormatting.formatItemValue($0, units: units, decimalPlaces: decimalPlaces) }
+            return (display, aggregated, true)
         }
 
-        let display = Self.formattedItemValue(rawValue: item.lastvalue, units: units, valueMap: item.valuemap?.valueMap, decimalPlaces: decimalPlaces)
-        return (display, item.lastvalue.flatMap(Double.init))
+        // Zabbix's non-aggregated column is still scoped to the widget's time period: a last
+        // reading recorded before the window (a stale value from a host that stopped reporting)
+        // counts as no data, exactly like the frontend, which omitted such a host from the table.
+        if let lastClock = item.lastclock.flatMap(TimeInterval.init),
+           lastClock < from.timeIntervalSince1970 || lastClock > to.timeIntervalSince1970 {
+            return (nil, nil, true)
+        }
+        guard let lastvalue = item.lastvalue, !lastvalue.isEmpty else { return (nil, nil, true) }
+
+        let display = Self.formattedItemValue(rawValue: lastvalue, units: units, valueMap: item.valuemap?.valueMap, decimalPlaces: decimalPlaces)
+        return (display, Double(lastvalue), true)
     }
 
     // MARK: - Top triggers
@@ -1552,11 +1573,6 @@ extension DashboardManager {
 
     // MARK: - Item history
 
-    /// Decimal precision for numeric item-history readings. Zabbix's Item history widget has no
-    /// per-column decimal setting (unlike Item value / Gauge), so this mirrors the Item value
-    /// widget's default of 2 for consistency across the app's value displays.
-    static let itemHistoryDecimalPlaces = 2
-
     private func resolveItemHistory(
         _ widget: ZabbixWidget,
         serverBaseURL: URL,
@@ -1605,10 +1621,10 @@ extension DashboardManager {
                 .filter { (TimeInterval($0.clock) ?? 0) <= toEpoch }
                 .prefix(showLines)
 
-            // Format each reading the way the value widgets (Item value, Honeycomb) do: a value map
-            // wins, an unmapped numeric reading is scaled and unit-suffixed ("4.93 GB", not
-            // "4928110592 B"), and text/log readings pass through. Zabbix's own history widget applies
-            // the item's units the same way, so a raw byte/bps count no longer overflows the row.
+            // Format each reading with Zabbix's default convert_units precision — a value map wins,
+            // an unmapped numeric reading is scaled, unit-suffixed, and trimmed ("4.58 GB", "4 GB",
+            // not "4.00 GB"), and text/log readings pass through — matching the frontend's own
+            // history rows, which have no decimal-places setting.
             let units = item.units ?? ""
             series.append(
                 ItemHistorySeries(
@@ -1617,7 +1633,7 @@ extension DashboardManager {
                     values: windowed.map { value in
                         ItemHistoryPoint(
                             id: "\(item.itemid).\(value.clock)",
-                            value: Self.formattedItemValue(rawValue: value.value, units: units, valueMap: item.valuemap?.valueMap, decimalPlaces: Self.itemHistoryDecimalPlaces),
+                            value: Self.formattedDefaultValue(rawValue: value.value, units: units, valueMap: item.valuemap?.valueMap),
                             date: Date(timeIntervalSince1970: TimeInterval(value.clock) ?? 0)
                         )
                     }
@@ -1650,14 +1666,15 @@ extension DashboardManager {
             evalType: Self.tagEvalType(from: widget.fields)
         )
 
-        let decimalPlaces = Self.fieldValue(widget.fields, name: "decimal_places").flatMap(Int.init) ?? 2
         // "style": 0 = hosts as rows / items as columns (default), 1 = transposed.
         let transpose = Self.fieldValue(widget.fields, name: "style").flatMap(Int.init) == 1
 
+        // The Data overview widget has no decimal-places setting: every cell uses Zabbix's default
+        // convert_units precision ("90.7659 %", "0.002083 %", "4 GB"), not a fixed two decimals.
         let entries = items.prefix(100).map { item in
             (host: item.hosts.first?.name ?? "",
              item: item.name,
-             value: Self.formattedItemValue(rawValue: item.lastvalue, units: item.units ?? "", valueMap: item.valuemap?.valueMap, decimalPlaces: decimalPlaces))
+             value: Self.formattedDefaultValue(rawValue: item.lastvalue, units: item.units ?? "", valueMap: item.valuemap?.valueMap))
         }
 
         return .dataOverview(Self.buildDataOverviewMatrix(Array(entries), transpose: transpose))
@@ -2780,6 +2797,20 @@ extension DashboardManager {
         }
         if let numeric = Double(raw) {
             return ZabbixValueFormatting.formatItemValue(numeric, units: units, decimalPlaces: decimalPlaces)
+        }
+        return raw
+    }
+
+    /// Like `formattedItemValue`, but with Zabbix's default `convert_units` precision — trimmed
+    /// 2 fractional digits when a K/M/G/T prefix is applied, 4 significant fractional digits when
+    /// not — for widgets that have no decimal-places setting (Data overview, Item history).
+    static func formattedDefaultValue(rawValue: String?, units: String, valueMap: ZabbixValueMap?) -> String {
+        guard let raw = rawValue else { return "\u{2014}" }
+        if let mapped = valueMap?.mappedText(for: raw) {
+            return "\(mapped) (\(raw))"
+        }
+        if let numeric = Double(raw) {
+            return ZabbixValueFormatting.formatDefault(numeric, units: units)
         }
         return raw
     }

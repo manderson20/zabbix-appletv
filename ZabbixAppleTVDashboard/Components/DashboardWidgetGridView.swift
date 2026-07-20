@@ -433,12 +433,15 @@ private struct ItemValueWidgetContentView: View {
         }
     }
 
-    /// A fixed "yyyy-MM-dd h:mm:ss a" pattern, matching Zabbix's own item-value widget exactly
-    /// (not the device locale's date order) — verified against a live Zabbix screenshot.
+    /// A fixed "yyyy-MM-dd hh:mm:ss a" pattern, matching Zabbix's own item-value widget exactly
+    /// (not the device locale's date order) — the frontend zero-pads the hour ("09:36:41 PM"),
+    /// verified against a live Zabbix screenshot. POSIX locale keeps the AM/PM marker and Latin
+    /// digits regardless of the device's region settings.
     private var formattedTimestamp: String? {
         guard let lastUpdated else { return nil }
         let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd h:mm:ss a"
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd hh:mm:ss a"
         return formatter.string(from: lastUpdated)
     }
 

@@ -20,6 +20,10 @@ nonisolated struct ZabbixItemWithHost: Decodable, Sendable {
     /// Most recent recorded value, if any.
     let lastvalue: String?
 
+    /// Unix time of the most recent recorded value ("0" when the item has never collected data),
+    /// used to scope "last value" widget columns to their configured time period.
+    let lastclock: String?
+
     /// Unit label configured on the item.
     let units: String?
 
