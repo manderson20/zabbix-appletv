@@ -140,7 +140,7 @@ nonisolated enum DashboardWidgetKind: Sendable {
     case webMonitoring([WebScenarioSummary])
     case itemHistory([ItemHistorySeries], showTimestamp: Bool)
     case dataOverview(DataOverviewMatrix)
-    case lineChart(series: [ChartSeries], window: ChartTimeWindow, stacked: Bool, showLegend: Bool, showLegendStats: Bool, yMin: Double?, yMax: Double?, triggerLines: [GraphTriggerLine])
+    case lineChart(series: [ChartSeries], window: ChartTimeWindow, stacked: Bool, showLegend: Bool, showLegendStats: Bool, yMin: Double?, yMax: Double?, triggerLines: [GraphTriggerLine], axisStyle: GraphAxisStyle)
     case pieChart([ChartSlice], isDonut: Bool)
     case geomap(markers: [GeoMapMarker], defaultView: GeoMapView?)
     case networkMap(NetworkMapDiagram)
@@ -575,6 +575,17 @@ nonisolated struct ChartPoint: Identifiable, Sendable {
 nonisolated struct ChartTimeWindow: Sendable {
     let start: Date
     let end: Date
+}
+
+/// Which of Zabbix's two graph renderers a chart widget mimics. They draw their axes differently
+/// (both verified against the live QA dashboard): the modern svggraph labels its X axis
+/// horizontally with date-prefixed times ("7-19 08:45 PM") on an evenly divided grid and packs
+/// ~5 labeled rows onto the Y axis, while the classic image graph rotates a dense label every
+/// nice time step ("08:46 PM"), brackets the window with red boundary timestamps, and keeps the
+/// Y axis sparse (0 / 50 / 100 %).
+nonisolated enum GraphAxisStyle: Sendable, Equatable {
+    case classic
+    case svg
 }
 
 /// A single slice of a pie chart widget, showing one dataset's latest value.

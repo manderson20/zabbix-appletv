@@ -913,6 +913,26 @@ struct ZabbixAppleTVDashboardTests {
         #expect(DashboardManager.formattedItemValue(rawValue: nil, units: "%", valueMap: nil, decimalPlaces: 2) == "\u{2014}")
     }
 
+    @Test func graphAxisGridUsesNiceStepsAndStepDerivedDecimals() throws {
+        // The live QA svggraph: data 14.086–14.108 GB auto-rounds outward to 0.005 GB steps and
+        // labels need 3 decimals ("14.095 GB"), never a repeated "14.1 GB".
+        let gb = 1024.0 * 1024 * 1024
+        let axis = GraphAxisMath.yAxis(lower: 14.086 * gb, upper: 14.108 * gb, fixedBounds: false, targetIntervals: 5, scaleDivisor: gb)
+        #expect(axis.decimals == 3)
+        #expect(axis.ticks.count == 6)
+        #expect(abs(axis.lower / gb - 14.085) < 1e-9)
+        #expect(abs(axis.upper / gb - 14.110) < 1e-9)
+
+        // The live classic CPU graph: fixed 0–100 % at sparse density steps by 50 with no decimals.
+        let cpu = GraphAxisMath.yAxis(lower: 0, upper: 100, fixedBounds: true, targetIntervals: 2, scaleDivisor: 1)
+        #expect(cpu.ticks == [0, 50, 100])
+        #expect(cpu.decimals == 0)
+
+        // An hour-wide classic graph at the QA widget's width labels every 2 minutes, like the
+        // frontend's rotated labels ("08:46 PM", "08:48 PM", ...).
+        #expect(GraphAxisMath.svgTimeStep(windowSeconds: 3600, plotWidth: 730) == 120)
+    }
+
     @Test func formatDefaultMatchesZabbixConvertUnits() throws {
         // Unscaled values keep 4 significant fractional digits — leading zeros don't count —
         // with trailing zeros trimmed. Every expectation below is a value observed cell-for-cell
