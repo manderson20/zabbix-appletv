@@ -12,7 +12,9 @@ import Foundation
 /// calls for it. A chart's whole axis picks ONE scale from its largest value rather than letting
 /// each label rescale independently, so gridlines stay proportionate (e.g. "0, 200, 400 ... 1000
 /// Mbps" rather than mixing Mbps and Gbps on the same axis).
-enum ZabbixValueFormatting {
+// `nonisolated` so resolver actors call these pure functions without main-actor hops — without
+// it they inherit main-actor isolation, which Swift 6 promotes from warning to error.
+nonisolated enum ZabbixValueFormatting {
     struct Scale {
         let divisor: Double
         let prefix: String

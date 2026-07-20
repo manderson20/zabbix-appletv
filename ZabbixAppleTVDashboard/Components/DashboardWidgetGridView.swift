@@ -735,9 +735,11 @@ private struct SystemInformationWidgetContentView: View {
                                 .font(.system(size: 15, weight: .semibold, design: .rounded))
                                 .foregroundStyle(Self.color(for: row.valueTint))
 
-                            // Colored segments concatenated into one Text so they wrap as a unit.
+                            // Colored segments combined into one Text so they wrap as a unit —
+                            // via Text interpolation, which preserves each segment's style
+                            // (`Text + Text` is deprecated as of tvOS 26).
                             row.details.reduce(Text("")) { partial, segment in
-                                partial + Text(segment.text).foregroundStyle(Self.color(for: segment.tint))
+                                Text("\(partial)\(Text(segment.text).foregroundStyle(Self.color(for: segment.tint)))")
                             }
                             .font(.system(size: 15, weight: .regular, design: .rounded))
                         }
