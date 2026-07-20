@@ -243,8 +243,8 @@ private struct DashboardWidgetCardView: View {
             TopHostsWidgetContentView(columns: columns, rows: rows)
         case let .topTriggers(problems):
             ProblemsWidgetContentView(problems: problems)
-        case let .triggerOverview(rows):
-            TriggerOverviewWidgetContentView(rows: rows)
+        case let .triggerOverview(rows, truncated):
+            TriggerOverviewWidgetContentView(rows: rows, truncated: truncated)
         case let .problemsByHostGroup(summaries):
             ProblemHostsWidgetContentView(summaries: summaries)
         case let .actionLog(entries):
@@ -259,8 +259,8 @@ private struct DashboardWidgetCardView: View {
             DataOverviewWidgetContentView(matrix: matrix)
         case let .lineChart(series, window, stacked, showLegend, showLegendStats, yMin, yMax, triggerLines, axisStyle):
             LineChartWidgetContentView(series: series, window: window, stacked: stacked, showLegend: showLegend, showLegendStats: showLegendStats, yMin: yMin, yMax: yMax, triggerLines: triggerLines, axisStyle: axisStyle)
-        case let .pieChart(slices, isDonut):
-            PieChartWidgetContentView(slices: slices, isDonut: isDonut)
+        case let .pieChart(slices, isDonut, legendShowsValue):
+            PieChartWidgetContentView(slices: slices, isDonut: isDonut, legendShowsValue: legendShowsValue)
         case let .geomap(markers, defaultView):
             GeomapWidgetContentView(markers: markers, defaultView: defaultView)
         case let .networkMap(diagram):
