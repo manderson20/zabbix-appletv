@@ -513,7 +513,7 @@ private struct ProblemsWidgetContentView: View {
             // top of the list is the most urgent thing to see. The TimelineView keeps Duration
             // ticking and lets the blink window age out between data refreshes.
             TimelineView(.periodic(from: .now, by: 5)) { context in
-                Grid(alignment: .topLeading, horizontalSpacing: 14, verticalSpacing: 6) {
+                Grid(alignment: .topLeading, horizontalSpacing: 14, verticalSpacing: 4) {
                     GridRow {
                         ForEach(["Time", "Host", "Problem \u{2022} Severity", "Duration", "Tags"], id: \.self) { title in
                             Text(title)
@@ -523,20 +523,14 @@ private struct ProblemsWidgetContentView: View {
                     }
 
                     ForEach(Array(problems.enumerated()), id: \.element.id) { index, problem in
-                        // The timeline separator ("08:00", "Today", ...) between this row and the
-                        // one above it, when the pair crosses an hour or day boundary.
-                        if showTimeline, index > 0,
-                           let label = ProblemTimelineFormat.separatorLabel(newer: problems[index - 1].since, older: problem.since, now: context.date) {
-                            GridRow {
-                                Text(label)
-                                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                                    .foregroundStyle(DashboardTheme.secondaryText)
-                                    .frame(maxWidth: .infinity, alignment: .trailing)
-                                    .gridCellColumns(1)
-                            }
-                        }
-
-                        ProblemTableRow(problem: problem, now: context.date)
+                        // The timeline marker ("08:00", "Today", ...) rides inline in the Time
+                        // cell of the first row past the boundary rather than on its own row —
+                        // the white-on-blue color contrast separates it, and the table stays
+                        // dense (no separator-only rows spending a line on mostly empty space).
+                        let timelinePrefix: String? = (showTimeline && index > 0)
+                            ? ProblemTimelineFormat.separatorLabel(newer: problems[index - 1].since, older: problem.since, now: context.date)
+                            : nil
+                        ProblemTableRow(problem: problem, now: context.date, timelinePrefix: timelinePrefix)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -550,6 +544,7 @@ private struct ProblemsWidgetContentView: View {
 private struct ProblemTableRow: View {
     let problem: DashboardProblem
     let now: Date
+    var timelinePrefix: String? = nil
 
     @State private var isBlinkPhaseOn = false
 
@@ -559,14 +554,25 @@ private struct ProblemTableRow: View {
 
     var body: some View {
         GridRow {
-            Text(ProblemTimelineFormat.timeLabel(for: problem.since, now: now))
-                .font(.system(size: 15, weight: .regular, design: .rounded))
-                .foregroundStyle(Color(hex: "4796C4") ?? .blue)
-                .lineLimit(1)
+            HStack(spacing: 6) {
+                if let timelinePrefix {
+                    Text(timelinePrefix)
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .foregroundStyle(DashboardTheme.secondaryText)
+                        .lineLimit(1)
+                }
+                Text(ProblemTimelineFormat.timeLabel(for: problem.since, now: now))
+                    .font(.system(size: 15, weight: .regular, design: .rounded))
+                    .foregroundStyle(Color(hex: "4796C4") ?? .blue)
+                    .lineLimit(1)
+            }
 
+            // Hosts are white with a dotted underline in the frontend (a hint-on-hover affordance),
+            // not link blue — only the Time column is blue (verified in a zoomed live capture).
             Text(problem.host ?? "")
                 .font(.system(size: 15, weight: .regular, design: .rounded))
-                .foregroundStyle(Color(hex: "4796C4") ?? .blue)
+                .foregroundStyle(DashboardTheme.primaryText)
+                .underline(problem.host != nil, pattern: .dot, color: DashboardTheme.secondaryText)
                 .lineLimit(1)
 
             Text(problem.name)
