@@ -215,11 +215,20 @@ extension DashboardManager {
             let backgroundColorHex = Self.thresholdColorHex(for: numericValue, fields: widget.fields)
                 ?? Self.fieldValue(widget.fields, name: "bg_color")
 
+            // The change indicator is a "show" flag (8), on by default like the widget's other
+            // elements — Zabbix draws it with theme-default green/red when no custom up_color/
+            // down_color is configured (verified live: the QA widget has no color fields yet shows
+            // a green ▲ / red ▼ beside the value). Requiring the color fields hid it entirely.
+            let showFlags = Set(Self.indexedValues(widget.fields, name: "show").compactMap(Int.init))
+            let effectiveShow: Set<Int> = showFlags.isEmpty ? [1, 2, 4, 8] : showFlags
+
             var trend: ItemValueTrend?
-            if aggregateFunction == 0, let lastvalue = item.lastvalue.flatMap(Double.init), let prevvalue = item.prevvalue.flatMap(Double.init) {
-                if lastvalue > prevvalue, let upColor = Self.fieldValue(widget.fields, name: "up_color") {
+            if effectiveShow.contains(8), aggregateFunction == 0, let lastvalue = item.lastvalue.flatMap(Double.init), let prevvalue = item.prevvalue.flatMap(Double.init) {
+                let upColor = Self.fieldValue(widget.fields, name: "up_color").flatMap { $0.isEmpty ? nil : $0 } ?? "59DB8F"
+                let downColor = Self.fieldValue(widget.fields, name: "down_color").flatMap { $0.isEmpty ? nil : $0 } ?? "E45959"
+                if lastvalue > prevvalue {
                     trend = .up(colorHex: upColor)
-                } else if lastvalue < prevvalue, let downColor = Self.fieldValue(widget.fields, name: "down_color") {
+                } else if lastvalue < prevvalue {
                     trend = .down(colorHex: downColor)
                 }
             }
@@ -825,6 +834,10 @@ extension DashboardManager {
 
     // MARK: - Trigger overview
 
+    /// How many triggers the overview fetches at most — reaching it means the table is truncated
+    /// and gets Zabbix's "Not all results are displayed" note.
+    static let triggerOverviewFetchLimit = 100
+
     private func resolveTriggerOverview(
         _ widget: ZabbixWidget,
         serverBaseURL: URL,
@@ -845,28 +858,31 @@ extension DashboardManager {
             hostIDs: hostIDs.isEmpty ? nil : hostIDs,
             onlyProblems: !showAny,
             tags: Self.tagFilters(from: widget.fields),
-            evalType: Self.tagEvalType(from: widget.fields)
+            evalType: Self.tagEvalType(from: widget.fields),
+            limit: Self.triggerOverviewFetchLimit
         )
 
         var rowsByHostID: [String: TriggerOverviewRow] = [:]
-        var hostOrder: [String] = []
 
         for trigger in triggers {
             guard let host = trigger.hosts.first else { continue }
             // When only PROBLEM-state triggers were fetched, `value` is unrequested, so every
             // trigger here is in problem state; otherwise read the trigger's actual current state.
             let isProblem = showAny ? (trigger.value?.intValue ?? 1) == 1 : true
-            let indicator = TriggerIndicator(id: trigger.triggerid, name: trigger.description, severity: trigger.priority.intValue, isProblem: isProblem)
+            let indicator = TriggerIndicator(id: trigger.triggerid, name: trigger.description, severity: trigger.priority.intValue, isProblem: isProblem, hasDependency: trigger.dependencies?.isEmpty == false)
 
             if let existing = rowsByHostID[host.hostid] {
                 rowsByHostID[host.hostid] = TriggerOverviewRow(id: existing.id, hostName: existing.hostName, triggers: existing.triggers + [indicator])
             } else {
                 rowsByHostID[host.hostid] = TriggerOverviewRow(id: host.hostid, hostName: host.name, triggers: [indicator])
-                hostOrder.append(host.hostid)
             }
         }
 
-        return .triggerOverview(hostOrder.compactMap { rowsByHostID[$0] })
+        // Zabbix sorts the table by host name and appends "Not all results are displayed" when its
+        // query hit the fetch limit — both verified against the live widget (hosts ascending,
+        // note shown for this dashboard's oversubscribed Apple TV group).
+        let sortedRows = rowsByHostID.values.sorted { $0.hostName.localizedStandardCompare($1.hostName) == .orderedAscending }
+        return .triggerOverview(sortedRows, truncated: triggers.count >= Self.triggerOverviewFetchLimit)
     }
 
     // MARK: - Problem hosts
@@ -1716,7 +1732,7 @@ extension DashboardManager {
             let aggregateFunction = dataset["aggregate_function"].flatMap(Int.init) ?? 0
             let aggregateInterval = dataset["aggregate_interval"].flatMap(Self.durationSeconds) ?? 0
 
-            var matchIndex = 0
+            var matchedSeries: [(id: String, name: String, units: String, points: [ChartPoint])] = []
             for host in hosts {
                 for itemPattern in itemPatterns {
                     let items = try await zabbixAPIClient.itemsMatching(
@@ -1729,19 +1745,26 @@ extension DashboardManager {
                     for item in items {
                         let points = try await recentPoints(for: item.itemid, valueType: item.value_type?.intValue ?? 0, windowStart: windowStart, windowEnd: windowEnd, approximation: approximation, timeshiftSeconds: timeshift, aggregateFunction: aggregateFunction, aggregateIntervalSeconds: aggregateInterval, serverBaseURL: serverBaseURL, authToken: authToken)
 
-                        series.append(
-                            ChartSeries(
-                                id: "\(widget.widgetid).\(item.itemid)",
-                                name: "\(host.name): \(item.name)",
-                                colorHex: Self.shadedColorHex(baseColorHex, index: matchIndex),
-                                units: item.units ?? "",
-                                fillOpacity: fillOpacity,
-                                points: points
-                            )
-                        )
-                        matchIndex += 1
+                        matchedSeries.append((id: "\(widget.widgetid).\(item.itemid)", name: "\(host.name): \(item.name)", units: item.units ?? "", points: points))
                     }
                 }
+            }
+
+            // Zabbix sorts a pattern's matches by name and colors each with a variation of the
+            // dataset's one base color (dark to light) — which needs the total match count, so
+            // colors are assigned after the whole dataset resolves.
+            matchedSeries.sort { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+            for (index, matched) in matchedSeries.enumerated() {
+                series.append(
+                    ChartSeries(
+                        id: matched.id,
+                        name: matched.name,
+                        colorHex: Self.variationColorHex(baseColorHex, index: index, count: matchedSeries.count),
+                        units: matched.units,
+                        fillOpacity: fillOpacity,
+                        points: matched.points
+                    )
+                )
             }
         }
 
@@ -1794,22 +1817,20 @@ extension DashboardManager {
             .compactMap { group[$0.1] }
     }
 
-    /// Lightens a base hex color for the Nth item matched by the same dataset pattern, so items
-    /// sharing one configured color stay visually distinguishable — approximating Zabbix's own
-    /// per-item auto-shading within a multi-item dataset.
-    private static func shadedColorHex(_ hex: String, index: Int) -> String {
-        guard index > 0, hex.count == 6, let value = UInt32(hex, radix: 16) else { return hex }
+    /// Zabbix's own per-item color variation for a multi-item dataset: each matched item's color
+    /// is the dataset's base color with every RGB channel shifted by an even step from −64 to +64
+    /// across the items (clamped per channel), producing the dark-to-light run the frontend shows
+    /// — verified against the live pie chart's legend, where base FF465C renders maroon for the
+    /// first item through light pink for the last.
+    static func variationColorHex(_ hex: String, index: Int, count: Int) -> String {
+        guard count > 1, hex.count == 6, let value = UInt32(hex, radix: 16) else { return hex }
 
-        let lightenFactor = min(Double(index) * 0.35, 0.75)
-        let r = Double((value >> 16) & 0xFF)
-        let g = Double((value >> 8) & 0xFF)
-        let b = Double(value & 0xFF)
-
-        func lightened(_ component: Double) -> Int {
-            Int(component + (255 - component) * lightenFactor)
+        let shift = Int((Double(index) * 128.0 / Double(count - 1)).rounded()) - 64
+        func shifted(_ component: UInt32) -> Int {
+            max(0, min(255, Int(component) + shift))
         }
 
-        return String(format: "%02X%02X%02X", lightened(r), lightened(g), lightened(b))
+        return String(format: "%02X%02X%02X", shifted((value >> 16) & 0xFF), shifted((value >> 8) & 0xFF), shifted(value & 0xFF))
     }
 
     /// Converts a dataset's "transparency" field (0-10, Zabbix's own scale where higher means
@@ -1877,7 +1898,7 @@ extension DashboardManager {
             }
             // Zabbix's default classic-graph header is "HOST: graph name".
             pendingDefaultTitle = Self.hostPrefixedTitle(host: graph.gitems.first.flatMap { itemsByID[$0.itemid]?.hosts?.first?.name }, name: graph.name)
-            return slices.isEmpty ? .unsupported(rawType: widget.type) : .pieChart(slices, isDonut: false)
+            return slices.isEmpty ? .unsupported(rawType: widget.type) : .pieChart(slices, isDonut: false, legendShowsValue: true)
         }
 
         var series: [ChartSeries] = []
@@ -1976,15 +1997,18 @@ extension DashboardManager {
                 let units = matched.first?.units ?? ""
                 slices.append(ChartSlice(id: "\(widget.widgetid).ds\(datasetIndex)", name: matched.first?.label ?? "Data set \(datasetIndex + 1)", colorHex: baseColorHex, value: combined, valueLabel: ZabbixValueFormatting.formatItemValue(combined, units: units, decimalPlaces: decimalPlaces)))
             } else {
-                // One slice per matched item, shaded so items sharing a dataset color stay distinct.
+                // One slice per matched item, sorted by name and colored with Zabbix's dark-to-
+                // light variations of the dataset's base color — matching the frontend's legend
+                // order and chip colors exactly.
+                matched.sort { $0.label.localizedStandardCompare($1.label) == .orderedAscending }
                 for (index, entry) in matched.enumerated() {
-                    slices.append(ChartSlice(id: "\(widget.widgetid).\(entry.id)", name: entry.label, colorHex: Self.shadedColorHex(baseColorHex, index: index), value: entry.value, valueLabel: ZabbixValueFormatting.formatItemValue(entry.value, units: entry.units, decimalPlaces: decimalPlaces)))
+                    slices.append(ChartSlice(id: "\(widget.widgetid).\(entry.id)", name: entry.label, colorHex: Self.variationColorHex(baseColorHex, index: index, count: matched.count), value: entry.value, valueLabel: ZabbixValueFormatting.formatItemValue(entry.value, units: entry.units, decimalPlaces: decimalPlaces)))
                 }
             }
         }
 
         // Zabbix's pie chart is a full pie by default; `draw_type` 1 switches to a doughnut.
-        return slices.isEmpty ? .unsupported(rawType: widget.type) : .pieChart(slices, isDonut: Self.fieldValue(widget.fields, name: "draw_type") == "1")
+        return slices.isEmpty ? .unsupported(rawType: widget.type) : .pieChart(slices, isDonut: Self.fieldValue(widget.fields, name: "draw_type") == "1", legendShowsValue: Self.fieldValue(widget.fields, name: "legend_value") == "1")
     }
 
     // MARK: - System information

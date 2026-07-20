@@ -133,7 +133,7 @@ nonisolated enum DashboardWidgetKind: Sendable {
     case honeycomb([HoneycombCell])
     case topHosts(columns: [String], rows: [TopHostsRow])
     case topTriggers([DashboardProblem])
-    case triggerOverview([TriggerOverviewRow])
+    case triggerOverview([TriggerOverviewRow], truncated: Bool)
     case problemsByHostGroup([HostGroupProblemSummary])
     case actionLog([ActionLogEntry])
     case discoveryStatus([DiscoveryRuleStatus])
@@ -141,7 +141,7 @@ nonisolated enum DashboardWidgetKind: Sendable {
     case itemHistory([ItemHistorySeries], showTimestamp: Bool)
     case dataOverview(DataOverviewMatrix)
     case lineChart(series: [ChartSeries], window: ChartTimeWindow, stacked: Bool, showLegend: Bool, showLegendStats: Bool, yMin: Double?, yMax: Double?, triggerLines: [GraphTriggerLine], axisStyle: GraphAxisStyle)
-    case pieChart([ChartSlice], isDonut: Bool)
+    case pieChart([ChartSlice], isDonut: Bool, legendShowsValue: Bool)
     case geomap(markers: [GeoMapMarker], defaultView: GeoMapView?)
     case networkMap(NetworkMapDiagram)
     case mapList([MapListEntry])
@@ -399,6 +399,10 @@ nonisolated struct TriggerIndicator: Identifiable, Sendable {
     /// Whether the trigger is currently in the PROBLEM state. `false` renders an OK (green) cell,
     /// which appears only when the widget's "Show" option includes non-problem triggers.
     let isProblem: Bool
+
+    /// Whether this trigger depends on another trigger — Zabbix marks such cells with a small
+    /// arrow icon.
+    let hasDependency: Bool
 }
 
 /// Problem count and worst severity for one host group, shown in a problem hosts widget.

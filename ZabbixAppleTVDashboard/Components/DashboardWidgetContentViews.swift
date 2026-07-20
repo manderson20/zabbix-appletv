@@ -826,6 +826,9 @@ private struct ChartLegendView: View {
 struct PieChartWidgetContentView: View {
     let slices: [ChartSlice]
     var isDonut: Bool = false
+    /// Zabbix's pie legend lists names only unless the widget's "Show value" legend option
+    /// (`legend_value`) is on — the QA widget has it off and shows bare labels.
+    var legendShowsValue: Bool = false
 
     private let legendColumns = [GridItem(.adaptive(minimum: 170, maximum: 280), spacing: 12, alignment: .leading)]
 
@@ -856,7 +859,7 @@ struct PieChartWidgetContentView: View {
                                 .foregroundStyle(DashboardTheme.secondaryText)
                                 .lineLimit(1)
 
-                            if let valueLabel = slice.valueLabel {
+                            if legendShowsValue, let valueLabel = slice.valueLabel {
                                 Text(valueLabel)
                                     .font(.system(size: 12, weight: .semibold, design: .rounded))
                                     .foregroundStyle(DashboardTheme.primaryText)
@@ -1221,6 +1224,11 @@ struct TopHostsWidgetContentView: View {
 
 struct TriggerOverviewWidgetContentView: View {
     let rows: [TriggerOverviewRow]
+    /// True when the fetch hit its limit — Zabbix appends its standard truncation note.
+    var truncated: Bool = false
+
+    /// The steel blue of Zabbix's dependency arrow inside a trigger cell.
+    private static let dependencyIconColor = Color(hex: "6E8FBF") ?? .blue
 
     /// One column per distinct trigger name — Zabbix's trigger overview is a host × trigger matrix,
     /// not a per-host strip of chips.
@@ -1253,6 +1261,7 @@ struct TriggerOverviewWidgetContentView: View {
             // that trigger in problem state (green when an OK trigger is shown via "Show: Any");
             // blank where the host doesn't have the trigger.
             AutoScrollingContent {
+                VStack(alignment: .leading, spacing: 0) {
                 ScrollView(.horizontal, showsIndicators: false) {
                     Grid(alignment: .leading, horizontalSpacing: 3, verticalSpacing: 3) {
                         GridRow {
@@ -1285,9 +1294,19 @@ struct TriggerOverviewWidgetContentView: View {
 
                                 ForEach(columns, id: \.self) { name in
                                     if let trigger = row.triggers.first(where: { $0.name == name }) {
+                                        // A dependent trigger carries Zabbix's small arrow icon
+                                        // at the cell's leading edge.
                                         RoundedRectangle(cornerRadius: 2, style: .continuous)
                                             .fill(trigger.isProblem ? severityIndicatorColor(for: trigger.severity) : Color.green)
                                             .frame(width: Self.triggerColumnWidth, height: Self.cellHeight)
+                                            .overlay(alignment: .leading) {
+                                                if trigger.hasDependency {
+                                                    Image(systemName: "arrow.up")
+                                                        .font(.system(size: 12, weight: .bold))
+                                                        .foregroundStyle(Self.dependencyIconColor)
+                                                        .padding(.leading, 6)
+                                                }
+                                            }
                                     } else {
                                         Color.clear
                                             .frame(width: Self.triggerColumnWidth, height: Self.cellHeight)
@@ -1296,6 +1315,16 @@ struct TriggerOverviewWidgetContentView: View {
                             }
                         }
                     }
+                }
+
+                // Zabbix's standard note when the underlying query was cut off at its limit.
+                if truncated {
+                    Text("Not all results are displayed. Please provide more specific search criteria.")
+                        .font(.system(size: 13, weight: .regular, design: .rounded))
+                        .foregroundStyle(DashboardTheme.secondaryText)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.top, 6)
+                }
                 }
             }
         }
@@ -1338,9 +1367,12 @@ struct ProblemHostsWidgetContentView: View {
 
                     ForEach(summaries) { summary in
                         GridRow {
+                            // Group names are hyperlinks in the frontend — the same link blue
+                            // here, since visual parity is the point even where tvOS can't follow
+                            // the link.
                             Text(summary.groupName)
                                 .font(.system(size: 16, weight: .medium, design: .rounded))
-                                .foregroundStyle(DashboardTheme.primaryText)
+                                .foregroundStyle(Color(hex: "4796C4") ?? DashboardTheme.primaryText)
                                 .lineLimit(1)
                                 .frame(maxWidth: .infinity, alignment: .leading)
 

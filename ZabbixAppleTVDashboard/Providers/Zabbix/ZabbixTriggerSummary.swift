@@ -25,6 +25,15 @@ nonisolated struct ZabbixTriggerSummary: Decodable, Sendable {
 
     /// Hosts the trigger is defined on.
     let hosts: [ZabbixHostReference]
+
+    /// Triggers this trigger depends on (requested via `selectDependencies`) — a non-empty list
+    /// gets Zabbix's dependency arrow icon in the trigger overview cell.
+    let dependencies: [ZabbixTriggerDependencyReference]?
+}
+
+/// A dependency reference returned by `trigger.get` `selectDependencies`.
+nonisolated struct ZabbixTriggerDependencyReference: Decodable, Sendable {
+    let triggerid: String
 }
 
 /// A trigger definition with its (expanded) expression, as fetched for a classic graph's trigger
