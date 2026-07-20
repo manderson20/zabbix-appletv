@@ -913,6 +913,29 @@ struct ZabbixAppleTVDashboardTests {
         #expect(DashboardManager.formattedItemValue(rawValue: nil, units: "%", valueMap: nil, decimalPlaces: 2) == "\u{2014}")
     }
 
+    @Test func thresholdColorInterpolationBlendsBetweenBands() throws {
+        let fields = [
+            ZabbixWidgetField(name: "thresholds.0.threshold", value: "50"),
+            ZabbixWidgetField(name: "thresholds.0.color", value: "000000"),
+            ZabbixWidgetField(name: "thresholds.1.threshold", value: "100"),
+            ZabbixWidgetField(name: "thresholds.1.color", value: "FFFFFF"),
+        ]
+        // Below the first threshold: no color (default cell fill), like Zabbix.
+        #expect(DashboardManager.interpolatedThresholdColorHex(for: 25, fields: fields) == nil)
+        // Midway between thresholds: the linear RGB blend.
+        #expect(DashboardManager.interpolatedThresholdColorHex(for: 75, fields: fields) == "808080")
+        // At/above the last threshold: its color.
+        #expect(DashboardManager.interpolatedThresholdColorHex(for: 100, fields: fields) == "FFFFFF")
+        #expect(DashboardManager.interpolatedThresholdColorHex(for: 500, fields: fields) == "FFFFFF")
+        // Discrete (non-interpolated) lookup still snaps to the crossed band.
+        #expect(DashboardManager.thresholdColorHex(for: 75, fields: fields) == "000000")
+
+        // Column-level thresholds parse from a column's own nested field group.
+        let groups = [["threshold": "10", "color": "FF0000"]]
+        #expect(DashboardManager.thresholdColorHex(for: 15, thresholdGroups: groups) == "FF0000")
+        #expect(DashboardManager.thresholdColorHex(for: 5, thresholdGroups: groups) == nil)
+    }
+
     @Test func graphAxisGridUsesNiceStepsAndStepDerivedDecimals() throws {
         // The live QA svggraph: data 14.086–14.108 GB auto-rounds outward to 0.005 GB steps and
         // labels need 3 decimals ("14.095 GB"), never a repeated "14.1 GB".

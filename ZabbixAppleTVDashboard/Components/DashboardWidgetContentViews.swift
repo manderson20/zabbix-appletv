@@ -916,24 +916,61 @@ struct GaugeWidgetContentView: View {
             // +0.115·d keeps that whole extent inside the card's content box, so a tall gauge can
             // never ride up under the card title or clip its description.
             let diameter = max(min(geometry.size.width, geometry.size.height * 1.18), 40)
-            let lineWidth = max(diameter * 0.13, 8)
+            // Arc thicknesses honor the widget's own size knobs, as a percent of the radius
+            // ("value_arc_size" default 20, "th_arc_size" default 5).
+            let lineWidth = max(diameter / 2 * reading.valueArcSizePercent / 100, 8)
+            let thresholdArcWidth = max(diameter / 2 * reading.thresholdArcSizePercent / 100, 3)
             let angle = reading.angleDegrees.clamped(to: 90...359)
             let sweep = angle / 360
             // Rotate so the sweep sits symmetrically over the top: 180° gives the flat-based
             // semicircle, 270° leaves its gap centered at the bottom.
             let arcRotation = 90 + (360 - angle) / 2
+            // With the thin threshold arc shown, it takes the outer edge and the value arc moves
+            // inward under it (Zabbix's stacking), separated by a hair of background.
+            let showThresholdArc = reading.showThresholdArc && !reading.thresholds.isEmpty
+            let valueArcInset = showThresholdArc ? thresholdArcWidth + diameter * 0.015 : 0
 
             ZStack {
+                if showThresholdArc {
+                    // Colored segments from each threshold to the next (the last runs to max);
+                    // the span before the first threshold shows the empty-track color.
+                    ForEach(Array(thresholdArcSegments.enumerated()), id: \.offset) { _, segment in
+                        Circle()
+                            .trim(from: sweep * segment.from, to: sweep * segment.to)
+                            .stroke(segment.color, style: StrokeStyle(lineWidth: thresholdArcWidth, lineCap: .butt))
+                            .rotationEffect(.degrees(arcRotation))
+                    }
+                }
+
                 if reading.showValueArc {
                     Circle()
                         .trim(from: 0, to: sweep)
                         .stroke(reading.emptyColorHex.flatMap { Color(hex: $0) } ?? Self.zabbixEmptyArcColor, style: StrokeStyle(lineWidth: lineWidth, lineCap: .butt))
                         .rotationEffect(.degrees(arcRotation))
+                        .padding(valueArcInset)
 
                     Circle()
                         .trim(from: 0, to: sweep * fraction)
                         .stroke(gaugeTint, style: StrokeStyle(lineWidth: lineWidth, lineCap: .butt))
                         .rotationEffect(.degrees(arcRotation))
+                        .padding(valueArcInset)
+                }
+
+                if reading.showThresholdLabels {
+                    // Each threshold's value labeled at its position just outside the arc.
+                    ForEach(Array(reading.thresholds.enumerated()), id: \.offset) { _, threshold in
+                        let thresholdFraction = thresholdPosition(threshold.value)
+                        // Angle measured like the needle: 0 at the sweep's start, over `angle`°.
+                        let degrees = (thresholdFraction - 0.5) * angle - 90
+                        let radius = diameter / 2 + diameter * 0.045
+                        Text(scaleLabel(threshold.value))
+                            .font(.system(size: max(diameter * 0.05, 8), weight: .regular, design: .rounded))
+                            .foregroundStyle(DashboardTheme.secondaryText)
+                            .offset(
+                                x: radius * cos(degrees * .pi / 180),
+                                y: radius * sin(degrees * .pi / 180)
+                            )
+                    }
                 }
 
                 if reading.showNeedle {
@@ -945,14 +982,14 @@ struct GaugeWidgetContentView: View {
                 }
 
                 if reading.showScale {
-                    Text(ZabbixValueFormatting.format(reading.minValue, units: reading.units))
+                    Text(scaleLabel(reading.minValue))
                         .font(.system(size: max(diameter * 0.06, 9), weight: .regular, design: .rounded))
                         .foregroundStyle(DashboardTheme.primaryText)
                         .lineLimit(1)
                         .minimumScaleFactor(0.6)
                         .offset(x: -(diameter / 2 - lineWidth / 2) + diameter * 0.02, y: lineWidth)
 
-                    Text(ZabbixValueFormatting.format(reading.maxValue, units: reading.units))
+                    Text(scaleLabel(reading.maxValue))
                         .font(.system(size: max(diameter * 0.06, 9), weight: .regular, design: .rounded))
                         .foregroundStyle(DashboardTheme.primaryText)
                         .lineLimit(1)
@@ -998,6 +1035,41 @@ struct GaugeWidgetContentView: View {
             return color
         }
         return Self.zabbixValueArcColor
+    }
+
+    /// Where a value sits along the scale, 0...1.
+    private func thresholdPosition(_ value: Double) -> Double {
+        let range = reading.maxValue - reading.minValue
+        guard range > 0 else { return 0 }
+        return ((value - reading.minValue) / range).clamped(to: 0...1)
+    }
+
+    /// The threshold arc's colored spans: min→first threshold in the empty-track color, then each
+    /// threshold's color through to the next (the last running to max) — Zabbix's own banding.
+    private var thresholdArcSegments: [(from: Double, to: Double, color: Color)] {
+        let emptyColor = reading.emptyColorHex.flatMap { Color(hex: $0) } ?? Self.zabbixEmptyArcColor
+        var segments: [(from: Double, to: Double, color: Color)] = []
+        var cursor = 0.0
+        for (index, threshold) in reading.thresholds.enumerated() {
+            let start = thresholdPosition(threshold.value)
+            if start > cursor {
+                segments.append((cursor, start, index == 0 ? emptyColor : segments.last?.color ?? emptyColor))
+            }
+            let end = index + 1 < reading.thresholds.count ? thresholdPosition(reading.thresholds[index + 1].value) : 1
+            segments.append((start, end, Color(hex: threshold.colorHex) ?? emptyColor))
+            cursor = end
+        }
+        return segments
+    }
+
+    /// A scale (or threshold) label with the widget's own "scale_decimal_places" precision and
+    /// "scale_show_units" toggle. Each label scales to its own magnitude the way the frontend's
+    /// do — a 0…16 GB gauge reads "0 B" at one end and "15 GB" at the other, not "0 GB".
+    private func scaleLabel(_ value: Double) -> String {
+        let scale = ZabbixValueFormatting.scale(forMaxMagnitude: value, units: reading.units)
+        let number = String(format: "%.\(reading.scaleDecimalPlaces)f", value / scale.divisor)
+        let suffix = reading.scaleShowsUnits ? "\(scale.prefix)\(reading.units)" : ""
+        return suffix.isEmpty ? number : "\(number) \(suffix)"
     }
 }
 
@@ -1207,12 +1279,17 @@ struct TopHostsWidgetContentView: View {
 
                     ForEach(rows) { row in
                         HStack {
-                            ForEach(Array(row.values.enumerated()), id: \.offset) { _, value in
+                            ForEach(Array(row.values.enumerated()), id: \.offset) { index, value in
+                                // A column's threshold band (or its static base color) paints the
+                                // whole cell background, exactly like the frontend's table.
+                                let cellColor = row.cellColors.indices.contains(index) ? row.cellColors[index].flatMap { Color(hex: $0) } : nil
                                 Text(value)
                                     .font(.system(size: 16, weight: .medium, design: .rounded))
                                     .foregroundStyle(DashboardTheme.primaryText)
                                     .lineLimit(1)
                                     .frame(maxWidth: .infinity, alignment: .center)
+                                    .padding(.vertical, 2)
+                                    .background(cellColor ?? .clear)
                             }
                         }
                     }
@@ -1546,11 +1623,12 @@ struct ItemHistoryWidgetContentView: View {
         let name: String
         let value: String
         let date: Date
+        let colorHex: String?
     }
 
     private var rows: [Row] {
         series
-            .flatMap { line in line.values.map { Row(id: $0.id, name: line.itemName, value: $0.value, date: $0.date) } }
+            .flatMap { line in line.values.map { Row(id: $0.id, name: line.itemName, value: $0.value, date: $0.date, colorHex: $0.colorHex) } }
             .sorted { $0.date > $1.date }
     }
 
@@ -1564,11 +1642,15 @@ struct ItemHistoryWidgetContentView: View {
                             .foregroundStyle(DashboardTheme.secondaryText)
                             .lineLimit(1)
 
+                        // The column's threshold band (or base color) paints the value cell,
+                        // as the frontend does.
                         Text(row.value)
                             .font(.system(size: 15, weight: .medium, design: .rounded))
                             .foregroundStyle(DashboardTheme.primaryText)
                             .lineLimit(1)
                             .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 1)
+                            .background(row.colorHex.flatMap { Color(hex: $0) } ?? .clear)
 
                         // The timestamp column only when the widget's show_timestamp asks for it —
                         // Zabbix's default hides it.
