@@ -356,6 +356,10 @@ struct LineChartWidgetContentView: View {
     var yMin: Double? = nil
     var yMax: Double? = nil
     var triggerLines: [GraphTriggerLine] = []
+    var axisStyle: GraphAxisStyle = .svg
+
+    /// The muted red Zabbix paints the classic image graph's window-boundary timestamps with.
+    private static let boundaryLabelColor = Color(hex: "B85C5C") ?? .red
 
     private var units: String { series.first?.units ?? "" }
 
@@ -517,9 +521,59 @@ struct LineChartWidgetContentView: View {
         )
     }
 
-    /// Axis/legend configuration shared by the stacked and non-stacked charts.
-    private func styled(_ chart: some View) -> some View {
-        chart
+    /// The Y grid Zabbix would draw for this chart at this height: nice steps in displayed units,
+    /// auto bounds rounded outward to whole steps, and the per-label decimals the step calls for.
+    /// svggraph packs a labeled row about every 55pt ("14.095 GB" steps of 0.005); the classic
+    /// image graph keeps rows sparse (about every 120pt — a CPU graph reads just 0 / 50 / 100 %).
+    /// Nil means the data gave nothing to grid (stacked charts keep Swift Charts' automatic axis).
+    private func resolvedYAxis(plotHeight: CGFloat) -> GraphAxisMath.YAxis? {
+        let fixedBounds = yMin != nil || yMax != nil
+        let lower: Double
+        let upper: Double
+        if let domain = yScaleDomain {
+            lower = domain.lowerBound
+            upper = domain.upperBound
+        } else if !stacked {
+            let values = series.flatMap(\.points).compactMap(\.value) + triggerLines.map(\.value)
+            guard let maxValue = values.max() else { return nil }
+            lower = min(0, values.min() ?? 0)
+            upper = maxValue
+        } else {
+            return nil
+        }
+
+        let rowHeight: CGFloat = axisStyle == .svg ? 55 : 120
+        let intervals = max(2, Int((plotHeight / rowHeight).rounded()))
+        return GraphAxisMath.yAxis(
+            lower: lower,
+            upper: upper,
+            fixedBounds: fixedBounds,
+            targetIntervals: intervals,
+            scaleDivisor: yAxisScale.divisor
+        )
+    }
+
+    /// One Y-axis label with the grid's fixed decimals — "14.095 GB", "50 %" — matching Zabbix,
+    /// which keeps trailing zeros on axis labels ("14.100 GB") so rows line up.
+    private func yAxisLabelText(_ rawValue: Double, decimals: Int) -> String {
+        let scale = yAxisScale
+        let number = String(format: "%.\(decimals)f", rawValue / scale.divisor)
+        let suffix = "\(scale.prefix)\(units)"
+        return suffix.isEmpty ? number : "\(number) \(suffix)"
+    }
+
+    private static func timeLabel(_ date: Date, format: String) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = format
+        return formatter.string(from: date)
+    }
+
+    /// Axis/legend configuration shared by the stacked and non-stacked charts. Needs the plot's
+    /// size (from the enclosing GeometryReader) to pick Zabbix-like grid densities.
+    private func styled(_ chart: some View, plotSize: CGSize) -> some View {
+        let resolvedAxis = resolvedYAxis(plotHeight: plotSize.height)
+        return chart
             // Swift Charts' built-in legend doesn't wrap long labels within the card's actual width,
             // so it's hidden in favor of the wrapping `ChartLegendView` below.
             .chartLegend(.hidden)
@@ -527,27 +581,88 @@ struct LineChartWidgetContentView: View {
             // data, so a period with no data reads as blank space at the right spot.
             .chartXScale(domain: window.start...window.end)
             .chartXAxis {
-                AxisMarks(values: .automatic(desiredCount: 3)) {
-                    AxisValueLabel(format: .dateTime.hour().minute())
-                        .font(.system(size: 13, weight: .regular, design: .rounded))
-                }
-            }
-            .chartYAxis {
-                let scale = yAxisScale
-                AxisMarks(position: .leading) { value in
-                    AxisGridLine()
-                    AxisTick()
-                    AxisValueLabel {
-                        if let rawValue = value.as(Double.self) {
-                            Text(ZabbixValueFormatting.format(rawValue, units: units, scale: scale))
-                                .font(.system(size: 13, weight: .regular, design: .rounded))
+                if axisStyle == .svg {
+                    // svggraph divides the window into even cells (~100pt) and labels each
+                    // boundary horizontally with a zero-padded, date-prefixed time:
+                    // "7-19 08:45 PM" (verified against the live QA svggraph).
+                    let intervals = max(2, Int(plotSize.width / 100))
+                    AxisMarks(values: GraphAxisMath.classicTimeTicks(start: window.start, end: window.end, intervals: intervals)) { value in
+                        AxisGridLine()
+                        AxisTick()
+                        AxisValueLabel {
+                            if let date = value.as(Date.self) {
+                                Text(Self.timeLabel(date, format: "M-d hh:mm a"))
+                                    .font(.system(size: 12, weight: .regular, design: .rounded))
+                                    .foregroundStyle(DashboardTheme.secondaryText)
+                            }
+                        }
+                    }
+                } else {
+                    // The classic image graph packs a rotated label at every nice time step
+                    // ("08:46 PM" each 2 minutes on an hour graph) and brackets the window with
+                    // red boundary timestamps that carry the date (verified live).
+                    let step = GraphAxisMath.svgTimeStep(windowSeconds: window.end.timeIntervalSince(window.start), plotWidth: plotSize.width)
+                    AxisMarks(values: GraphAxisMath.svgTimeTicks(start: window.start, end: window.end, step: step)) { value in
+                        AxisGridLine()
+                        AxisTick()
+                        AxisValueLabel(anchor: .topTrailing) {
+                            if let date = value.as(Date.self) {
+                                Self.rotatedAxisLabel(Self.timeLabel(date, format: "hh:mm a"), color: DashboardTheme.secondaryText)
+                            }
+                        }
+                    }
+                    AxisMarks(values: [window.start, window.end]) { value in
+                        AxisValueLabel(anchor: .topTrailing) {
+                            if let date = value.as(Date.self) {
+                                Self.rotatedAxisLabel(Self.timeLabel(date, format: "MM-dd hh:mm a"), color: Self.boundaryLabelColor)
+                            }
                         }
                     }
                 }
             }
-            // Pin the Y-axis to the widget's configured lefty_min/lefty_max when set; otherwise
-            // Swift Charts auto-scales to the data.
-            .chartYScaleIfSet(yScaleDomain)
+            .chartYAxis {
+                if let resolvedAxis {
+                    AxisMarks(position: .leading, values: resolvedAxis.ticks) { value in
+                        AxisGridLine()
+                        AxisTick()
+                        AxisValueLabel {
+                            if let rawValue = value.as(Double.self) {
+                                Text(yAxisLabelText(rawValue, decimals: resolvedAxis.decimals))
+                                    .font(.system(size: 13, weight: .regular, design: .rounded))
+                            }
+                        }
+                    }
+                } else {
+                    let scale = yAxisScale
+                    AxisMarks(position: .leading) { value in
+                        AxisGridLine()
+                        AxisTick()
+                        AxisValueLabel {
+                            if let rawValue = value.as(Double.self) {
+                                Text(ZabbixValueFormatting.format(rawValue, units: units, scale: scale))
+                                    .font(.system(size: 13, weight: .regular, design: .rounded))
+                            }
+                        }
+                    }
+                }
+            }
+            // Pin the Y-axis to the grid's (outward-rounded) bounds, so the top and bottom
+            // gridlines land exactly on labeled steps the way Zabbix draws them.
+            .chartYScaleIfSet(resolvedAxis.map { $0.lower...$0.upper } ?? yScaleDomain)
+    }
+
+    /// A vertically rotated svggraph axis label. The fixed slot (width for one text line, height
+    /// for the rotated text's length) is what reserves the tall axis band under the plot — the
+    /// rotation itself doesn't change layout size.
+    private static let svgAxisLabelSlotHeight: CGFloat = 74
+
+    private static func rotatedAxisLabel(_ text: String, color: Color) -> some View {
+        Text(text)
+            .font(.system(size: 11, weight: .regular, design: .rounded))
+            .foregroundStyle(color)
+            .fixedSize()
+            .rotationEffect(.degrees(-90), anchor: .center)
+            .frame(width: 13, height: svgAxisLabelSlotHeight)
     }
 
     var body: some View {
@@ -557,10 +672,12 @@ struct LineChartWidgetContentView: View {
                 .foregroundStyle(DashboardTheme.secondaryText)
         } else {
             VStack(alignment: .leading, spacing: 6) {
-                if stacked {
-                    styled(stackedChart)
-                } else {
-                    styled(segmentedChart)
+                GeometryReader { geometry in
+                    if stacked {
+                        styled(stackedChart, plotSize: geometry.size)
+                    } else {
+                        styled(segmentedChart, plotSize: geometry.size)
+                    }
                 }
 
                 // Zabbix shows the legend whenever it's enabled — including single-series graphs,
