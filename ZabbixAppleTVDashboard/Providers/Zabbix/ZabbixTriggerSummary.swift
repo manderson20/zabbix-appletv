@@ -51,3 +51,9 @@ nonisolated struct ZabbixTriggerDefinition: Decodable, Sendable {
     /// The trigger expression with macros expanded (requested via `expandExpression`).
     let expression: String?
 }
+
+/// Minimal trigger row used when only the identifier is needed (e.g. the monitored-trigger join
+/// that scopes problem lists to what the frontend shows).
+nonisolated struct ZabbixTriggerIDOnly: Decodable, Sendable {
+    let triggerid: String
+}
