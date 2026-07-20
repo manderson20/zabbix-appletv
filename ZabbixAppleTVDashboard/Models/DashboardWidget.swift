@@ -681,6 +681,42 @@ nonisolated struct NetworkMapDiagram: Sendable {
 
     /// Lines connecting pairs of elements.
     let links: [NetworkMapLink]
+
+    /// Drawn shapes (rectangles/ellipses with optional text) annotating the map.
+    var shapes: [NetworkMapShape] = []
+
+    /// Free-standing drawn lines.
+    var freeLines: [NetworkMapFreeLine] = []
+}
+
+/// A drawn shape on a map diagram, in the map's pixel coordinate space.
+nonisolated struct NetworkMapShape: Identifiable, Sendable {
+    let id: String
+    /// True for an ellipse, false for a rectangle.
+    let isEllipse: Bool
+    let x: Int
+    let y: Int
+    let width: Int
+    let height: Int
+    let text: String
+    let fontColorHex: String?
+    let fontSize: Int
+    /// Fill color; nil means transparent.
+    let backgroundColorHex: String?
+    /// Border color; nil means no border.
+    let borderColorHex: String?
+    let borderWidth: Int
+}
+
+/// A free-standing drawn line on a map diagram, in the map's pixel coordinate space.
+nonisolated struct NetworkMapFreeLine: Identifiable, Sendable {
+    let id: String
+    let x1: Int
+    let y1: Int
+    let x2: Int
+    let y2: Int
+    let colorHex: String?
+    let width: Int
 }
 
 /// A single element on a network map diagram.
