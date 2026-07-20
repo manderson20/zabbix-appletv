@@ -125,7 +125,7 @@ nonisolated struct ClockConfiguration: Sendable {
 nonisolated enum DashboardWidgetKind: Sendable {
     case clock(ClockConfiguration)
     case itemValue(name: String, value: String, units: String, decimalPlaces: Int, backgroundColorHex: String?, trend: ItemValueTrend?, lastUpdated: Date?, mappedText: String?)
-    case problems([DashboardProblem])
+    case problems([DashboardProblem], showTimeline: Bool)
     case problemsBySeverity([SeverityCount])
     case hostAvailability([HostInterfaceAvailability])
     case systemInformation(rows: [SystemInfoRow], haNodes: [SystemHANode])

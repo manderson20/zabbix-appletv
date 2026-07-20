@@ -227,8 +227,8 @@ private struct DashboardWidgetCardView: View {
             ClockWidgetContentView(configuration: configuration)
         case let .itemValue(name, value, units, decimalPlaces, _, trend, lastUpdated, mappedText):
             ItemValueWidgetContentView(name: name, value: value, units: units, decimalPlaces: decimalPlaces, trend: trend, lastUpdated: lastUpdated, mappedText: mappedText)
-        case let .problems(problems):
-            ProblemsWidgetContentView(problems: problems)
+        case let .problems(problems, showTimeline):
+            ProblemsWidgetContentView(problems: problems, showTimeline: showTimeline)
         case let .problemsBySeverity(counts):
             ProblemsBySeverityWidgetContentView(counts: counts)
         case let .hostAvailability(breakdown):
@@ -242,7 +242,7 @@ private struct DashboardWidgetCardView: View {
         case let .topHosts(columns, rows):
             TopHostsWidgetContentView(columns: columns, rows: rows)
         case let .topTriggers(problems):
-            ProblemsWidgetContentView(problems: problems)
+            ProblemBandListView(problems: problems)
         case let .triggerOverview(rows, truncated):
             TriggerOverviewWidgetContentView(rows: rows, truncated: truncated)
         case let .problemsByHostGroup(summaries):
@@ -492,8 +492,16 @@ private struct ItemValueWidgetContentView: View {
     }
 }
 
+/// The Problems widget as Zabbix's own table (all verified against the live widget): a Time
+/// column in link blue (clock only for today, date-prefixed for older), the host in link blue,
+/// the problem name on a severity-colored cell (blinking while new), a live-updating Duration
+/// column, and the tag chips — with the timeline's hour/day separators down the Time column when
+/// the widget asks for them.
 private struct ProblemsWidgetContentView: View {
     let problems: [DashboardProblem]
+    var showTimeline: Bool = true
+
+    private static let linkColor = Color(hex: "4796C4") ?? .blue
 
     var body: some View {
         if problems.isEmpty {
@@ -502,14 +510,117 @@ private struct ProblemsWidgetContentView: View {
                 .foregroundStyle(DashboardTheme.secondaryText)
         } else {
             // Deliberately static, not auto-scrolling: problems are sorted newest-first, so the
-            // top of the list is the most urgent thing to see. Auto-scrolling would carry
-            // attention away from that toward older, already-acknowledged-by-nobody problems
-            // instead — the opposite of what matters on a wall display. Whatever doesn't fit in
-            // the card's height is the oldest of the batch, which is the right thing to clip.
-            //
-            // A TimelineView (rather than a one-shot render) is what lets a problem's "still
-            // within the blink window" state age out on its own as time passes, not just when
-            // the widget happens to re-fetch data.
+            // top of the list is the most urgent thing to see. The TimelineView keeps Duration
+            // ticking and lets the blink window age out between data refreshes.
+            TimelineView(.periodic(from: .now, by: 5)) { context in
+                Grid(alignment: .topLeading, horizontalSpacing: 14, verticalSpacing: 6) {
+                    GridRow {
+                        ForEach(["Time", "Host", "Problem \u{2022} Severity", "Duration", "Tags"], id: \.self) { title in
+                            Text(title)
+                                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                .foregroundStyle(DashboardTheme.secondaryText)
+                        }
+                    }
+
+                    ForEach(Array(problems.enumerated()), id: \.element.id) { index, problem in
+                        // The timeline separator ("08:00", "Today", ...) between this row and the
+                        // one above it, when the pair crosses an hour or day boundary.
+                        if showTimeline, index > 0,
+                           let label = ProblemTimelineFormat.separatorLabel(newer: problems[index - 1].since, older: problem.since, now: context.date) {
+                            GridRow {
+                                Text(label)
+                                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                    .foregroundStyle(DashboardTheme.secondaryText)
+                                    .frame(maxWidth: .infinity, alignment: .trailing)
+                                    .gridCellColumns(1)
+                            }
+                        }
+
+                        ProblemTableRow(problem: problem, now: context.date)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+            }
+        }
+    }
+}
+
+/// One Problems-table row. The severity color paints only the problem-name cell (Zabbix's own
+/// layout), blinking while the problem is newer than the server's blink window.
+private struct ProblemTableRow: View {
+    let problem: DashboardProblem
+    let now: Date
+
+    @State private var isBlinkPhaseOn = false
+
+    private var isNew: Bool {
+        now.timeIntervalSince(problem.since) < Double(SeverityPalette.blinkPeriodSeconds)
+    }
+
+    var body: some View {
+        GridRow {
+            Text(ProblemTimelineFormat.timeLabel(for: problem.since, now: now))
+                .font(.system(size: 15, weight: .regular, design: .rounded))
+                .foregroundStyle(Color(hex: "4796C4") ?? .blue)
+                .lineLimit(1)
+
+            Text(problem.host ?? "")
+                .font(.system(size: 15, weight: .regular, design: .rounded))
+                .foregroundStyle(Color(hex: "4796C4") ?? .blue)
+                .lineLimit(1)
+
+            Text(problem.name)
+                .font(.system(size: 15, weight: .medium, design: .rounded))
+                .foregroundStyle(.black.opacity(0.87))
+                .lineLimit(2)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    RoundedRectangle(cornerRadius: 3, style: .continuous)
+                        .fill(severityIndicatorColor(for: problem.severity).opacity(isNew && isBlinkPhaseOn ? 0.35 : 1))
+                )
+
+            Text(ProblemTimelineFormat.ageLabel(from: problem.since, to: now))
+                .font(.system(size: 15, weight: .regular, design: .rounded))
+                .foregroundStyle(DashboardTheme.primaryText)
+                .lineLimit(1)
+
+            if problem.tags.isEmpty {
+                Text("")
+            } else {
+                HStack(spacing: 4) {
+                    ForEach(problem.tags) { tag in
+                        Text(tag.label)
+                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                            .foregroundStyle(DashboardTheme.secondaryText)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(RoundedRectangle(cornerRadius: 4, style: .continuous).fill(.white.opacity(0.08)))
+                            .lineLimit(1)
+                    }
+                }
+            }
+        }
+        .onAppear {
+            guard isNew else { return }
+            withAnimation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true)) {
+                isBlinkPhaseOn = true
+            }
+        }
+    }
+}
+
+/// The banded severity list the Top triggers widget keeps (its rows carry the fired count).
+private struct ProblemBandListView: View {
+    let problems: [DashboardProblem]
+
+    var body: some View {
+        if problems.isEmpty {
+            Text("No active problems")
+                .font(.system(size: 18, weight: .regular, design: .rounded))
+                .foregroundStyle(DashboardTheme.secondaryText)
+        } else {
             TimelineView(.periodic(from: .now, by: 5)) { context in
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(problems) { problem in
