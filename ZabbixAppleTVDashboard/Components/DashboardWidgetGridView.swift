@@ -567,9 +567,12 @@ private struct ProblemTableRow: View {
                     .lineLimit(1)
             }
 
+            // Hosts are white with a dotted underline in the frontend (a hint-on-hover affordance),
+            // not link blue — only the Time column is blue (verified in a zoomed live capture).
             Text(problem.host ?? "")
                 .font(.system(size: 15, weight: .regular, design: .rounded))
-                .foregroundStyle(Color(hex: "4796C4") ?? .blue)
+                .foregroundStyle(DashboardTheme.primaryText)
+                .underline(problem.host != nil, pattern: .dot, color: DashboardTheme.secondaryText)
                 .lineLimit(1)
 
             Text(problem.name)
