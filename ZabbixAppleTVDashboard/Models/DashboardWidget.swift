@@ -334,6 +334,26 @@ nonisolated struct GaugeReading: Sendable {
 
     /// Unfilled-arc track color ("empty_color"); Zabbix's sampled default when nil.
     var emptyColorHex: String? = nil
+
+    /// Whether the thin threshold arc outside the value arc is drawn ("th_show_arc"), with its
+    /// thickness as a percent of the gauge radius ("th_arc_size", Zabbix default 5). The arc's
+    /// segments run from each threshold to the next in that threshold's color; the span before
+    /// the first threshold uses the empty-track color.
+    var showThresholdArc: Bool = false
+    var thresholdArcSizePercent: Double = 5
+
+    /// Whether each threshold's value is labeled on the scale ("th_show_labels").
+    var showThresholdLabels: Bool = false
+
+    /// Decimal places for the scale's min/max (and threshold) labels ("scale_decimal_places",
+    /// Zabbix default 0 — a 16 GB max reads "15 GB", not "14.90 GB").
+    var scaleDecimalPlaces: Int = 0
+
+    /// Whether scale labels carry the unit suffix ("scale_show_units", default on).
+    var scaleShowsUnits: Bool = true
+
+    /// The value arc's thickness as a percent of the gauge radius ("value_arc_size", default 20).
+    var valueArcSizePercent: Double = 20
 }
 
 /// A single threshold marker on a gauge.
@@ -371,6 +391,11 @@ nonisolated struct TopHostsRow: Identifiable, Sendable {
 
     /// Column values, in the same order as the widget's configured columns.
     let values: [String]
+
+    /// Per-column threshold background colors (hex, no leading '#'), aligned with `values`; nil
+    /// where the column has no thresholds or the value meets none — Zabbix paints the cell
+    /// background with the crossed band's color.
+    var cellColors: [String?] = []
 }
 
 /// A single host's active triggers, grouped for a trigger overview widget.
@@ -509,6 +534,9 @@ nonisolated struct ItemHistoryPoint: Identifiable, Sendable {
 
     /// Date the value was recorded.
     let date: Date
+
+    /// The column's threshold background color for this reading (hex), nil when uncolored.
+    var colorHex: String? = nil
 }
 
 /// A single host/item value pair, shown in a data overview widget.

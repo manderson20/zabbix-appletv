@@ -525,7 +525,13 @@ extension DashboardManager {
                 angleDegrees: Self.fieldValue(widget.fields, name: "angle").flatMap(Double.init) ?? 180,
                 valueColorHex: Self.fieldValue(widget.fields, name: "value_color").flatMap { $0.isEmpty ? nil : $0 },
                 descriptionColorHex: Self.fieldValue(widget.fields, name: "desc_color").flatMap { $0.isEmpty ? nil : $0 },
-                emptyColorHex: Self.fieldValue(widget.fields, name: "empty_color").flatMap { $0.isEmpty ? nil : $0 }
+                emptyColorHex: Self.fieldValue(widget.fields, name: "empty_color").flatMap { $0.isEmpty ? nil : $0 },
+                showThresholdArc: Self.fieldValue(widget.fields, name: "th_show_arc") == "1",
+                thresholdArcSizePercent: Self.fieldValue(widget.fields, name: "th_arc_size").flatMap(Double.init) ?? 5,
+                showThresholdLabels: Self.fieldValue(widget.fields, name: "th_show_labels") == "1",
+                scaleDecimalPlaces: Self.fieldValue(widget.fields, name: "scale_decimal_places").flatMap(Int.init) ?? 0,
+                scaleShowsUnits: Self.fieldValue(widget.fields, name: "scale_show_units") != "0",
+                valueArcSizePercent: Self.fieldValue(widget.fields, name: "value_arc_size").flatMap(Double.init) ?? 20
             )
         )
     }
@@ -589,11 +595,21 @@ extension DashboardManager {
         let primaryTemplate = Self.fieldValue(widget.fields, name: "primary_label").flatMap { $0.isEmpty ? nil : $0 } ?? "{HOST.NAME}"
         let secondaryTemplate = Self.fieldValue(widget.fields, name: "secondary_label").flatMap { $0.isEmpty ? nil : $0 } ?? "{ITEM.LASTVALUE}"
 
+        // "interpolation" (default on for a fresh widget, stored explicitly either way) blends the
+        // cell color linearly between adjacent thresholds instead of snapping to discrete bands.
+        let interpolates = Self.fieldValue(widget.fields, name: "interpolation") == "1"
+        // The widget's own background override for unthresholded cells ("bg_color").
+        let defaultCellColor = Self.fieldValue(widget.fields, name: "bg_color").flatMap { $0.isEmpty ? nil : $0 }
+
         return .honeycomb(
             items.prefix(60).map { item in
                 // Each cell is tinted by the threshold band its reading meets — the same value-driven
-                // coloring Zabbix's honeycomb applies — using the shared thresholds.N resolver.
-                let cellColor = Self.thresholdColorHex(for: item.lastvalue.flatMap(Double.init), fields: widget.fields)
+                // coloring Zabbix's honeycomb applies — blended when interpolation is on.
+                let numeric = item.lastvalue.flatMap(Double.init)
+                let cellColor = (interpolates
+                    ? Self.interpolatedThresholdColorHex(for: numeric, fields: widget.fields)
+                    : Self.thresholdColorHex(for: numeric, fields: widget.fields))
+                    ?? defaultCellColor
                 let macros = Self.itemLabelMacros(
                     itemName: item.name,
                     hostName: item.hosts.first?.name ?? "",
@@ -654,12 +670,18 @@ extension DashboardManager {
             }
 
             var values: [String] = []
+            var cellColors: [String?] = []
             var sortValue: Double?
             var hasItemColumn = false
             var hasItemData = false
             for (index, column) in columnGroups.enumerated() {
                 let cell = try await topHostsColumnValue(column, host: host, from: from, to: to, serverBaseURL: serverBaseURL, authToken: authToken)
                 values.append(cell.display ?? "")
+                // A column's own thresholds paint the cell background with the crossed band's
+                // color (columns.N.thresholds.M.*), falling back to its static base_color.
+                let thresholdGroups = Self.indexedFieldGroups(columnFields(column), prefix: "thresholds")
+                let baseColor = column["base_color"].flatMap { $0.isEmpty ? nil : $0 }
+                cellColors.append(Self.thresholdColorHex(for: cell.numeric, thresholdGroups: thresholdGroups) ?? baseColor)
                 if cell.isItemColumn {
                     hasItemColumn = true
                     if cell.display != nil { hasItemData = true }
@@ -670,10 +692,17 @@ extension DashboardManager {
             // in the widget's time period (verified live: a host whose only reading was a stale
             // "0 B" outside the window is simply absent, not shown as "0.00 B" or an empty row).
             guard !hasItemColumn || hasItemData else { continue }
-            ranked.append((TopHostsRow(id: host.hostid, hostName: host.name, values: values), sortValue))
+            ranked.append((TopHostsRow(id: host.hostid, hostName: host.name, values: values, cellColors: cellColors), sortValue))
         }
 
         return .topHosts(columns: columnTitles, rows: Self.rankTopHostsRows(ranked, isBottomN: isBottomN, limit: showLines))
+    }
+
+
+    /// Re-wraps one column's flattened key/value group ("thresholds.0.color": "FF0000", ...) as
+    /// widget fields so the shared indexed-group parser can read its nested thresholds.
+    private func columnFields(_ column: [String: String]) -> [ZabbixWidgetField] {
+        column.map { ZabbixWidgetField(name: $0.key, value: $0.value) }
     }
 
     /// Orders scored Top hosts rows — highest first for top-N, lowest first for bottom-N — with
@@ -1607,6 +1636,13 @@ extension DashboardManager {
             guard let itemID = group["itemid"], let name = group["name"], !name.isEmpty else { return nil }
             return (itemID, name)
         })
+        // A column's thresholds ("columns.N.thresholds.M.*") color each numeric reading's cell,
+        // with the column's static base_color as the unthresholded fallback — like the frontend.
+        let columnStyleByItemID = Dictionary(uniqueKeysWithValues: columnGroups.compactMap { group -> (String, (thresholds: [[String: String]], baseColor: String?))? in
+            guard let itemID = group["itemid"] else { return nil }
+            let thresholds = Self.indexedFieldGroups(columnFields(group), prefix: "thresholds")
+            return (itemID, (thresholds, group["base_color"].flatMap { $0.isEmpty ? nil : $0 }))
+        })
 
         // "Show lines" controls how many recent values per item are listed (Zabbix's default is 25),
         // rather than the hardcoded 5.
@@ -1647,10 +1683,12 @@ extension DashboardManager {
                     id: item.itemid,
                     itemName: columnNameByItemID[item.itemid] ?? item.name,
                     values: windowed.map { value in
-                        ItemHistoryPoint(
+                        let style = columnStyleByItemID[item.itemid]
+                        return ItemHistoryPoint(
                             id: "\(item.itemid).\(value.clock)",
                             value: Self.formattedDefaultValue(rawValue: value.value, units: units, valueMap: item.valuemap?.valueMap),
-                            date: Date(timeIntervalSince1970: TimeInterval(value.clock) ?? 0)
+                            date: Date(timeIntervalSince1970: TimeInterval(value.clock) ?? 0),
+                            colorHex: Self.thresholdColorHex(for: Double(value.value), thresholdGroups: style?.thresholds ?? []) ?? style?.baseColor
                         )
                     }
                 )
@@ -2849,8 +2887,47 @@ extension DashboardManager {
     /// alert color — the same `thresholds.N.threshold`/`.color` fields the gauge arc uses — so a
     /// value crossing a threshold repaints the item-value background.
     static func thresholdColorHex(for value: Double?, fields: [ZabbixWidgetField]) -> String? {
+        thresholdColorHex(for: value, thresholdGroups: indexedFieldGroups(fields, prefix: "thresholds"))
+    }
+
+    /// Same band lookup for thresholds parsed from any field prefix — a Top hosts or Item history
+    /// column's own "columns.N.thresholds.M.*" groups color that column's cells the same way.
+    static func thresholdColorHex(for value: Double?, thresholdGroups: [[String: String]]) -> String? {
         guard let value else { return nil }
-        return indexedFieldGroups(fields, prefix: "thresholds")
+        return parsedThresholds(thresholdGroups)
+            .last { value >= $0.threshold }?
+            .color
+    }
+
+    /// Zabbix's honeycomb "Color interpolation": between two consecutive thresholds the cell color
+    /// is the linear RGB blend of their colors by where the value sits; below the first threshold
+    /// there is no color (default fill), at/above the last it's the last color. Without
+    /// interpolation the discrete band color applies.
+    static func interpolatedThresholdColorHex(for value: Double?, fields: [ZabbixWidgetField]) -> String? {
+        guard let value else { return nil }
+        let thresholds = parsedThresholds(indexedFieldGroups(fields, prefix: "thresholds"))
+        guard let first = thresholds.first, value >= first.threshold else { return nil }
+        guard let upperIndex = thresholds.firstIndex(where: { $0.threshold > value }) else {
+            return thresholds.last?.color
+        }
+        let lower = thresholds[upperIndex - 1]
+        let upper = thresholds[upperIndex]
+        let span = upper.threshold - lower.threshold
+        guard span > 0,
+              let lowerRGB = UInt32(lower.color, radix: 16),
+              let upperRGB = UInt32(upper.color, radix: 16) else { return lower.color }
+        let t = (value - lower.threshold) / span
+
+        func blend(_ shift: UInt32) -> Int {
+            let a = Double((lowerRGB >> shift) & 0xFF)
+            let b = Double((upperRGB >> shift) & 0xFF)
+            return Int((a + (b - a) * t).rounded())
+        }
+        return String(format: "%02X%02X%02X", blend(16), blend(8), blend(0))
+    }
+
+    private static func parsedThresholds(_ groups: [[String: String]]) -> [(threshold: Double, color: String)] {
+        groups
             .compactMap { group -> (threshold: Double, color: String)? in
                 guard let threshold = group["threshold"].flatMap(Double.init), let color = group["color"] else {
                     return nil
@@ -2858,8 +2935,6 @@ extension DashboardManager {
                 return (threshold, color)
             }
             .sorted { $0.threshold < $1.threshold }
-            .last { value >= $0.threshold }?
-            .color
     }
 
     /// Zabbix's default dashboard widget refresh rate, applied when a widget is left at "Default"
