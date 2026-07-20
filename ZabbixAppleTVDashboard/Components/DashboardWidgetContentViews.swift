@@ -1072,6 +1072,8 @@ struct TopHostsWidgetContentView: View {
                 .font(.system(size: 16, weight: .regular, design: .rounded))
                 .foregroundStyle(DashboardTheme.secondaryText)
         } else {
+            // Zabbix centers every Top hosts column — the header and its values sit centered in
+            // the column's width (verified against the live widget), not flushed left.
             AutoScrollingContent {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
@@ -1079,7 +1081,7 @@ struct TopHostsWidgetContentView: View {
                             Text(title)
                                 .font(.system(size: 13, weight: .semibold, design: .rounded))
                                 .foregroundStyle(DashboardTheme.secondaryText)
-                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .frame(maxWidth: .infinity, alignment: .center)
                         }
                     }
 
@@ -1090,7 +1092,7 @@ struct TopHostsWidgetContentView: View {
                                     .font(.system(size: 16, weight: .medium, design: .rounded))
                                     .foregroundStyle(DashboardTheme.primaryText)
                                     .lineLimit(1)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .frame(maxWidth: .infinity, alignment: .center)
                             }
                         }
                     }

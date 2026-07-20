@@ -901,17 +901,33 @@ struct ZabbixAppleTVDashboardTests {
 
         // Numeric, unmapped → formatted with units + precision.
         #expect(DashboardManager.formattedItemValue(rawValue: "42", units: "%", valueMap: nil, decimalPlaces: 1) == "42.0 %")
-        // A large byte reading is scaled + unit-suffixed, not shown raw — the Item history fix, which
-        // renders each reading through this helper at `itemHistoryDecimalPlaces` precision.
+        // A large byte reading is scaled + unit-suffixed, not shown raw.
         // 4928110592 / 1024³ = 4.59 — the binary-base figure Zabbix's own frontend shows for
         // this reading (a decimal 1000³ base printed "4.93 GB", ~7.4% high).
-        #expect(DashboardManager.formattedItemValue(rawValue: "4928110592", units: "B", valueMap: nil, decimalPlaces: DashboardManager.itemHistoryDecimalPlaces) == "4.59 GB")
+        #expect(DashboardManager.formattedItemValue(rawValue: "4928110592", units: "B", valueMap: nil, decimalPlaces: 2) == "4.59 GB")
         // Value-mapped → "Label (raw)", unchanged regardless of precision.
         #expect(DashboardManager.formattedItemValue(rawValue: "1", units: "", valueMap: map, decimalPlaces: 2) == "Up (1)")
         // Non-numeric text → passed through as-is.
         #expect(DashboardManager.formattedItemValue(rawValue: "running", units: "", valueMap: nil, decimalPlaces: 2) == "running")
         // Absent → em dash.
         #expect(DashboardManager.formattedItemValue(rawValue: nil, units: "%", valueMap: nil, decimalPlaces: 2) == "\u{2014}")
+    }
+
+    @Test func formatDefaultMatchesZabbixConvertUnits() throws {
+        // Unscaled values keep 4 significant fractional digits — leading zeros don't count —
+        // with trailing zeros trimmed. Every expectation below is a value observed cell-for-cell
+        // in the live frontend's Data overview.
+        #expect(ZabbixValueFormatting.formatDefault(99.9375, units: "%") == "99.9375 %")
+        #expect(ZabbixValueFormatting.formatDefault(0.03124, units: "%") == "0.03124 %")
+        #expect(ZabbixValueFormatting.formatDefault(0.00208333, units: "%") == "0.002083 %")
+        #expect(ZabbixValueFormatting.formatDefault(95.786, units: "") == "95.786")
+        #expect(ZabbixValueFormatting.formatDefault(8, units: "") == "8")
+        #expect(ZabbixValueFormatting.formatDefault(0, units: "%") == "0 %")
+        // K/M/G/T-scaled values keep at most 2 fractional digits, trimmed ("4 GB", not "4.00 GB").
+        #expect(ZabbixValueFormatting.formatDefault(4_294_967_296, units: "B") == "4 GB")
+        #expect(ZabbixValueFormatting.formatDefault(16_674_064_998, units: "B") == "15.53 GB")
+        #expect(ZabbixValueFormatting.formatDefault(4_915_318_784, units: "B") == "4.58 GB")
+        #expect(ZabbixValueFormatting.formatDefault(5_816_320, units: "bps") == "5.82 Mbps")
     }
 
     @Test func legendStatFormattingKeepsSmallReadingsVisible() throws {
