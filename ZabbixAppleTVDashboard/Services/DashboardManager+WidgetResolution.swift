@@ -1778,7 +1778,7 @@ extension DashboardManager {
         }
 
         let window = ChartTimeWindow(start: windowStart, end: windowEnd)
-        return series.isEmpty ? .unsupported(rawType: widget.type) : .lineChart(series: series, window: window, stacked: false, showLegend: Self.fieldValue(widget.fields, name: "legend") != "0", showLegendStats: false, yMin: Self.fieldValue(widget.fields, name: "lefty_min").flatMap(Double.init), yMax: Self.fieldValue(widget.fields, name: "lefty_max").flatMap(Double.init), triggerLines: [])
+        return series.isEmpty ? .unsupported(rawType: widget.type) : .lineChart(series: series, window: window, stacked: false, showLegend: Self.fieldValue(widget.fields, name: "legend") != "0", showLegendStats: false, yMin: Self.fieldValue(widget.fields, name: "lefty_min").flatMap(Double.init), yMax: Self.fieldValue(widget.fields, name: "lefty_max").flatMap(Double.init), triggerLines: [], axisStyle: .svg)
     }
 
     /// Returns all values for keys like "prefix0", "prefix1", ... in a dataset dictionary, in
@@ -1846,7 +1846,7 @@ extension DashboardManager {
             // Zabbix's default Simple-graph header is "HOST: item name".
             pendingDefaultTitle = Self.hostPrefixedTitle(host: item.hosts?.first?.name, name: item.name)
             let simpleTriggerLines = await triggerLines(forItemIDs: [item.itemid], serverBaseURL: serverBaseURL, authToken: authToken)
-            return .lineChart(series: series, window: ChartTimeWindow(start: windowStart, end: windowEnd), stacked: false, showLegend: Self.fieldValue(widget.fields, name: "legend") != "0", showLegendStats: true, yMin: nil, yMax: nil, triggerLines: simpleTriggerLines)
+            return .lineChart(series: series, window: ChartTimeWindow(start: windowStart, end: windowEnd), stacked: false, showLegend: Self.fieldValue(widget.fields, name: "legend") != "0", showLegendStats: true, yMin: nil, yMax: nil, triggerLines: simpleTriggerLines, axisStyle: .classic)
         }
 
         guard let graphID = Self.firstIndexedValue(widget.fields, name: "graphid") else {
@@ -1902,7 +1902,7 @@ extension DashboardManager {
         // Zabbix's default classic-graph header is "HOST: graph name".
         pendingDefaultTitle = Self.hostPrefixedTitle(host: graph.gitems.first.flatMap { itemsByID[$0.itemid]?.hosts?.first?.name }, name: graph.name)
         let graphTriggerLines = await triggerLines(forItemIDs: graph.gitems.map(\.itemid), serverBaseURL: serverBaseURL, authToken: authToken)
-        return series.isEmpty ? .unsupported(rawType: widget.type) : .lineChart(series: series, window: window, stacked: graphType == 1, showLegend: Self.fieldValue(widget.fields, name: "legend") != "0", showLegendStats: true, yMin: yMin, yMax: yMax, triggerLines: graphTriggerLines)
+        return series.isEmpty ? .unsupported(rawType: widget.type) : .lineChart(series: series, window: window, stacked: graphType == 1, showLegend: Self.fieldValue(widget.fields, name: "legend") != "0", showLegendStats: true, yMin: yMin, yMax: yMax, triggerLines: graphTriggerLines, axisStyle: .classic)
     }
 
     // MARK: - Pie chart
