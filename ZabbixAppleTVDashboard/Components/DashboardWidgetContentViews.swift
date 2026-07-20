@@ -67,32 +67,68 @@ struct NetworkMapWidgetContentView: View {
     }
 
     var body: some View {
-        if diagram.elements.isEmpty {
+        // A map with only a background/shapes (a floor plan) is still a real map — bail to the
+        // empty note only when there is truly nothing to draw.
+        if diagram.elements.isEmpty && backgroundImage == nil && diagram.shapes.isEmpty && diagram.freeLines.isEmpty {
             Text("This map has no elements")
                 .font(.system(size: 16, weight: .regular, design: .rounded))
                 .foregroundStyle(DashboardTheme.secondaryText)
         } else {
+            // One uniform scale keeps the background and every drawn coordinate in register the
+            // way the frontend scales its maps (per-axis stretching drifted elements off a
+            // background whose aspect differs from the widget's), with the canvas centered.
             GeometryReader { geometry in
-                let scaleX = geometry.size.width / CGFloat(max(diagram.width, 1))
-                let scaleY = geometry.size.height / CGFloat(max(diagram.height, 1))
+                let scale = min(
+                    geometry.size.width / CGFloat(max(diagram.width, 1)),
+                    geometry.size.height / CGFloat(max(diagram.height, 1))
+                )
+                let canvasWidth = CGFloat(diagram.width) * scale
+                let canvasHeight = CGFloat(diagram.height) * scale
 
                 ZStack(alignment: .topLeading) {
                     if let backgroundImage {
                         Image(uiImage: backgroundImage)
                             .resizable()
-                            .aspectRatio(contentMode: .fill)
-                            .frame(width: geometry.size.width, height: geometry.size.height)
-                            .clipped()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: canvasWidth, height: canvasHeight)
                     }
 
                     Canvas { context, _ in
+                        // Drawn shapes under everything: fill, border, centered label.
+                        for shape in diagram.shapes {
+                            let rect = CGRect(x: CGFloat(shape.x) * scale, y: CGFloat(shape.y) * scale, width: CGFloat(shape.width) * scale, height: CGFloat(shape.height) * scale)
+                            let path = shape.isEllipse ? Path(ellipseIn: rect) : Path(rect)
+                            if let fill = shape.backgroundColorHex.flatMap({ Color(hex: $0) }) {
+                                context.fill(path, with: .color(fill))
+                            }
+                            if let border = shape.borderColorHex.flatMap({ Color(hex: $0) }) {
+                                context.stroke(path, with: .color(border), lineWidth: max(CGFloat(shape.borderWidth) * scale, 1))
+                            }
+                            if !shape.text.isEmpty {
+                                context.draw(
+                                    Text(shape.text)
+                                        .font(.system(size: max(CGFloat(shape.fontSize) * scale, 7), weight: .medium, design: .rounded))
+                                        .foregroundColor(shape.fontColorHex.flatMap { Color(hex: $0) } ?? DashboardTheme.primaryText),
+                                    at: CGPoint(x: rect.midX, y: rect.midY)
+                                )
+                            }
+                        }
+
+                        for line in diagram.freeLines {
+                            var path = Path()
+                            path.move(to: CGPoint(x: CGFloat(line.x1) * scale, y: CGFloat(line.y1) * scale))
+                            path.addLine(to: CGPoint(x: CGFloat(line.x2) * scale, y: CGFloat(line.y2) * scale))
+                            context.stroke(path, with: .color(line.colorHex.flatMap { Color(hex: $0) } ?? .gray), lineWidth: max(CGFloat(line.width) * scale, 1))
+                        }
+
                         for link in diagram.links {
                             var path = Path()
-                            path.move(to: CGPoint(x: CGFloat(link.fromX) * scaleX, y: CGFloat(link.fromY) * scaleY))
-                            path.addLine(to: CGPoint(x: CGFloat(link.toX) * scaleX, y: CGFloat(link.toY) * scaleY))
+                            path.move(to: CGPoint(x: CGFloat(link.fromX) * scale, y: CGFloat(link.fromY) * scale))
+                            path.addLine(to: CGPoint(x: CGFloat(link.toX) * scale, y: CGFloat(link.toY) * scale))
                             context.stroke(path, with: .color(Color(hex: link.colorHex) ?? .gray), lineWidth: 2)
                         }
                     }
+                    .frame(width: canvasWidth, height: canvasHeight)
 
                     ForEach(diagram.elements) { element in
                         VStack(spacing: 2) {
@@ -103,9 +139,11 @@ struct NetworkMapWidgetContentView: View {
                                 .lineLimit(1)
                                 .fixedSize()
                         }
-                        .position(x: CGFloat(element.x) * scaleX, y: CGFloat(element.y) * scaleY)
+                        .position(x: CGFloat(element.x) * scale, y: CGFloat(element.y) * scale)
                     }
                 }
+                .frame(width: canvasWidth, height: canvasHeight)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             }
         }
     }

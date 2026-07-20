@@ -38,6 +38,46 @@ nonisolated struct ZabbixNetworkMap: Decodable, Sendable {
 
     /// Lines connecting pairs of elements.
     let links: [ZabbixMapLink]
+
+    /// Drawn shapes (rectangles/ellipses with optional text) — how floor-plan style maps annotate
+    /// their background (requested via `selectShapes`; absent on older fetch paths).
+    let shapes: [ZabbixMapShape]?
+
+    /// Free-standing drawn lines (requested via `selectLines`).
+    let lines: [ZabbixMapFreeLine]?
+}
+
+/// A drawn shape on a map: `type` 0 = rectangle, 1 = ellipse.
+nonisolated struct ZabbixMapShape: Decodable, Sendable {
+    let sysmap_shapeid: String
+    let type: ZabbixNumericString
+    let x: ZabbixNumericString
+    let y: ZabbixNumericString
+    let width: ZabbixNumericString
+    let height: ZabbixNumericString
+    /// Shape label text (may be empty).
+    let text: String
+    /// Text color as "RRGGBB".
+    let font_color: String?
+    let font_size: ZabbixNumericString?
+    /// Border: 0 = none, otherwise drawn at `border_width` in `border_color`.
+    let border_type: ZabbixNumericString?
+    let border_width: ZabbixNumericString?
+    let border_color: String?
+    /// Fill color as "RRGGBB"; empty means transparent.
+    let background_color: String?
+}
+
+/// A free-standing drawn line on a map.
+nonisolated struct ZabbixMapFreeLine: Decodable, Sendable {
+    let sysmap_shapeid: String
+    let x1: ZabbixNumericString
+    let y1: ZabbixNumericString
+    let x2: ZabbixNumericString
+    let y2: ZabbixNumericString
+    let line_type: ZabbixNumericString?
+    let line_width: ZabbixNumericString?
+    let line_color: String?
 }
 
 /// A single element on a network map.

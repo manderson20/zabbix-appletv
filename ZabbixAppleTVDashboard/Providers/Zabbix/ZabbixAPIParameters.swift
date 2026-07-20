@@ -1028,16 +1028,25 @@ nonisolated struct ZabbixNetworkMapGetParameters: Encodable, Sendable {
     /// Requests full link details.
     let selectLinks: String
 
+    /// Requests the map's drawn shapes (rectangles/ellipses with text) and free-standing lines —
+    /// how floor-plan style maps annotate their background image.
+    let selectShapes: String
+    let selectLines: String
+
     init(
         mapID: String,
         output: [String] = ["sysmapid", "name", "width", "height", "backgroundid"],
         selectSelements: String = "extend",
-        selectLinks: String = "extend"
+        selectLinks: String = "extend",
+        selectShapes: String = "extend",
+        selectLines: String = "extend"
     ) {
         self.sysmapids = [mapID]
         self.output = output
         self.selectSelements = selectSelements
         self.selectLinks = selectLinks
+        self.selectShapes = selectShapes
+        self.selectLines = selectLines
     }
 }
 

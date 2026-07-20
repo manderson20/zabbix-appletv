@@ -1133,13 +1133,45 @@ extension DashboardManager {
             return NetworkMapLink(id: link.linkid, fromX: from.x, fromY: from.y, toX: to.x, toY: to.y, colorHex: overrideColor ?? link.color)
         }
 
+        // Drawn shapes and free lines are how floor-plan style maps annotate their background;
+        // an empty border/background color string means "not drawn" in Zabbix's convention.
+        let shapes = (map.shapes ?? []).map { shape in
+            NetworkMapShape(
+                id: shape.sysmap_shapeid,
+                isEllipse: shape.type.intValue == 1,
+                x: shape.x.intValue,
+                y: shape.y.intValue,
+                width: shape.width.intValue,
+                height: shape.height.intValue,
+                text: shape.text,
+                fontColorHex: shape.font_color.flatMap { $0.isEmpty ? nil : $0 },
+                fontSize: shape.font_size?.intValue ?? 11,
+                backgroundColorHex: shape.background_color.flatMap { $0.isEmpty ? nil : $0 },
+                borderColorHex: shape.border_type?.intValue == 0 ? nil : shape.border_color.flatMap { $0.isEmpty ? nil : $0 },
+                borderWidth: shape.border_width?.intValue ?? 1
+            )
+        }
+        let freeLines = (map.lines ?? []).map { line in
+            NetworkMapFreeLine(
+                id: line.sysmap_shapeid,
+                x1: line.x1.intValue,
+                y1: line.y1.intValue,
+                x2: line.x2.intValue,
+                y2: line.y2.intValue,
+                colorHex: line.line_color.flatMap { $0.isEmpty ? nil : $0 },
+                width: line.line_width?.intValue ?? 1
+            )
+        }
+
         return .networkMap(
             NetworkMapDiagram(
                 width: map.width.intValue,
                 height: map.height.intValue,
                 backgroundImageData: backgroundImageData,
                 elements: elements,
-                links: links
+                links: links,
+                shapes: shapes,
+                freeLines: freeLines
             )
         )
     }
