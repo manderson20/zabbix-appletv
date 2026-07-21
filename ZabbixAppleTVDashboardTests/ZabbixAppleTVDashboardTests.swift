@@ -896,6 +896,28 @@ struct ZabbixAppleTVDashboardTests {
         #expect(DashboardManager.expandMacros("Static label", macros) == "Static label")
     }
 
+    @Test func expandMacrosAppliesRegsubFunctions() throws {
+        let macros = ["ITEM.NAME": "22214 Matt Anderson", "ITEM.LASTVALUE": "1"]
+
+        // Capture extraction with a bare output argument (Zabbix honeycomb label style).
+        #expect(DashboardManager.expandMacros(
+            #"{{ITEM.NAME}.regsub("^([0-9]+)", \1)}"#, macros) == "22214")
+        #expect(DashboardManager.expandMacros(
+            #"{{ITEM.NAME}.regsub("^[0-9]+ (.*)", \1)}"#, macros) == "Matt Anderson")
+        // Quoted output argument, literal text around the backreference.
+        #expect(DashboardManager.expandMacros(
+            #"{{ITEM.NAME}.regsub("^([0-9]+)", "ext \1")}"#, macros) == "ext 22214")
+        // iregsub matches case-insensitively.
+        #expect(DashboardManager.expandMacros(
+            #"{{ITEM.NAME}.iregsub("(MATT)", \1)}"#, macros) == "Matt")
+        // A non-matching pattern renders the frontend's placeholder.
+        #expect(DashboardManager.expandMacros(
+            #"{{ITEM.NAME}.regsub("^X([0-9]+)", \1)}"#, macros) == "*UNKNOWN*")
+        // Unknown inner macro keeps the whole token visible.
+        #expect(DashboardManager.expandMacros(
+            #"{{EVENT.NAME}.regsub("(.*)", \1)}"#, macros) == #"{{EVENT.NAME}.regsub("(.*)", \1)}"#)
+    }
+
     @Test func formattedItemValueFormatsNumericButPreservesMappedAndText() throws {
         let map = ZabbixValueMap(mappings: [ZabbixValueMapping(type: nil, value: "1", newvalue: "Up")])
 

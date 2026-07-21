@@ -603,10 +603,19 @@ extension DashboardManager {
         )
 
         let decimalPlaces = Self.fieldValue(widget.fields, name: "decimal_places").flatMap(Int.init) ?? 2
+        // "Show" checkboxes (verified against a saved widget's stored fields): 1 = Primary label,
+        // 2 = Secondary label. An absent field means a freshly-created widget's defaults — both on.
+        let showFlags = Set(Self.indexedValues(widget.fields, name: "show").compactMap(Int.init))
+        let effectiveShow = showFlags.isEmpty ? [1, 2] : showFlags
         // Each cell shows two label templates; Zabbix's defaults are the host name (primary) and the
-        // last value (secondary) when the widget doesn't configure them.
-        let primaryTemplate = Self.fieldValue(widget.fields, name: "primary_label").flatMap { $0.isEmpty ? nil : $0 } ?? "{HOST.NAME}"
-        let secondaryTemplate = Self.fieldValue(widget.fields, name: "secondary_label").flatMap { $0.isEmpty ? nil : $0 } ?? "{ITEM.LASTVALUE}"
+        // last value (secondary) when the widget doesn't configure them. A hidden label resolves to
+        // "" so the cell view drops it.
+        let primaryTemplate = effectiveShow.contains(1)
+            ? Self.fieldValue(widget.fields, name: "primary_label").flatMap { $0.isEmpty ? nil : $0 } ?? "{HOST.NAME}"
+            : ""
+        let secondaryTemplate = effectiveShow.contains(2)
+            ? Self.fieldValue(widget.fields, name: "secondary_label").flatMap { $0.isEmpty ? nil : $0 } ?? "{ITEM.LASTVALUE}"
+            : ""
 
         // "interpolation" (default on for a fresh widget, stored explicitly either way) blends the
         // cell color linearly between adjacent thresholds instead of snapping to discrete bands.

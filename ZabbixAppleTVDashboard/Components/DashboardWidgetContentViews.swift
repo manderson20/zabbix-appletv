@@ -1269,20 +1269,29 @@ struct HoneycombWidgetContentView: View {
     /// fill (threshold coloring overrides the fill). Fonts scale with the cell so a few large
     /// hexagons read from across the room; text is inset so it clears the slanted edges.
     private func hexCell(_ cell: HoneycombCell, width: CGFloat, height: CGFloat) -> some View {
+        // Labels scale with the cell without an upper cap — Zabbix auto-fits its labels, so a
+        // honeycomb given a whole page gets wall-legible text instead of stopping at a 28pt
+        // ceiling sized for the smallest widgets.
         VStack(spacing: height * 0.02) {
-            Text(cell.primaryLabel)
-                .font(.system(size: min(max(height * 0.12, 10), 28), weight: .regular, design: .rounded))
-                .foregroundStyle(Self.zabbixLabelColor)
-                .lineLimit(1)
-                .minimumScaleFactor(0.5)
+            // A label whose "Show" checkbox is off arrives empty — omit the Text entirely so the
+            // remaining label centers in the cell instead of sharing space with a blank line.
+            if !cell.primaryLabel.isEmpty {
+                Text(cell.primaryLabel)
+                    .font(.system(size: max(height * 0.14, 10), weight: .regular, design: .rounded))
+                    .foregroundStyle(Self.zabbixLabelColor)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.4)
+            }
 
-            Text(cell.secondaryLabel)
-                .font(.system(size: min(max(height * 0.14, 11), 34), weight: .bold, design: .rounded))
-                .foregroundStyle(Self.zabbixLabelColor)
-                .lineLimit(1)
-                .minimumScaleFactor(0.5)
+            if !cell.secondaryLabel.isEmpty {
+                Text(cell.secondaryLabel)
+                    .font(.system(size: max(height * 0.17, 11), weight: .bold, design: .rounded))
+                    .foregroundStyle(Self.zabbixLabelColor)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.4)
+            }
         }
-        .padding(.horizontal, width * 0.12)
+        .padding(.horizontal, width * 0.10)
         .frame(width: width - Self.hexGap, height: height - Self.hexGap)
         .background(
             PointyTopHexagon()
