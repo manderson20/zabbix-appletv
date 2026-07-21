@@ -1194,41 +1194,112 @@ struct HoneycombWidgetContentView: View {
     /// Zabbix's honeycomb label color (`.svg-honeycomb-label` computed color: rgb(238, 238, 238)).
     private static let zabbixLabelColor = Color(red: 238 / 255, green: 238 / 255, blue: 238 / 255)
 
-    /// Thin gap between hexagons, matching the visible separation between Zabbix's cells.
-    private static let hexGap: CGFloat = 4
+    /// The gap between hexagons is proportional to the cell — 1/12 of the hexagon width, matching
+    /// the frontend's cells_gap (cell_width / 12 in its fixed 1000-unit cell space).
+    static func hexGap(forHexWidth hexWidth: CGFloat) -> CGFloat { hexWidth / 12 }
 
-    /// Picks the pointy-top honeycomb packing that shows `count` hexagons at the largest size that
-    /// fits `size` — Zabbix's own behavior, where a few items become a few big hexagons (12 items in
-    /// a wide widget → two offset rows of six). Pointy-top hexagons tessellate in offset rows: each
-    /// row advances by 3/4 of a hexagon's height, and every other row shifts right half a width (so
-    /// the used width spans `columns + 0.5` when there's more than one row). For each candidate
-    /// column count the hexagon size is capped by both width and height; the candidate yielding the
-    /// biggest hexagon wins. Returns the chosen columns/rows and that hexagon width.
-    /// Within this factor of the largest achievable hexagon, a layout with more rows wins the tie.
-    /// Calibrated against the live frontend: its honeycomb wraps to two offset rows even when a
-    /// single slightly-larger row would fit (12 cells in a TV-kiosk-shaped box), yet flattens to
-    /// one row when the box is genuinely too short for two (verified by probing the live widget at
-    /// two container shapes).
-    private static let rowPreferenceTolerance: CGFloat = 0.85
+    /// The frontend hides labels entirely once a rendered cell is narrower than 56 px
+    /// (LABEL_WIDTH_MIN) — below that nothing legible fits anyway.
+    private static let labelMinCellWidth: CGFloat = 56
 
+    /// The frontend never renders a label below 12 on-screen pixels (FONT_SIZE_MIN).
+    private static let labelMinFontSize: CGFloat = 12
+
+    /// Picks the pointy-top honeycomb packing for `count` hexagons in `size`, replicating the
+    /// frontend's algorithm (read from Zabbix 7.0's honeycomb widget as a behavior spec, and
+    /// verified against two live widgets: 208 cells in 1682×1077 → 17 columns × 13 rows; 56 cells
+    /// in a full-page widget → 11 × 6): estimate rows as sqrt(height·count/width), evaluate the
+    /// floor and ceil row counts by the scale each achieves (columns = ⌊count/rows⌋, rows
+    /// recomputed as ⌈count/columns⌉, width spanning columns plus a half-cell stagger when a second
+    /// row exists and is at least half full), and keep whichever scales larger — the ceil candidate
+    /// on an exact tie. Returns the chosen columns/rows and the hexagon width (gap included).
     static func honeycombLayout(count: Int, size: CGSize) -> (columns: Int, rows: Int, hexWidth: CGFloat) {
         guard count > 0, size.width > 0, size.height > 0 else { return (max(count, 1), 1, max(size.width, 0)) }
 
-        var candidates: [(columns: Int, rows: Int, hexWidth: CGFloat)] = []
-        for columns in 1...count {
+        // The frontend lays out in a fixed cell space (width 1000, height 2/√3·1000, gap 1000/12)
+        // and scales the whole honeycomb to fit; the ratios are what matter.
+        let cellW: CGFloat = 1000
+        let cellH: CGFloat = 1000 * hexHeightRatio
+        let gap = cellW / 12
+
+        func candidate(_ rowsEstimate: Int) -> (columns: Int, rows: Int, scale: CGFloat) {
+            let columns = max(1, count / max(rowsEstimate, 1))
             let rows = Int((Double(count) / Double(columns)).rounded(.up))
-            let rowShift: CGFloat = rows > 1 ? 0.5 : 0 // alternating rows shift right half a hex
-            let widthLimited = size.width / (CGFloat(columns) + rowShift)
-            let heightLimited = size.height / (hexHeightRatio * (0.75 * CGFloat(rows - 1) + 1))
-            candidates.append((columns, rows, min(widthLimited, heightLimited)))
+            let widthUnits = cellW * CGFloat(columns) + (rows > 1 && columns * 2 <= count ? cellW / 2 : 0)
+            let heightUnits = cellH * 0.25 * CGFloat(3 * rows + 1) - gap
+            let scale = min(size.width / (widthUnits - gap * 0.5), size.height / heightUnits)
+            return (columns, rows, scale)
         }
 
-        let bestWidth = candidates.map(\.hexWidth).max() ?? 0
-        // Among near-maximal candidates, the most rows — matching the frontend's preference for a
-        // clustered honeycomb over a marginally-larger single strip.
-        return candidates
-            .filter { $0.hexWidth >= bestWidth * Self.rowPreferenceTolerance }
-            .max { ($0.rows, $0.hexWidth) < ($1.rows, $1.hexWidth) } ?? (max(count, 1), 1, 0)
+        let estimate = max(1, min(Double(count), (Double(size.height) * Double(count) / Double(size.width)).squareRoot()))
+        let lower = candidate(Int(estimate.rounded(.down)))
+        let upper = candidate(Int(estimate.rounded(.up)))
+        let best = lower.scale > upper.scale ? lower : upper
+        return (best.columns, best.rows, cellW * best.scale)
+    }
+
+    /// Per-cell label font sizes, replicating the frontend's auto sizing: each label is sized so
+    /// its text spans ~78.75% of the label area's width (measured at a 10 pt reference and scaled),
+    /// labels are then bucketed by text length rounded up to multiples of 8 with each bucket
+    /// sharing its smallest size (so similar-length labels render uniformly instead of raggedly),
+    /// capped by the label area height, floored at 12 pt, and — when primary + secondary together
+    /// overflow the area — both are scaled down proportionally. Cells narrower than 56 pt hide
+    /// labels entirely. Overflowing text is ellipsized, never shrunk per cell.
+    static func honeycombLabelFonts(
+        cells: [HoneycombCell],
+        hexWidth: CGFloat,
+        measure: (String, Bool) -> CGFloat = { Self.measuredLabelWidth($0, bold: $1) }
+    ) -> [(primary: CGFloat, secondary: CGFloat)] {
+        let gap = hexGap(forHexWidth: hexWidth)
+        guard hexWidth - gap >= labelMinCellWidth else {
+            return Array(repeating: (0, 0), count: cells.count)
+        }
+
+        let fitWidth = hexWidth - gap * 1.25 - 8
+        // The label block occupies cellHeight/2.25 of the cell; dividing by the 1.15 line height
+        // converts that to a font-size budget, like the frontend does.
+        let areaHeight = hexWidth * Self.hexHeightRatio / 2.25 / 1.15
+
+        func fonts(_ texts: [String], bold: Bool) -> [CGFloat] {
+            var sizes = texts.map { text -> CGFloat in
+                guard !text.isEmpty else { return 0 }
+                let width = measure(text, bold)
+                guard width > 0 else { return 0 }
+                return max(Self.labelMinFontSize, fitWidth * 0.875 / width * 9)
+            }
+            var bucketMin: [Int: CGFloat] = [:]
+            for (index, text) in texts.enumerated() where !text.isEmpty {
+                let bucket = Int((Double(text.count) / 8).rounded(.up)) * 8
+                bucketMin[bucket] = min(bucketMin[bucket] ?? .infinity, sizes[index])
+            }
+            for (index, text) in texts.enumerated() where !text.isEmpty {
+                let bucket = Int((Double(text.count) / 8).rounded(.up)) * 8
+                sizes[index] = max(
+                    Self.labelMinFontSize,
+                    min(bucketMin[bucket] ?? sizes[index], areaHeight.rounded(.down))
+                )
+            }
+            return sizes
+        }
+
+        let primary = fonts(cells.map(\.primaryLabel), bold: false)
+        let secondary = fonts(cells.map(\.secondaryLabel), bold: true)
+
+        return zip(primary, secondary).map { p, s in
+            if p + s > areaHeight, p + s > 0 {
+                let scale = areaHeight / (p + s)
+                return (p > 0 ? max(Self.labelMinFontSize, p * scale) : 0,
+                        s > 0 ? max(Self.labelMinFontSize, s * scale) : 0)
+            }
+            return (p, s)
+        }
+    }
+
+    /// Width of `text` at the 10 pt reference size in the fonts the cells render with.
+    static func measuredLabelWidth(_ text: String, bold: Bool) -> CGFloat {
+        let base = UIFont.systemFont(ofSize: 10, weight: bold ? .bold : .regular)
+        let font = base.fontDescriptor.withDesign(.rounded).map { UIFont(descriptor: $0, size: 10) } ?? base
+        return (text as NSString).size(withAttributes: [.font: font]).width
     }
 
     var body: some View {
@@ -1241,12 +1312,15 @@ struct HoneycombWidgetContentView: View {
                 let layout = Self.honeycombLayout(count: cells.count, size: geometry.size)
                 let hexWidth = layout.hexWidth
                 let hexHeight = hexWidth * Self.hexHeightRatio
-                let rowShift: CGFloat = layout.rows > 1 ? 0.5 : 0
+                // A second row shifts right half a cell only when it is at least half full — the
+                // frontend's stagger condition, which also widens the honeycomb's extent.
+                let rowShift: CGFloat = layout.rows > 1 && layout.columns * 2 <= cells.count ? 0.5 : 0
                 // The honeycomb's own extent, so the cluster centers in the widget like Zabbix's.
                 let usedWidth = hexWidth * (CGFloat(layout.columns) + rowShift)
-                let usedHeight = hexHeight * (0.75 * CGFloat(layout.rows - 1) + 1)
+                let usedHeight = hexHeight * (0.75 * CGFloat(layout.rows) + 0.25)
                 let originX = (geometry.size.width - usedWidth) / 2
                 let originY = (geometry.size.height - usedHeight) / 2
+                let fonts = Self.honeycombLabelFonts(cells: cells, hexWidth: hexWidth)
 
                 ZStack(alignment: .topLeading) {
                     ForEach(Array(cells.enumerated()), id: \.element.id) { index, cell in
@@ -1255,8 +1329,13 @@ struct HoneycombWidgetContentView: View {
                         let centerX = originX + hexWidth / 2 + CGFloat(column) * hexWidth
                             + (row % 2 == 1 ? hexWidth / 2 : 0)
                         let centerY = originY + hexHeight / 2 + CGFloat(row) * 0.75 * hexHeight
-                        hexCell(cell, width: hexWidth, height: hexHeight)
-                            .position(x: centerX, y: centerY)
+                        hexCell(
+                            cell,
+                            width: hexWidth,
+                            height: hexHeight,
+                            fonts: index < fonts.count ? fonts[index] : (0, 0)
+                        )
+                        .position(x: centerX, y: centerY)
                     }
                 }
                 .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
@@ -1264,35 +1343,38 @@ struct HoneycombWidgetContentView: View {
         }
     }
 
-    /// One hexagon cell, matching Zabbix's: the host/primary label in regular weight above the value
-    /// in bold (the value is the emphasized element), both near-white and centered, on the slate cell
-    /// fill (threshold coloring overrides the fill). Fonts scale with the cell so a few large
-    /// hexagons read from across the room; text is inset so it clears the slanted edges.
-    private func hexCell(_ cell: HoneycombCell, width: CGFloat, height: CGFloat) -> some View {
-        // Labels scale with the cell without an upper cap — Zabbix auto-fits its labels, so a
-        // honeycomb given a whole page gets wall-legible text instead of stopping at a 28pt
-        // ceiling sized for the smallest widgets.
-        VStack(spacing: height * 0.02) {
-            // A label whose "Show" checkbox is off arrives empty — omit the Text entirely so the
-            // remaining label centers in the cell instead of sharing space with a blank line.
-            if !cell.primaryLabel.isEmpty {
+    /// One hexagon cell, matching Zabbix's: labels at the widget-wide auto-computed sizes (short
+    /// labels like extension numbers come out large, long ones uniform and ellipsized — never
+    /// shrunk per cell), near-white and centered on the slate cell fill (threshold coloring
+    /// overrides the fill). A label whose size resolved to 0 — hidden by the Show checkbox, empty,
+    /// or a cell too small for legible text — is omitted so the rest centers.
+    private func hexCell(
+        _ cell: HoneycombCell,
+        width: CGFloat,
+        height: CGFloat,
+        fonts: (primary: CGFloat, secondary: CGFloat)
+    ) -> some View {
+        let gap = Self.hexGap(forHexWidth: width)
+        let fitWidth = width - gap * 1.25 - 8
+        return VStack(spacing: 0) {
+            if !cell.primaryLabel.isEmpty, fonts.primary > 0 {
                 Text(cell.primaryLabel)
-                    .font(.system(size: max(height * 0.14, 10), weight: .regular, design: .rounded))
+                    .font(.system(size: fonts.primary, weight: .regular, design: .rounded))
                     .foregroundStyle(Self.zabbixLabelColor)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.4)
+                    .truncationMode(.tail)
             }
 
-            if !cell.secondaryLabel.isEmpty {
+            if !cell.secondaryLabel.isEmpty, fonts.secondary > 0 {
                 Text(cell.secondaryLabel)
-                    .font(.system(size: max(height * 0.17, 11), weight: .bold, design: .rounded))
+                    .font(.system(size: fonts.secondary, weight: .bold, design: .rounded))
                     .foregroundStyle(Self.zabbixLabelColor)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.4)
+                    .truncationMode(.tail)
             }
         }
-        .padding(.horizontal, width * 0.10)
-        .frame(width: width - Self.hexGap, height: height - Self.hexGap)
+        .frame(maxWidth: max(fitWidth, 0))
+        .frame(width: width - gap, height: height - gap)
         .background(
             PointyTopHexagon()
                 .fill(cell.backgroundColorHex.flatMap { Color(hex: $0) } ?? Self.zabbixCellFill)
