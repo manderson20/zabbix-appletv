@@ -573,6 +573,12 @@ extension DashboardManager {
 
     // MARK: - Honeycomb
 
+    /// Upper bound on honeycomb cells, matching Zabbix's own default search limit (1000) — the
+    /// layout scales hexagons down to fit, so this only guards against a runaway pattern matching
+    /// unbounded items, never a real fleet-sized widget (the district's whole ~960-host estate
+    /// fits under it).
+    private static let honeycombCellCap = 1000
+
     private func resolveHoneycomb(
         _ widget: ZabbixWidget,
         serverBaseURL: URL,
@@ -609,7 +615,7 @@ extension DashboardManager {
         let defaultCellColor = Self.fieldValue(widget.fields, name: "bg_color").flatMap { $0.isEmpty ? nil : $0 }
 
         return .honeycomb(
-            items.prefix(60).map { item in
+            items.prefix(Self.honeycombCellCap).map { item in
                 // Each cell is tinted by the threshold band its reading meets — the same value-driven
                 // coloring Zabbix's honeycomb applies — blended when interpolation is on.
                 let numeric = item.lastvalue.flatMap(Double.init)
@@ -2829,12 +2835,75 @@ extension DashboardManager {
     /// variant `{MACRO1}` resolves to the same value. Unrecognized macros are left untouched rather
     /// than blanked, so an unsupported token stays visible rather than silently vanishing.
     static func expandMacros(_ template: String, _ macros: [String: String]) -> String {
-        var result = template
+        // Function-form tokens must go first: plain replacement would otherwise substitute the
+        // inner `{ITEM.NAME}` of `{{ITEM.NAME}.regsub(...)}` and corrupt the token.
+        var result = expandMacroFunctions(template, macros)
         for (key, value) in macros {
             result = result.replacingOccurrences(of: "{\(key)1}", with: value)
             result = result.replacingOccurrences(of: "{\(key)}", with: value)
         }
         return result
+    }
+
+    /// Zabbix's macro-function form `{{MACRO}.regsub("pattern", output)}` (and case-insensitive
+    /// `iregsub`): the macro's value is run through the regex and the output argument — bare or
+    /// quoted, with `\1`-`\9` capture references — replaces the token.
+    private static let macroFunctionRegex = try? NSRegularExpression(
+        pattern: #"\{\{([A-Z0-9._]+)\}\.(i?regsub)\(\s*"((?:[^"\\]|\\.)*)"\s*,\s*("(?:[^"\\]|\\.)*"|[^)]*?)\s*\)\}"#
+    )
+
+    private static func expandMacroFunctions(_ template: String, _ macros: [String: String]) -> String {
+        guard let regex = macroFunctionRegex, template.contains("{{") else { return template }
+        let ns = template as NSString
+        var result = ""
+        var cursor = 0
+        for match in regex.matches(in: template, range: NSRange(location: 0, length: ns.length)) {
+            result += ns.substring(with: NSRange(location: cursor, length: match.range.location - cursor))
+            let name = ns.substring(with: match.range(at: 1))
+            let function = ns.substring(with: match.range(at: 2))
+            let pattern = ns.substring(with: match.range(at: 3)).replacingOccurrences(of: "\\\"", with: "\"")
+            var output = ns.substring(with: match.range(at: 4))
+            if output.hasPrefix("\""), output.hasSuffix("\""), output.count >= 2 {
+                output = String(output.dropFirst().dropLast()).replacingOccurrences(of: "\\\"", with: "\"")
+            }
+            var value = macros[name]
+            if value == nil, name.hasSuffix("1") { value = macros[String(name.dropLast())] }
+            if let value {
+                result += Self.regsub(value, pattern: pattern, output: output,
+                                      caseInsensitive: function == "iregsub")
+            } else {
+                // Unknown macro: keep the token visible, matching plain-macro behavior above.
+                result += ns.substring(with: match.range)
+            }
+            cursor = match.range.location + match.range.length
+        }
+        result += ns.substring(from: cursor)
+        return result
+    }
+
+    private static func regsub(_ value: String, pattern: String, output: String, caseInsensitive: Bool) -> String {
+        guard let regex = try? NSRegularExpression(
+            pattern: pattern, options: caseInsensitive ? [.caseInsensitive] : []) else { return value }
+        let ns = value as NSString
+        guard let match = regex.firstMatch(in: value, range: NSRange(location: 0, length: ns.length)) else {
+            // What the Zabbix frontend renders when a label's regsub doesn't match.
+            return "*UNKNOWN*"
+        }
+        var expanded = ""
+        let chars = Array(output)
+        var i = 0
+        while i < chars.count {
+            if chars[i] == "\\", i + 1 < chars.count, let group = chars[i + 1].wholeNumberValue,
+               (0...9).contains(group), group < match.numberOfRanges {
+                let range = match.range(at: group)
+                if range.location != NSNotFound { expanded += ns.substring(with: range) }
+                i += 2
+            } else {
+                expanded.append(chars[i])
+                i += 1
+            }
+        }
+        return expanded
     }
 
     /// Assembles flat (host, item, value) entries into a Data-overview matrix: one row per host,
