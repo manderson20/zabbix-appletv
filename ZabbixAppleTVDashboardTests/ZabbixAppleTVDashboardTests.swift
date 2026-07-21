@@ -798,13 +798,23 @@ struct ZabbixAppleTVDashboardTests {
         #expect(zabbixTwelve.columns == 6 && zabbixTwelve.rows == 2)
 
         // 12 cells in a TV-kiosk-shaped box (wider than the browser case) still wrap to two rows —
-        // the near-tie row preference; a single row of 12 would be only marginally larger.
+        // verified against the live frontend at this container shape.
         let tvTwelve = HoneycombWidgetContentView.honeycombLayout(count: 12, size: CGSize(width: 1878, height: 305))
         #expect(tvTwelve.columns == 6 && tvTwelve.rows == 2)
 
-        // ...including at the card's real content height on-device (shorter after chrome).
+        // A slightly shorter box tips the frontend's scale comparison the other way — one row of
+        // 12 achieves the larger scale there (exact-algorithm behavior, not the old row-preference
+        // heuristic).
         let tvContent = HoneycombWidgetContentView.honeycombLayout(count: 12, size: CGSize(width: 1880, height: 285))
-        #expect(tvContent.columns == 6 && tvContent.rows == 2)
+        #expect(tvContent.columns == 12 && tvContent.rows == 1)
+
+        // Live-verified packings from the FreePBX Extensions and Phone System dashboards: 208
+        // cells in a 1682×1077 container → 17 columns × 13 rows; 56 cells in a full-page widget →
+        // 11 columns × 6 rows (12 full rows of 17 + 4, and 5 full rows of 11 + 1, respectively).
+        let phones = HoneycombWidgetContentView.honeycombLayout(count: 208, size: CGSize(width: 1682, height: 1077))
+        #expect(phones.columns == 17 && phones.rows == 13)
+        let elementary = HoneycombWidgetContentView.honeycombLayout(count: 56, size: CGSize(width: 1900, height: 980))
+        #expect(elementary.columns == 11 && elementary.rows == 6)
 
         // A genuinely too-short box still flattens to one row (verified by probing the live
         // frontend widget squashed to 1610×98).
@@ -821,6 +831,52 @@ struct ZabbixAppleTVDashboardTests {
             let layout = HoneycombWidgetContentView.honeycombLayout(count: 7, size: size)
             #expect(layout.columns >= 1 && layout.columns <= 7)
         }
+    }
+
+    @MainActor
+    @Test func honeycombLabelFontsMatchZabbixAutoSizing() throws {
+        func cell(_ id: String, _ primary: String, _ secondary: String) -> HoneycombCell {
+            HoneycombCell(id: id, primaryLabel: primary, secondaryLabel: secondary, backgroundColorHex: nil)
+        }
+        // A deterministic measurer: 5 units per character at the 10 pt reference size.
+        let measure: (String, Bool) -> CGFloat = { text, _ in CGFloat(text.count) * 5 }
+
+        let cells = [
+            cell("1", "21001", "Mary Keune"),
+            cell("2", "21002", "April Sherman"),
+            cell("3", "9001", "Albert Ngo"),
+        ]
+        let fonts = HoneycombWidgetContentView.honeycombLabelFonts(cells: cells, hexWidth: 200, measure: measure)
+
+        // Width-fit: short numeric primaries come out larger than the longer name secondaries.
+        #expect(fonts[0].primary > fonts[0].secondary)
+        // Same length bucket (≤8 chars rounds to 8) → identical primary size across cells, even
+        // though "9001" alone would fit larger — the bucket shares its smallest size.
+        #expect(fonts[0].primary == fonts[1].primary && fonts[1].primary == fonts[2].primary)
+        // Secondaries share the 16-char bucket ("Mary Keune" and "April Sherman" both round up to
+        // 16), so the shorter name doesn't render larger than the longer one.
+        #expect(fonts[0].secondary == fonts[1].secondary)
+        // Everything respects the frontend's 12 pt on-screen minimum.
+        for f in fonts { #expect(f.primary >= 12 && f.secondary >= 12) }
+
+        // A cell whose two labels together overflow the label area scales both down
+        // proportionally — the frontend's per-cell balancing step.
+        let overflowing = HoneycombWidgetContentView.honeycombLabelFonts(
+            cells: [cell("1", "9001", "Al Ng")], hexWidth: 200, measure: measure
+        )
+        let area = 200 * 1.1547005 / 2.25 / 1.15
+        #expect(overflowing[0].primary + overflowing[0].secondary <= area + 0.001)
+        #expect(overflowing[0].primary > 0 && overflowing[0].secondary > 0)
+
+        // A cell too narrow for legible labels (< 56 pt rendered) hides them entirely.
+        let tiny = HoneycombWidgetContentView.honeycombLabelFonts(cells: cells, hexWidth: 55, measure: measure)
+        #expect(tiny.allSatisfy { $0.primary == 0 && $0.secondary == 0 })
+
+        // An empty label (hidden by the Show checkbox) resolves to 0 while its partner still sizes.
+        let primaryOnly = HoneycombWidgetContentView.honeycombLabelFonts(
+            cells: [cell("1", "21001 Mary Keune", "")], hexWidth: 200, measure: measure
+        )
+        #expect(primaryOnly[0].primary > 0 && primaryOnly[0].secondary == 0)
 
         // Zero size (GeometryReader's first pass) doesn't divide by zero.
         let zero = HoneycombWidgetContentView.honeycombLayout(count: 4, size: CGSize(width: 0, height: 0))
@@ -894,6 +950,28 @@ struct ZabbixAppleTVDashboardTests {
         #expect(DashboardManager.expandMacros("{ITEM.NAME} @ {EVENT.NAME}", macros) == "CPU load @ {EVENT.NAME}")
         // A plain string with no macros is unchanged.
         #expect(DashboardManager.expandMacros("Static label", macros) == "Static label")
+    }
+
+    @Test func expandMacrosAppliesRegsubFunctions() throws {
+        let macros = ["ITEM.NAME": "22214 Matt Anderson", "ITEM.LASTVALUE": "1"]
+
+        // Capture extraction with a bare output argument (Zabbix honeycomb label style).
+        #expect(DashboardManager.expandMacros(
+            #"{{ITEM.NAME}.regsub("^([0-9]+)", \1)}"#, macros) == "22214")
+        #expect(DashboardManager.expandMacros(
+            #"{{ITEM.NAME}.regsub("^[0-9]+ (.*)", \1)}"#, macros) == "Matt Anderson")
+        // Quoted output argument, literal text around the backreference.
+        #expect(DashboardManager.expandMacros(
+            #"{{ITEM.NAME}.regsub("^([0-9]+)", "ext \1")}"#, macros) == "ext 22214")
+        // iregsub matches case-insensitively.
+        #expect(DashboardManager.expandMacros(
+            #"{{ITEM.NAME}.iregsub("(MATT)", \1)}"#, macros) == "Matt")
+        // A non-matching pattern renders the frontend's placeholder.
+        #expect(DashboardManager.expandMacros(
+            #"{{ITEM.NAME}.regsub("^X([0-9]+)", \1)}"#, macros) == "*UNKNOWN*")
+        // Unknown inner macro keeps the whole token visible.
+        #expect(DashboardManager.expandMacros(
+            #"{{EVENT.NAME}.regsub("(.*)", \1)}"#, macros) == #"{{EVENT.NAME}.regsub("(.*)", \1)}"#)
     }
 
     @Test func formattedItemValueFormatsNumericButPreservesMappedAndText() throws {

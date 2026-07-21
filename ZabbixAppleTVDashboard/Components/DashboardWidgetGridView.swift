@@ -409,12 +409,12 @@ private struct ItemValueWidgetContentView: View {
 
     /// Matches Zabbix's own item-value widget: the widget's `decimal_places` precision (a plain "1"
     /// reading is shown as "1.00" at the default 2), not the variable-precision formatting used for
-    /// graph axis labels. When the item has a value map, its label leads with the raw value in
-    /// parentheses, e.g. "Up (1.00)".
+    /// graph axis labels. A value-mapped item shows the mapped label ALONE — verified live: the
+    /// frontend's widget renders a trunk-registration item as just "Registered", no "(1.00)" —
+    /// the state is a concept, not a number.
     private var displayValue: String {
         if let mappedText {
-            let rawText = Double(value).map { ZabbixValueFormatting.formatItemValue($0, units: "", decimalPlaces: decimalPlaces) } ?? value
-            return "\(mappedText) (\(rawText))"
+            return mappedText
         }
         guard let numericValue = Double(value) else {
             return units.isEmpty ? value : "\(value) \(units)"
