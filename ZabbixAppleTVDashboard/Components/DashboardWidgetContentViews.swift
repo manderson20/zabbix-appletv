@@ -185,25 +185,25 @@ private struct NetworkMapElementIconView: View {
 
     var body: some View {
         let size = iconSize
-        let outlineWidth = max(min(size.width, size.height) * 0.09, 2.5)
-        let corner = max(min(size.width, size.height) * 0.14, 3)
+        // A filled status-colored disc sits behind the icon, matching the frontend's map icon
+        // highlighting: green when OK, then blue → yellow → red as the door-open severity escalates.
+        // It's larger than the icon so it reads as a colored circle around it.
+        let disc = max(size.width, size.height) * 1.5
         Group {
             if let iconImageData = element.iconImageData, let uiImage = UIImage(data: iconImageData) {
                 Image(uiImage: uiImage)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
             } else {
-                // No icon — a filled tile in the status color so the element is still visible.
-                RoundedRectangle(cornerRadius: corner, style: .continuous)
-                    .fill(statusColor.opacity(0.85))
+                // No icon — the disc alone conveys the element and its status.
+                Color.clear
             }
         }
         .frame(width: size.width, height: size.height)
-        // Status-colored outline around the element, mirroring the frontend's icon highlighting:
-        // green when OK, then blue → yellow → red as the door-open severity escalates.
-        .overlay(
-            RoundedRectangle(cornerRadius: corner, style: .continuous)
-                .strokeBorder(statusColor, lineWidth: outlineWidth)
+        .background(
+            Circle()
+                .fill(statusColor)
+                .frame(width: disc, height: disc)
         )
     }
 }
