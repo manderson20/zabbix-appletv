@@ -509,39 +509,128 @@ private struct ProblemsWidgetContentView: View {
                 .font(.system(size: 18, weight: .regular, design: .rounded))
                 .foregroundStyle(DashboardTheme.secondaryText)
         } else {
-            // Deliberately static, not auto-scrolling: problems are sorted newest-first, so the
-            // top of the list is the most urgent thing to see. The TimelineView keeps Duration
-            // ticking and lets the blink window age out between data refreshes.
-            TimelineView(.periodic(from: .now, by: 5)) { context in
-                Grid(alignment: .topLeading, horizontalSpacing: 14, verticalSpacing: 4) {
-                    GridRow {
-                        ForEach(["Time", "Host", "Problem \u{2022} Severity", "Duration", "Tags"], id: \.self) { title in
-                            Text(title)
-                                .font(.system(size: 13, weight: .semibold, design: .rounded))
-                                .foregroundStyle(DashboardTheme.secondaryText)
+            // A narrow panel (e.g. a side column) can't fit the 5-column table without crushing
+            // every field to unreadable slivers, so below a width threshold each problem becomes a
+            // stacked, larger-text card whose name wraps. Wider panels keep the frontend-style
+            // table. Static, not auto-scrolling: problems are newest-first, so the top is the most
+            // urgent. The TimelineView keeps Duration ticking and ages out the blink window.
+            GeometryReader { geo in
+                TimelineView(.periodic(from: .now, by: 5)) { context in
+                    Group {
+                        if geo.size.width < 520 {
+                            narrowList(now: context.date)
+                        } else {
+                            wideTable(now: context.date)
                         }
                     }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                }
+            }
+        }
+    }
 
-                    ForEach(Array(problems.enumerated()), id: \.element.id) { index, problem in
-                        // The timeline marker ("08:00", "Today", ...) gets its own thin row in the
-                        // Time column, left-aligned with the timestamps below it — the white-vs-
-                        // blue contrast distinguishes it, and the row spends no extra padding, so
-                        // it stays a single tight line rather than stretching the Time column the
-                        // way an inline prefix did.
-                        if showTimeline, index > 0,
-                           let label = ProblemTimelineFormat.separatorLabel(newer: problems[index - 1].since, older: problem.since, now: context.date) {
-                            GridRow {
-                                Text(label)
-                                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                                    .foregroundStyle(DashboardTheme.secondaryText)
-                                    .lineLimit(1)
-                            }
-                        }
+    @ViewBuilder
+    private func narrowList(now: Date) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            ForEach(problems) { problem in
+                ProblemCardRow(problem: problem, now: now)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+    }
 
-                        ProblemTableRow(problem: problem, now: context.date)
+    @ViewBuilder
+    private func wideTable(now: Date) -> some View {
+        Grid(alignment: .topLeading, horizontalSpacing: 14, verticalSpacing: 4) {
+            GridRow {
+                ForEach(["Time", "Host", "Problem \u{2022} Severity", "Duration", "Tags"], id: \.self) { title in
+                    Text(title)
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .foregroundStyle(DashboardTheme.secondaryText)
+                }
+            }
+
+            ForEach(Array(problems.enumerated()), id: \.element.id) { index, problem in
+                // The timeline marker ("08:00", "Today", ...) gets its own thin row in the Time
+                // column, left-aligned with the timestamps below it.
+                if showTimeline, index > 0,
+                   let label = ProblemTimelineFormat.separatorLabel(newer: problems[index - 1].since, older: problem.since, now: now) {
+                    GridRow {
+                        Text(label)
+                            .font(.system(size: 13, weight: .semibold, design: .rounded))
+                            .foregroundStyle(DashboardTheme.secondaryText)
+                            .lineLimit(1)
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .topLeading)
+
+                ProblemTableRow(problem: problem, now: now)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+}
+
+/// A single problem rendered as a stacked card for narrow panels: a large, wrapping name on its
+/// severity color, with host and live duration below — everything readable without a wide table.
+private struct ProblemCardRow: View {
+    let problem: DashboardProblem
+    let now: Date
+
+    @State private var isBlinkPhaseOn = false
+
+    private var isNew: Bool {
+        now.timeIntervalSince(problem.since) < Double(SeverityPalette.blinkPeriodSeconds)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(problem.name)
+                .font(.system(size: 22, weight: .semibold, design: .rounded))
+                .foregroundStyle(.black.opacity(0.87))
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill(severityIndicatorColor(for: problem.severity).opacity(isNew && isBlinkPhaseOn ? 0.35 : 1))
+                )
+
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(problem.host ?? "")
+                    .font(.system(size: 19, weight: .medium, design: .rounded))
+                    .foregroundStyle(DashboardTheme.primaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 8)
+                Text(ProblemTimelineFormat.ageLabel(from: problem.since, to: now))
+                    .font(.system(size: 19, weight: .semibold, design: .rounded))
+                    .foregroundStyle(DashboardTheme.primaryText)
+                    .lineLimit(1)
+            }
+
+            Text(ProblemTimelineFormat.timeLabel(for: problem.since, now: now))
+                .font(.system(size: 16, weight: .regular, design: .rounded))
+                .foregroundStyle(Color(hex: "4796C4") ?? .blue)
+                .lineLimit(1)
+
+            if !problem.tags.isEmpty {
+                HStack(spacing: 4) {
+                    ForEach(problem.tags) { tag in
+                        Text(tag.label)
+                            .font(.system(size: 13, weight: .medium, design: .rounded))
+                            .foregroundStyle(DashboardTheme.secondaryText)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(RoundedRectangle(cornerRadius: 4, style: .continuous).fill(.white.opacity(0.08)))
+                            .lineLimit(1)
+                    }
+                }
+            }
+        }
+        .onAppear {
+            guard isNew else { return }
+            withAnimation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true)) {
+                isBlinkPhaseOn = true
             }
         }
     }
