@@ -170,12 +170,6 @@ private struct NetworkMapElementIconView: View {
     /// than a fixed size that shrinks to a dot on a large floor-plan map.
     let scale: CGFloat
 
-    /// Severity 0 means "no active problem", shown as green — distinct from Zabbix's "Not
-    /// classified" severity level, which is an uncategorized problem, not a healthy state.
-    private var statusColor: Color {
-        element.severity == 0 ? .green : severityIndicatorColor(for: element.severity)
-    }
-
     /// Icon native pixels live in the map's coordinate space, so they scale like the background;
     /// a floor keeps a small icon legible.
     private var iconSize: CGSize {
@@ -185,9 +179,6 @@ private struct NetworkMapElementIconView: View {
 
     var body: some View {
         let size = iconSize
-        // A filled status-colored disc sits behind the icon, matching the frontend's map icon
-        // highlighting: green when OK, then blue → yellow → red as the door-open severity escalates.
-        // It's larger than the icon so it reads as a colored circle around it.
         let disc = max(size.width, size.height) * 1.5
         Group {
             if let iconImageData = element.iconImageData, let uiImage = UIImage(data: iconImageData) {
@@ -195,16 +186,23 @@ private struct NetworkMapElementIconView: View {
                     .resizable()
                     .aspectRatio(contentMode: .fit)
             } else {
-                // No icon — the disc alone conveys the element and its status.
-                Color.clear
+                // No icon — a small neutral dot so an OK element is still locatable on the map.
+                Circle()
+                    .fill(DashboardTheme.secondaryText.opacity(0.6))
+                    .padding(size.width * 0.28)
             }
         }
         .frame(width: size.width, height: size.height)
-        .background(
-            Circle()
-                .fill(statusColor)
-                .frame(width: disc, height: disc)
-        )
+        // A healthy element shows just its icon, no highlight — exactly like the frontend. Only a
+        // problem paints a colored circle behind it (blue → yellow → red as severity escalates), so
+        // the appearance of color is what draws the eye.
+        .background {
+            if element.severity > 0 {
+                Circle()
+                    .fill(severityIndicatorColor(for: element.severity))
+                    .frame(width: disc, height: disc)
+            }
+        }
     }
 }
 
