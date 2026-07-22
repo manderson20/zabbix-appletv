@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import ImageIO
 
 /// Resolves each Zabbix dashboard widget type into a `DashboardWidgetKind` with real data.
 ///
@@ -1128,13 +1129,17 @@ extension DashboardManager {
             )
             severityByElementID[selement.selementid] = severity
 
+            let iconData = iconDataByID[selement.iconid_off]
+            let (iconW, iconH) = Self.iconPixelSize(iconData)
             return NetworkMapElement(
                 id: selement.selementid,
                 label: label,
                 x: selement.x.intValue,
                 y: selement.y.intValue,
                 severity: severity,
-                iconImageData: iconDataByID[selement.iconid_off]
+                iconImageData: iconData,
+                iconWidth: iconW,
+                iconHeight: iconH
             )
         }
 
@@ -3099,6 +3104,20 @@ extension DashboardManager {
         if rate <= 0 { return maximumRefreshIntervalSeconds }
         if rate <= 10 { return fastestRefreshIntervalSeconds }
         return rate
+    }
+
+    /// A map icon's native pixel dimensions, read from the image header without decoding the whole
+    /// bitmap. The frontend draws map icons at this native size and anchors them top-left, so the
+    /// app needs it to match both. Falls back to Zabbix's 48px default icon size on any failure.
+    static func iconPixelSize(_ data: Data?) -> (Int, Int) {
+        guard let data,
+              let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = props[kCGImagePropertyPixelWidth] as? Int,
+              let height = props[kCGImagePropertyPixelHeight] as? Int,
+              width > 0, height > 0
+        else { return (48, 48) }
+        return (width, height)
     }
 
     /// Returns all values for a dot-indexed widget field array, e.g. "groupids.0", "groupids.1".

@@ -740,6 +740,12 @@ nonisolated struct NetworkMapElement: Identifiable, Sendable {
     /// map editor shows for this element. `nil` when the element has no icon configured or its
     /// image failed to decode.
     let iconImageData: Data?
+
+    /// The icon's native pixel width/height. The frontend draws map icons at their native size
+    /// (not the element's stored width/height) and anchors them by their top-left corner, so these
+    /// let the app match both the size and the placement. Default when the element has no icon.
+    let iconWidth: Int
+    let iconHeight: Int
 }
 
 /// A single connecting line between two network map elements.

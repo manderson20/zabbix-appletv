@@ -131,15 +131,25 @@ struct NetworkMapWidgetContentView: View {
                     .frame(width: canvasWidth, height: canvasHeight)
 
                     ForEach(diagram.elements) { element in
-                        VStack(spacing: 2) {
-                            NetworkMapElementIconView(element: element, scale: scale)
-                            Text(element.label)
-                                .font(.system(size: max(12 * scale, 11), weight: .medium, design: .rounded))
-                                .foregroundStyle(DashboardTheme.primaryText)
-                                .lineLimit(1)
-                                .fixedSize()
-                        }
-                        .position(x: CGFloat(element.x) * scale, y: CGFloat(element.y) * scale)
+                        let iconW = max(CGFloat(element.iconWidth) * scale, 18)
+                        let iconH = max(CGFloat(element.iconHeight) * scale, 18)
+                        NetworkMapElementIconView(element: element, scale: scale)
+                            // Label centered just below the icon, in the frontend's dark box.
+                            .overlay(alignment: .top) {
+                                Text(element.label)
+                                    .font(.system(size: max(12 * scale, 11), weight: .medium, design: .rounded))
+                                    .foregroundStyle(DashboardTheme.primaryText)
+                                    .lineLimit(1)
+                                    .fixedSize()
+                                    .padding(.horizontal, 4)
+                                    .padding(.vertical, 1)
+                                    .background(Color.black.opacity(0.55))
+                                    .offset(y: iconH + 2)
+                            }
+                            // Zabbix anchors elements by their top-left corner (x, y); .position
+                            // centers, so shift by half the icon to land the corner on (x, y).
+                            .position(x: CGFloat(element.x) * scale + iconW / 2,
+                                      y: CGFloat(element.y) * scale + iconH / 2)
                     }
                 }
                 .frame(width: canvasWidth, height: canvasHeight)
@@ -166,32 +176,35 @@ private struct NetworkMapElementIconView: View {
         element.severity == 0 ? .green : severityIndicatorColor(for: element.severity)
     }
 
+    /// Icon native pixels live in the map's coordinate space, so they scale like the background;
+    /// a floor keeps a small icon legible.
+    private var iconSize: CGSize {
+        CGSize(width: max(CGFloat(element.iconWidth) * scale, 18),
+               height: max(CGFloat(element.iconHeight) * scale, 18))
+    }
+
     var body: some View {
-        if let iconImageData = element.iconImageData, let uiImage = UIImage(data: iconImageData) {
-            // The icon's native pixels live in the map's coordinate space, so they scale with the
-            // map exactly like the background image does. A floor keeps a small icon legible.
-            let width = max(uiImage.size.width * scale, 18)
-            let height = max(uiImage.size.height * scale, 18)
-            let badge = max(min(width, height) * 0.3, 8)
-            Image(uiImage: uiImage)
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .frame(width: width, height: height)
-                .overlay(alignment: .topTrailing) {
-                    Circle()
-                        .fill(statusColor)
-                        .frame(width: badge, height: badge)
-                        .overlay(Circle().stroke(DashboardTheme.background, lineWidth: 1.5))
-                        .offset(x: badge * 0.3, y: -badge * 0.3)
-                }
-        } else {
-            // No icon configured or the image failed to decode — a plain severity dot, scaled so it
-            // reads at roughly the size the icon would have.
-            let diameter = max(14 * scale, 12)
-            Circle()
-                .fill(statusColor)
-                .frame(width: diameter, height: diameter)
+        let size = iconSize
+        let outlineWidth = max(min(size.width, size.height) * 0.09, 2.5)
+        let corner = max(min(size.width, size.height) * 0.14, 3)
+        Group {
+            if let iconImageData = element.iconImageData, let uiImage = UIImage(data: iconImageData) {
+                Image(uiImage: uiImage)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+            } else {
+                // No icon — a filled tile in the status color so the element is still visible.
+                RoundedRectangle(cornerRadius: corner, style: .continuous)
+                    .fill(statusColor.opacity(0.85))
+            }
         }
+        .frame(width: size.width, height: size.height)
+        // Status-colored outline around the element, mirroring the frontend's icon highlighting:
+        // green when OK, then blue → yellow → red as the door-open severity escalates.
+        .overlay(
+            RoundedRectangle(cornerRadius: corner, style: .continuous)
+                .strokeBorder(statusColor, lineWidth: outlineWidth)
+        )
     }
 }
 
