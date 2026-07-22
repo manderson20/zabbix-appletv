@@ -132,9 +132,9 @@ struct NetworkMapWidgetContentView: View {
 
                     ForEach(diagram.elements) { element in
                         VStack(spacing: 2) {
-                            NetworkMapElementIconView(element: element)
+                            NetworkMapElementIconView(element: element, scale: scale)
                             Text(element.label)
-                                .font(.system(size: 12, weight: .medium, design: .rounded))
+                                .font(.system(size: max(12 * scale, 11), weight: .medium, design: .rounded))
                                 .foregroundStyle(DashboardTheme.primaryText)
                                 .lineLimit(1)
                                 .fixedSize()
@@ -155,6 +155,11 @@ struct NetworkMapWidgetContentView: View {
 private struct NetworkMapElementIconView: View {
     let element: NetworkMapElement
 
+    /// Screen points per map-coordinate unit — the same uniform scale the background is drawn at,
+    /// so an icon occupies the same fraction of the map as it does on the Zabbix frontend rather
+    /// than a fixed size that shrinks to a dot on a large floor-plan map.
+    let scale: CGFloat
+
     /// Severity 0 means "no active problem", shown as green — distinct from Zabbix's "Not
     /// classified" severity level, which is an uncategorized problem, not a healthy state.
     private var statusColor: Color {
@@ -162,25 +167,31 @@ private struct NetworkMapElementIconView: View {
     }
 
     var body: some View {
-        ZStack(alignment: .topTrailing) {
-            if let iconImageData = element.iconImageData, let uiImage = UIImage(data: iconImageData) {
-                Image(uiImage: uiImage)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: 28, height: 28)
-
-                Circle()
-                    .fill(statusColor)
-                    .frame(width: 9, height: 9)
-                    .overlay(Circle().stroke(DashboardTheme.background, lineWidth: 1.5))
-                    .offset(x: 3, y: -3)
-            } else {
-                Circle()
-                    .fill(statusColor)
-                    .frame(width: 14, height: 14)
-            }
+        if let iconImageData = element.iconImageData, let uiImage = UIImage(data: iconImageData) {
+            // The icon's native pixels live in the map's coordinate space, so they scale with the
+            // map exactly like the background image does. A floor keeps a small icon legible.
+            let width = max(uiImage.size.width * scale, 18)
+            let height = max(uiImage.size.height * scale, 18)
+            let badge = max(min(width, height) * 0.3, 8)
+            Image(uiImage: uiImage)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: width, height: height)
+                .overlay(alignment: .topTrailing) {
+                    Circle()
+                        .fill(statusColor)
+                        .frame(width: badge, height: badge)
+                        .overlay(Circle().stroke(DashboardTheme.background, lineWidth: 1.5))
+                        .offset(x: badge * 0.3, y: -badge * 0.3)
+                }
+        } else {
+            // No icon configured or the image failed to decode — a plain severity dot, scaled so it
+            // reads at roughly the size the icon would have.
+            let diameter = max(14 * scale, 12)
+            Circle()
+                .fill(statusColor)
+                .frame(width: diameter, height: diameter)
         }
-        .frame(width: 28, height: 28)
     }
 }
 
