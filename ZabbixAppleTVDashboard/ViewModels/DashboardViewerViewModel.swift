@@ -23,6 +23,16 @@ final class DashboardViewerViewModel: ObservableObject {
     /// Indicates whether the current connection attempt can be retried.
     @Published private(set) var canRetry = false
 
+    /// True when a dashboard is already on screen but refreshes have kept failing long enough
+    /// (see `stalenessThresholdSeconds`) that the displayed data may be stale. Drives the
+    /// reconnecting banner. Clears automatically on the next successful refresh — the viewer
+    /// self-heals with no user action.
+    @Published private(set) var isReconnecting = false
+
+    /// Timestamp of the last successful data refresh (initial load or a refresh tick), shown as
+    /// "last updated" in the reconnecting banner. Nil until the first successful load.
+    @Published private(set) var lastSuccessfulRefreshAt: Date?
+
     /// Dashboard resolved for display.
     @Published private(set) var selectedDashboard: Dashboard?
 
@@ -49,6 +59,12 @@ final class DashboardViewerViewModel: ObservableObject {
     /// `DashboardManager.refreshIntervalSeconds(from:)`) repaint within ~2s, beating the Zabbix
     /// web dashboard's hard 10s floor for near-real-time views like door status.
     private static let refreshTickNanoseconds: UInt64 = 2 * 1_000_000_000
+
+    /// How long refreshes must keep failing, after a dashboard is already on screen, before the
+    /// viewer surfaces the "reconnecting — data may be stale" banner. Kept well above a single
+    /// refresh interval so a brief blip or one dropped tick never flashes a warning; a real outage
+    /// crosses it and the banner appears, then disappears the instant a refresh succeeds again.
+    private static let stalenessThresholdSeconds: TimeInterval = 30
 
     /// Backoff delays between automatic startup retry attempts, in seconds. The last value
     /// repeats for any further attempts.
@@ -210,6 +226,8 @@ final class DashboardViewerViewModel: ObservableObject {
             for widget in allWidgets {
                 lastRefreshedAt[widget.id] = now
             }
+            lastSuccessfulRefreshAt = now
+            isReconnecting = false
             startRefreshLoop(dashboardID: dashboard.providerDashboardID)
             startPageRotationLoopIfNeeded()
             return nil
@@ -271,6 +289,8 @@ final class DashboardViewerViewModel: ObservableObject {
         lastRefreshedAt.removeAll()
         lastCredentialFailureAt = nil
         canRetry = false
+        isReconnecting = false
+        lastSuccessfulRefreshAt = nil
     }
 
     private func resolveDashboard() async throws -> Dashboard? {
@@ -323,6 +343,8 @@ final class DashboardViewerViewModel: ObservableObject {
             guard !updatedWidgets.isEmpty else { return }
 
             lastCredentialFailureAt = nil
+            lastSuccessfulRefreshAt = now
+            isReconnecting = false
             for widget in updatedWidgets {
                 lastRefreshedAt[widget.id] = now
             }
@@ -337,6 +359,14 @@ final class DashboardViewerViewModel: ObservableObject {
                 )
             }
         } catch {
+            // Once an outage is sustained (not a one-tick blip), surface a reconnecting hint so an
+            // always-on wall display shows its data may be stale instead of silently freezing. This
+            // only flips a flag for the banner; the self-healing reconnect below is unchanged, and a
+            // successful tick clears it.
+            if let last = lastSuccessfulRefreshAt, Date().timeIntervalSince(last) >= Self.stalenessThresholdSeconds {
+                isReconnecting = true
+            }
+
             // A dashboard that's already on screen shouldn't flash an error over a transient
             // network blip or an expired session — reconnect quietly and let the next tick retry.
             //

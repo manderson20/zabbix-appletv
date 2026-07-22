@@ -51,6 +51,16 @@ struct DashboardViewerScreen: View {
                     .transition(.opacity)
             }
 
+            // Surfaces only during a sustained outage while a dashboard is already on screen, so a
+            // wall display shows its data may be stale rather than freezing silently. It disappears
+            // the moment a refresh succeeds again — the viewer self-heals on its own.
+            if viewModel.renderingState == .ready, viewModel.isReconnecting {
+                reconnectingBanner
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .padding(24)
+                    .transition(.opacity)
+            }
+
             if viewModel.renderingState != .ready {
                 VStack(alignment: .leading, spacing: 18) {
                     Text(viewModel.dashboardTitle)
@@ -82,6 +92,7 @@ struct DashboardViewerScreen: View {
             }
         }
         .animation(.easeInOut(duration: 0.3), value: viewModel.autoScrollEnabled)
+        .animation(.easeInOut(duration: 0.3), value: viewModel.isReconnecting)
         .task {
             await viewModel.prepareViewer()
         }
@@ -96,6 +107,29 @@ struct DashboardViewerScreen: View {
         .onDisappear {
             UIApplication.shared.isIdleTimerDisabled = false
         }
+    }
+
+    /// Amber pill shown during a sustained connection outage, noting the data may be stale and
+    /// when it was last updated. Purely informational — the viewer keeps reconnecting on its own.
+    private var reconnectingBanner: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "wifi.exclamationmark")
+            Text(lastUpdatedText)
+                .font(.system(size: 18, weight: .semibold, design: .rounded))
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 18)
+        .padding(.vertical, 12)
+        .background(
+            Capsule(style: .continuous).fill(Color.orange.opacity(0.92))
+        )
+    }
+
+    /// "Reconnecting — last updated 2:47 PM", or a bare fallback if no successful load happened yet
+    /// (which the banner's `isReconnecting` gate makes unreachable in practice).
+    private var lastUpdatedText: String {
+        guard let at = viewModel.lastSuccessfulRefreshAt else { return "Reconnecting\u{2026}" }
+        return "Reconnecting \u{2014} last updated \(at.formatted(date: .omitted, time: .shortened))"
     }
 
     /// The unobtrusive "you're scrolling by hand" pill shown in manual mode.
