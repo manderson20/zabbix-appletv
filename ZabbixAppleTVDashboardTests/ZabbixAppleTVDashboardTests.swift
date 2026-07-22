@@ -1429,10 +1429,15 @@ struct ZabbixAppleTVDashboardTests {
         // A widget left at "Default" stores no rf_rate field; Zabbix refreshes it at 60s, so it
         // must keep updating rather than freezing on its launch-time snapshot.
         let absent: [ZabbixWidgetField] = []
+        // Zabbix's web UI floors rf_rate at 10s. A widget set to that minimum is the admin asking
+        // for the fastest refresh possible, so the app puts it on its fast lane (2s) — used by the
+        // door-status widgets fed by the UniFi push bridge.
+        let tenSeconds = [ZabbixWidgetField(name: "rf_rate", value: "10")]
 
         #expect(DashboardManager.refreshIntervalSeconds(from: thirtySeconds) == 30)
         #expect(DashboardManager.refreshIntervalSeconds(from: noRefresh) == DashboardManager.maximumRefreshIntervalSeconds)
         #expect(DashboardManager.refreshIntervalSeconds(from: absent) == DashboardManager.defaultRefreshIntervalSeconds)
+        #expect(DashboardManager.refreshIntervalSeconds(from: tenSeconds) == DashboardManager.fastestRefreshIntervalSeconds)
     }
 
     @Test func timePeriodHonorsFromToAndDefaults() throws {

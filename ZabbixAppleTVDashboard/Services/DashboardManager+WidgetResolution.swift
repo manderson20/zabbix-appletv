@@ -3072,22 +3072,33 @@ extension DashboardManager {
     /// intent without hammering the API or ever going permanently stale.
     static let maximumRefreshIntervalSeconds = 900
 
+    /// The fastest refresh this app applies, for a widget the admin set to Zabbix's 10s minimum.
+    /// Zabbix's web frontend floors "rf_rate" at 10s (allowed values: 10, 30, 60, 120, 600, 900),
+    /// so 10s is the strongest "refresh this often" signal an admin can express there. This app
+    /// runs a 2s refresh tick (see `DashboardViewerViewModel.refreshTickNanoseconds`), so it can
+    /// honor that intent faster than the web dashboard — useful for near-real-time views such as
+    /// door-position status that are fed by a push bridge landing values in Zabbix within ~1s.
+    static let fastestRefreshIntervalSeconds = 2
+
     /// Returns how often to re-fetch a widget's data, in seconds — always a positive interval,
     /// since an unattended display should never show a widget that stops updating. The value comes
     /// from the widget's own Zabbix "rf_rate" field, verified against a live server (e.g. 30s on a
     /// "problems" widget, 120s on "systeminfo"):
     ///
-    /// - An explicit positive "rf_rate" is used as-is.
+    /// - An "rf_rate" at Zabbix's 10s minimum → `fastestRefreshIntervalSeconds` (app fast lane).
+    /// - Any other explicit positive "rf_rate" is used as-is.
     /// - An absent field means the widget is at "Default" in Zabbix's dropdown (Zabbix stores no
     ///   field in that case) → `defaultRefreshIntervalSeconds`. Treating absent as "never" is what
     ///   left every default-rate widget (item value, gauge, etc.) frozen on its opening snapshot.
-    /// - An explicit "0" is Zabbix's "No refresh" → `maximumRefreshIntervalSeconds` rather than
-    ///   never, for the unattended-display reason documented on that constant.
+    /// - An explicit "0" (or -1) is Zabbix's "No refresh" → `maximumRefreshIntervalSeconds` rather
+    ///   than never, for the unattended-display reason documented on that constant.
     static func refreshIntervalSeconds(from fields: [ZabbixWidgetField]) -> Int {
         guard let rate = fieldValue(fields, name: "rf_rate").flatMap(Int.init) else {
             return defaultRefreshIntervalSeconds
         }
-        return rate > 0 ? rate : maximumRefreshIntervalSeconds
+        if rate <= 0 { return maximumRefreshIntervalSeconds }
+        if rate <= 10 { return fastestRefreshIntervalSeconds }
+        return rate
     }
 
     /// Returns all values for a dot-indexed widget field array, e.g. "groupids.0", "groupids.1".

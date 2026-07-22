@@ -45,7 +45,10 @@ final class DashboardViewerViewModel: ObservableObject {
 
     /// How often the refresh loop checks which widgets are due, independent of any single
     /// widget's own interval — finer-grained than Zabbix's smallest widget refresh option (10s).
-    private static let refreshTickNanoseconds: UInt64 = 5 * 1_000_000_000
+    /// At 2s, widgets on the app's fast lane (a widget left at Zabbix's 10s minimum — see
+    /// `DashboardManager.refreshIntervalSeconds(from:)`) repaint within ~2s, beating the Zabbix
+    /// web dashboard's hard 10s floor for near-real-time views like door status.
+    private static let refreshTickNanoseconds: UInt64 = 2 * 1_000_000_000
 
     /// Backoff delays between automatic startup retry attempts, in seconds. The last value
     /// repeats for any further attempts.
