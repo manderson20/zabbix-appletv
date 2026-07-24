@@ -59,6 +59,50 @@ nonisolated struct RenderableDashboard: Sendable {
     let autoRotatesPages: Bool
 }
 
+/// A dashboard re-read for a viewer that already has one on screen: the full current layout, with
+/// freshly fetched data attached only to the widgets that needed it.
+///
+/// Distinct from `RenderableDashboard` because it is deliberately partial. Layout (which pages
+/// exist, which widgets sit where, how big they are) arrives in full on every read since it all
+/// comes with the one `dashboard.get` call; widget *data* is the expensive part and is only
+/// re-fetched for widgets that are due or newly added. The caller supplies the rest from what it
+/// already holds.
+nonisolated struct RefreshedDashboard: Sendable {
+    let pages: [RefreshedDashboardPage]
+    let autoRotatesPages: Bool
+}
+
+/// One page of a re-read dashboard, in the server's current page order.
+nonisolated struct RefreshedDashboardPage: Sendable {
+    let id: String
+    let name: String?
+    let displaySeconds: Int
+    let widgets: [RefreshedDashboardWidget]
+}
+
+/// One widget's current placement, plus its freshly resolved data when it was re-fetched.
+nonisolated struct RefreshedDashboardWidget: Sendable {
+    /// Stable widget identifier, matching `RenderableDashboardWidget.id`.
+    let id: String
+
+    /// The name explicitly set on the widget in Zabbix, or nil when it has none and falls back to
+    /// a data-driven or widget-type default title.
+    let customTitle: String?
+
+    /// Current grid position and size.
+    let frame: DashboardWidgetFrame
+
+    /// Current configured refresh interval.
+    let refreshIntervalSeconds: Int
+
+    /// Whether Zabbix's own widget config hides the header.
+    let hasHiddenHeader: Bool
+
+    /// Freshly fetched rendering for this widget, or nil when its data wasn't due and the caller
+    /// should carry over what it already has for `id`.
+    let resolved: RenderableDashboardWidget?
+}
+
 /// Grid position and size for a dashboard widget, in the provider's native grid units.
 nonisolated struct DashboardWidgetFrame: Sendable, Equatable {
     /// Grid column of the widget's top-left corner.
@@ -116,6 +160,52 @@ nonisolated struct ClockConfiguration: Sendable {
     }
 }
 
+/// The item-value widget's text styling, straight from the widget's own fields.
+///
+/// Zabbix sizes every part of this widget as a **percentage of the widget's height**, not in fixed
+/// points: a "Total jobs" tile measured live renders its value at 98.7px and its description at
+/// 32.9px inside a 219px-tall body — exactly the 45%/15% defaults. Fixed point sizes therefore
+/// can't match the frontend at more than one tile size, which is why these are percentages.
+nonisolated struct ItemValueAppearance: Equatable, Sendable {
+    /// `show` flags: 1 description, 2 value, 3 time. (The change indicator, 4, arrives as `trend`.)
+    var showsDescription: Bool = true
+    var showsValue: Bool = true
+    var showsTime: Bool = true
+
+    /// Percentages of the widget's height — Zabbix's `desc_size`, `value_size`, `time_size` defaults.
+    var descriptionSizePercent: Double = 15
+    var valueSizePercent: Double = 45
+    var timeSizePercent: Double = 15
+
+    /// `desc_bold` is off by default; `value_bold` is on (verified live: the value span carries
+    /// Zabbix's `bold` class at weight 700 while the description renders at 400).
+    var descriptionIsBold: Bool = false
+    var valueIsBold: Bool = true
+
+    /// `desc_color` / `value_color` / `time_color` — nil means the theme's own text color.
+    var descriptionColorHex: String?
+    var valueColorHex: String?
+    var timeColorHex: String?
+
+    /// What Zabbix renders for a widget that sets none of these fields.
+    static let zabbixDefaults = ItemValueAppearance()
+}
+
+/// How a honeycomb widget sizes its two label lines.
+///
+/// Zabbix offers auto sizing (`*_label_size_type` 0, the default: fit the text to the cell) or a
+/// custom percentage (type 1). The percentage is of the cell's **label-area font budget** —
+/// `cellHeight / 2.25 / 1.15`, the same quantity the auto path already computes — verified live: a
+/// widget set to 22/15 renders its labels at 98.18/66.94 units in Zabbix's 1000-unit cell space,
+/// exactly 22% and 15% of that budget's 446.26.
+nonisolated struct HoneycombLabelSizing: Equatable, Sendable {
+    /// nil means auto-size that line, as Zabbix does by default.
+    var primaryPercent: Double?
+    var secondaryPercent: Double?
+
+    static let auto = HoneycombLabelSizing()
+}
+
 /// Native renderings supported for a dashboard widget.
 ///
 /// The graph prototype widget (tied to low-level discovery, a distinct and deeper feature),
@@ -124,13 +214,13 @@ nonisolated struct ClockConfiguration: Sendable {
 /// native rendering here — see the widget build-out plan for the reasoning behind each.
 nonisolated enum DashboardWidgetKind: Sendable {
     case clock(ClockConfiguration)
-    case itemValue(name: String, value: String, units: String, decimalPlaces: Int, backgroundColorHex: String?, trend: ItemValueTrend?, lastUpdated: Date?, mappedText: String?)
+    case itemValue(name: String, value: String, units: String, decimalPlaces: Int, backgroundColorHex: String?, trend: ItemValueTrend?, lastUpdated: Date?, mappedText: String?, appearance: ItemValueAppearance = .zabbixDefaults)
     case problems([DashboardProblem], showTimeline: Bool)
     case problemsBySeverity([SeverityCount])
     case hostAvailability([HostInterfaceAvailability])
     case systemInformation(rows: [SystemInfoRow], haNodes: [SystemHANode])
     case gauge(GaugeReading)
-    case honeycomb([HoneycombCell])
+    case honeycomb([HoneycombCell], labelSizing: HoneycombLabelSizing = .auto)
     case topHosts(columns: [String], rows: [TopHostsRow])
     case topTriggers([DashboardProblem])
     case triggerOverview([TriggerOverviewRow], truncated: Bool)

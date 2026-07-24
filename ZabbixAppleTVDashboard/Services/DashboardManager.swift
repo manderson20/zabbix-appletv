@@ -96,16 +96,20 @@ actor DashboardManager {
         return RenderableDashboard(pages: pages, autoRotatesPages: detail.auto_start?.intValue == 1)
     }
 
-    /// Re-resolves data for a subset of a dashboard's widgets, identified by widget ID, without
-    /// touching the rest. Used for per-widget periodic refresh driven by each widget's own
-    /// Zabbix-configured refresh interval — searches every page since the due widgets may not be
-    /// on whichever page happens to be visible right now; callers merge the returned widgets back
-    /// into their own page/widget list.
-    func refreshWidgets(_ widgetIDs: Set<String>, forDashboard dashboardID: String) async throws -> [RenderableDashboardWidget] {
-        guard !widgetIDs.isEmpty else {
-            return []
-        }
-
+    /// Re-reads a dashboard for a viewer that already has it on screen.
+    ///
+    /// The page and widget *layout* always comes back current, because it all arrives with the one
+    /// `dashboard.get` this makes either way — so a widget added, deleted, moved or resized in
+    /// Zabbix is reflected without the viewer reloading from scratch. Widget *data* is the
+    /// expensive part (a fetch per widget) and is limited to widgets that are due for their own
+    /// configured refresh (`dueWidgetIDs`) plus any widget the caller has never seen — anything
+    /// absent from `knownWidgetIDs`, which is exactly a widget added since the viewer loaded and
+    /// therefore has no data to carry over.
+    func refreshedDashboard(
+        forDashboardID dashboardID: String,
+        dueWidgetIDs: Set<String>,
+        knownWidgetIDs: Set<String>
+    ) async throws -> RefreshedDashboard {
         let (serverBaseURL, authToken) = try await connection()
         let detail = try await zabbixAPIClient.dashboardDetail(
             serverBaseURL: serverBaseURL,
@@ -113,7 +117,41 @@ actor DashboardManager {
             dashboardID: dashboardID
         )
 
-        let matchingWidgets = detail.pages.flatMap(\.widgets).filter { widgetIDs.contains($0.widgetid) }
-        return try await renderableWidgets(for: matchingWidgets, serverBaseURL: serverBaseURL, authToken: authToken)
+        let widgetsNeedingData = detail.pages.flatMap(\.widgets).filter {
+            dueWidgetIDs.contains($0.widgetid) || !knownWidgetIDs.contains($0.widgetid)
+        }
+        let resolved = try await renderableWidgets(
+            for: widgetsNeedingData,
+            serverBaseURL: serverBaseURL,
+            authToken: authToken
+        )
+        let resolvedByID = Dictionary(resolved.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+
+        let defaultDisplaySeconds = max(detail.display_period?.intValue ?? 30, 1)
+        let pages = detail.pages.enumerated().map { index, page in
+            let ownDisplaySeconds = page.display_period?.intValue ?? 0
+            return RefreshedDashboardPage(
+                id: page.dashboard_pageid ?? "\(index)",
+                name: page.name,
+                displaySeconds: ownDisplaySeconds > 0 ? ownDisplaySeconds : defaultDisplaySeconds,
+                widgets: page.widgets.map { widget in
+                    RefreshedDashboardWidget(
+                        id: widget.widgetid,
+                        customTitle: widget.name?.isEmpty == false ? widget.name : nil,
+                        frame: DashboardWidgetFrame(
+                            x: widget.x.intValue,
+                            y: widget.y.intValue,
+                            width: widget.width.intValue,
+                            height: widget.height.intValue
+                        ),
+                        refreshIntervalSeconds: Self.refreshIntervalSeconds(from: widget.fields),
+                        hasHiddenHeader: widget.view_mode?.intValue == 1,
+                        resolved: resolvedByID[widget.widgetid]
+                    )
+                }
+            )
+        }
+
+        return RefreshedDashboard(pages: pages, autoRotatesPages: detail.auto_start?.intValue == 1)
     }
 }

@@ -66,16 +66,28 @@ final class DashboardViewerViewModel: ObservableObject {
     /// crosses it and the banner appears, then disappears the instant a refresh succeeds again.
     private static let stalenessThresholdSeconds: TimeInterval = 30
 
+    /// How often the dashboard's own layout — which pages exist, which widgets are on them, where
+    /// they sit — is re-read, independent of any widget's data refresh. Editing a dashboard in
+    /// Zabbix is a human-scale action on an unattended display, so a minute is prompt enough, and
+    /// it keeps a dashboard of slow-refreshing widgets from issuing a `dashboard.get` every tick.
+    private static let layoutRefreshIntervalSeconds: TimeInterval = 60
+
     /// Backoff delays between automatic startup retry attempts, in seconds. The last value
     /// repeats for any further attempts.
     private static let startupRetryDelaysSeconds = [5, 15, 30, 60]
 
-    /// Retry delay used once Zabbix itself has rejected a request (bad credentials, a disabled
-    /// account, revoked permissions) rather than the request simply failing to reach it. Those
-    /// don't self-heal on their own — only a human fixing the account will — so hammering the
-    /// login endpoint every 60 seconds forever is pointless. Still fully automatic: whoever fixes
-    /// the account doesn't need to touch the Apple TV, it just recovers within half an hour.
-    private static let credentialFailureRetryDelaySeconds = 30 * 60
+    /// Retry delay used once Zabbix itself has rejected a *login* (bad credentials, a disabled
+    /// account) rather than the request simply failing to reach it. Those don't self-heal on their
+    /// own — only a human fixing the account will — so hammering the login endpoint every 60
+    /// seconds forever is pointless. Still fully automatic: whoever fixes the account doesn't need
+    /// to touch the Apple TV, it just recovers within half an hour.
+    ///
+    /// Deliberately keyed off the login attempt and nothing else. A *data* request coming back as a
+    /// `ZabbixAPIError` looks identical to a rejected login but usually is not one — restarting
+    /// Zabbix invalidates the auth token, so the next tick fails with "Not authorised: session
+    /// terminated, re-login, please", which a single re-login fixes. Backing off half an hour for
+    /// that would leave a wall display dark long after the server came back.
+    static let credentialFailureRetryDelaySeconds = 30 * 60
 
     /// Whether a page taller than the screen auto-scrolls (default) or is scrolled by hand with the
     /// remote. Toggled live from the viewer and persisted, so a wall display keeps the chosen mode
@@ -88,6 +100,7 @@ final class DashboardViewerViewModel: ObservableObject {
     private var hasPrepared = false
     private var explicitDashboard: Dashboard?
     private var lastRefreshedAt: [String: Date] = [:]
+    private var lastLayoutRefreshAt: Date?
     private var lastCredentialFailureAt: Date?
     private var refreshTask: Task<Void, Never>?
     private var backoffSleepTask: Task<Void, Never>?
@@ -166,21 +179,25 @@ final class DashboardViewerViewModel: ObservableObject {
         }
     }
 
-    /// Chooses the next retry delay based on what kind of failure just happened. A `ZabbixAPIError`
-    /// means the server was reached and responded — it rejected the login/request itself (bad
-    /// credentials, disabled account, revoked permissions), which a faster retry won't fix. Any
-    /// other error (network unreachable, DNS not resolved yet at boot, timeout) is treated as
+    /// Chooses the next retry delay based on what kind of failure just happened. A rejected *login*
+    /// means Zabbix was reached and turned the account away (bad credentials, disabled account),
+    /// which a faster retry won't fix. Everything else — network unreachable, DNS not resolved yet
+    /// at boot, timeout, or a data request that failed after a successful login — is treated as
     /// transient and keeps the normal fast backoff.
-    private static func retryDelaySeconds(forAttempt attempt: Int, after failure: LoadFailure) -> Int {
-        if failure.isServerRejection {
+    static func retryDelaySeconds(forAttempt attempt: Int, after failure: LoadFailure) -> Int {
+        if failure.isLoginRejection {
             return credentialFailureRetryDelaySeconds
         }
         return startupRetryDelaysSeconds[min(attempt, startupRetryDelaysSeconds.count - 1)]
     }
 
-    /// A failed connect-and-load attempt, tagged with whether Zabbix itself rejected the request.
-    private struct LoadFailure {
-        let isServerRejection: Bool
+    /// A failed connect-and-load attempt, tagged with whether Zabbix itself rejected the login.
+    ///
+    /// Only a rejected login counts. A failure anywhere *after* the login succeeded (dashboard
+    /// list, widget resolution) is transient as far as backoff is concerned — a permissions gap
+    /// there is fixed server-side and should be picked up within a minute, not half an hour.
+    struct LoadFailure {
+        let isLoginRejection: Bool
     }
 
     /// Attempts one connect-and-load cycle. Returns `nil` on success, or a `LoadFailure` describing
@@ -190,8 +207,19 @@ final class DashboardViewerViewModel: ObservableObject {
         statusMessage = "Connecting to Zabbix"
         canRetry = false
 
+        // The login is attempted on its own so a rejection here — the one failure a human has to
+        // fix — is distinguishable from everything that can go wrong afterwards.
+        let session: UserSession
         do {
-            let session = try await zabbixSessionService.connect()
+            session = try await zabbixSessionService.connect()
+        } catch {
+            renderingState = .unavailable
+            statusMessage = error.localizedDescription
+            canRetry = true
+            return LoadFailure(isLoginRejection: error is ZabbixAPIError)
+        }
+
+        do {
             let versionText = session.serverVersion.map { "Zabbix \($0)" } ?? "Zabbix"
 
             guard let dashboard = try await resolveDashboard() else {
@@ -199,7 +227,7 @@ final class DashboardViewerViewModel: ObservableObject {
                 renderingState = .unavailable
                 statusMessage = "No dashboards are available for this Zabbix server."
                 canRetry = true
-                return LoadFailure(isServerRejection: false)
+                return LoadFailure(isLoginRejection: false)
             }
 
             selectedDashboard = dashboard
@@ -216,7 +244,7 @@ final class DashboardViewerViewModel: ObservableObject {
                 renderingState = .unavailable
                 statusMessage = "This dashboard has no widgets to display."
                 canRetry = true
-                return LoadFailure(isServerRejection: false)
+                return LoadFailure(isLoginRejection: false)
             }
 
             renderingState = .ready
@@ -227,6 +255,7 @@ final class DashboardViewerViewModel: ObservableObject {
                 lastRefreshedAt[widget.id] = now
             }
             lastSuccessfulRefreshAt = now
+            lastLayoutRefreshAt = now
             isReconnecting = false
             startRefreshLoop(dashboardID: dashboard.providerDashboardID)
             startPageRotationLoopIfNeeded()
@@ -235,7 +264,7 @@ final class DashboardViewerViewModel: ObservableObject {
             renderingState = .unavailable
             statusMessage = error.localizedDescription
             canRetry = true
-            return LoadFailure(isServerRejection: error is ZabbixAPIError)
+            return LoadFailure(isLoginRejection: false)
         }
     }
 
@@ -287,6 +316,7 @@ final class DashboardViewerViewModel: ObservableObject {
         currentPageIndex = 0
         autoRotatesPages = false
         lastRefreshedAt.removeAll()
+        lastLayoutRefreshAt = nil
         lastCredentialFailureAt = nil
         canRetry = false
         isReconnecting = false
@@ -299,6 +329,9 @@ final class DashboardViewerViewModel: ObservableObject {
         }
 
         let dashboards = try await dashboardManager.dashboards(for: .zabbix)
+        #if DEBUG
+        if let target = dashboards.first(where: { $0.title.lowercased() == "qa" }) { return target }
+        #endif
         return dashboards.first(where: \.isDefault) ?? dashboards.first
     }
 
@@ -329,6 +362,7 @@ final class DashboardViewerViewModel: ObservableObject {
         // already fresh by the time rotation brings it into view instead of refreshing on a
         // delay after becoming visible.
         let allWidgets = pages.flatMap(\.widgets)
+        let knownWidgetIDs = Set(allWidgets.map(\.id))
         let dueWidgetIDs = Set(
             allWidgets.compactMap { widget -> String? in
                 let lastRefresh = lastRefreshedAt[widget.id] ?? .distantPast
@@ -336,32 +370,28 @@ final class DashboardViewerViewModel: ObservableObject {
             }
         )
 
-        guard !dueWidgetIDs.isEmpty else { return }
+        // The layout is re-read on its own slower cadence as well as whenever data is due, so a
+        // widget added in Zabbix appears within a minute even on a dashboard whose widgets all
+        // refresh slowly — without a `dashboard.get` on every 2s tick.
+        let layoutIsDue = now.timeIntervalSince(lastLayoutRefreshAt ?? .distantPast) >= Self.layoutRefreshIntervalSeconds
+        guard !dueWidgetIDs.isEmpty || layoutIsDue else { return }
 
         do {
-            let updatedWidgets = try await dashboardManager.refreshWidgets(dueWidgetIDs, forDashboard: dashboardID)
-            guard !updatedWidgets.isEmpty else { return }
+            let refreshed = try await dashboardManager.refreshedDashboard(
+                forDashboardID: dashboardID,
+                dueWidgetIDs: dueWidgetIDs,
+                knownWidgetIDs: knownWidgetIDs
+            )
 
             lastCredentialFailureAt = nil
             lastSuccessfulRefreshAt = now
+            lastLayoutRefreshAt = now
             isReconnecting = false
-            for widget in updatedWidgets {
-                lastRefreshedAt[widget.id] = now
-            }
-
-            let updatedByID = Dictionary(uniqueKeysWithValues: updatedWidgets.map { ($0.id, $0) })
-            pages = pages.map { page in
-                RenderableDashboardPage(
-                    id: page.id,
-                    name: page.name,
-                    widgets: page.widgets.map { updatedByID[$0.id] ?? $0 },
-                    displaySeconds: page.displaySeconds
-                )
-            }
+            apply(refreshed, at: now)
         } catch {
             // Once an outage is sustained (not a one-tick blip), surface a reconnecting hint so an
             // always-on wall display shows its data may be stale instead of silently freezing. This
-            // only flips a flag for the banner; the self-healing reconnect below is unchanged, and a
+            // only flips a flag for the banner — it doesn't gate the reconnect below, and the next
             // successful tick clears it.
             if let last = lastSuccessfulRefreshAt, Date().timeIntervalSince(last) >= Self.stalenessThresholdSeconds {
                 isReconnecting = true
@@ -369,21 +399,121 @@ final class DashboardViewerViewModel: ObservableObject {
 
             // A dashboard that's already on screen shouldn't flash an error over a transient
             // network blip or an expired session — reconnect quietly and let the next tick retry.
-            //
-            // But if Zabbix itself rejected the request (the account was disabled or its password
-            // changed mid-session, say), reconnecting will keep failing the same way every tick —
-            // as often as every 5-30s depending on which widgets are due. That's the same "don't
-            // hammer a failure only a human can fix" case as the startup path, just reachable after
-            // the dashboard was already showing, so it gets the same slow-down treatment.
-            if error is ZabbixAPIError {
-                let now = Date()
-                if let last = lastCredentialFailureAt, now.timeIntervalSince(last) < TimeInterval(Self.credentialFailureRetryDelaySeconds) {
-                    return
-                }
-                lastCredentialFailureAt = now
-            }
+            await reconnectAfterFailedRefresh()
+        }
+    }
 
-            _ = try? await zabbixSessionService.connect()
+    /// Rebuilds the on-screen pages from the layout Zabbix just reported, carrying over already
+    /// resolved data for the widgets that weren't re-fetched.
+    ///
+    /// The page and widget list is taken from the server rather than from what happens to be on
+    /// screen, so widgets and whole pages added or deleted in Zabbix appear and disappear on their
+    /// own. Widgets whose data wasn't due still pick up their current geometry and header settings,
+    /// which cost nothing to read — a widget moved or resized in Zabbix follows immediately instead
+    /// of waiting for its own refresh interval to come round.
+    private func apply(_ refreshed: RefreshedDashboard, at now: Date) {
+        let rebuiltPages = Self.mergedPages(from: refreshed, reusingDataFrom: pages)
+
+        pages = rebuiltPages
+        autoRotatesPages = refreshed.autoRotatesPages
+
+        for widget in refreshed.pages.flatMap(\.widgets) where widget.resolved != nil {
+            lastRefreshedAt[widget.id] = now
+        }
+
+        // Stop tracking refresh times for widgets that no longer exist, so a long-running display
+        // doesn't accumulate an entry per widget ever deleted from the dashboard.
+        let liveWidgetIDs = Set(rebuiltPages.flatMap(\.widgets).map(\.id))
+        lastRefreshedAt = lastRefreshedAt.filter { liveWidgetIDs.contains($0.key) }
+
+        // Pages may have been added or removed out from under the rotation.
+        if !rebuiltPages.indices.contains(currentPageIndex) {
+            currentPageIndex = 0
+        }
+        let shouldRotate = autoRotatesPages && rebuiltPages.count > 1
+        if shouldRotate != (pageRotationTask != nil) {
+            if shouldRotate {
+                startPageRotationLoopIfNeeded()
+            } else {
+                stopPageRotationLoop()
+            }
+        }
+    }
+
+    /// Merges a freshly read layout with the widget data already on screen.
+    ///
+    /// Structure comes entirely from `refreshed` — the page list, their order, and which widgets
+    /// sit on each — so adds and deletes on either level follow the server rather than persisting
+    /// from whatever the viewer loaded at startup. `existingPages` contributes only the resolved
+    /// rendering for widgets that weren't re-fetched this time.
+    static func mergedPages(
+        from refreshed: RefreshedDashboard,
+        reusingDataFrom existingPages: [RenderableDashboardPage]
+    ) -> [RenderableDashboardPage] {
+        let existingByID = Dictionary(
+            existingPages.flatMap(\.widgets).map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+
+        return refreshed.pages.map { page in
+            RenderableDashboardPage(
+                id: page.id,
+                name: page.name,
+                widgets: page.widgets.compactMap { widget -> RenderableDashboardWidget? in
+                    if let resolved = widget.resolved {
+                        return resolved
+                    }
+
+                    // Not re-fetched, so reuse the rendering already on screen — but under the
+                    // layout the server just reported, so a move or resize takes effect without
+                    // waiting for this widget's own refresh interval to come round.
+                    //
+                    // A widget with neither fresh data nor existing data can't be drawn at all.
+                    // Dropping it is unreachable in practice: anything the viewer hasn't seen is
+                    // always resolved rather than left for this branch.
+                    guard let existing = existingByID[widget.id] else { return nil }
+                    return RenderableDashboardWidget(
+                        id: existing.id,
+                        title: widget.customTitle ?? existing.title,
+                        frame: widget.frame,
+                        refreshIntervalSeconds: widget.refreshIntervalSeconds,
+                        hasHiddenHeader: widget.hasHiddenHeader,
+                        kind: existing.kind
+                    )
+                },
+                displaySeconds: page.displaySeconds
+            )
+        }
+    }
+
+    /// Re-establishes the Zabbix session after a refresh tick failed, whatever the reason.
+    ///
+    /// The reconnect is attempted for *every* failure rather than only for ones that don't look
+    /// like a rejection, because the two are indistinguishable from the failing request alone: a
+    /// server restart invalidates the auth token, so a perfectly healthy dashboard starts failing
+    /// with a `ZabbixAPIError` that one re-login clears. Only the login's own verdict is trusted —
+    /// if Zabbix rejects the credentials themselves, that needs a human and backs off hard; if the
+    /// login merely fails to land (server still rebooting, network down), the next tick tries again
+    /// seconds later.
+    ///
+    /// Refresh ticks keep running throughout the backoff, so a session that turns out to still be
+    /// valid recovers on its own and clears the backoff without waiting it out.
+    private func reconnectAfterFailedRefresh() async {
+        if let last = lastCredentialFailureAt,
+           Date().timeIntervalSince(last) < TimeInterval(Self.credentialFailureRetryDelaySeconds) {
+            return
+        }
+
+        do {
+            _ = try await zabbixSessionService.connect()
+            lastCredentialFailureAt = nil
+        } catch is ZabbixAPIError {
+            // Zabbix answered and turned the login away — bad password, disabled account, revoked
+            // access. Retrying every few seconds won't fix it, so slow down until someone does.
+            lastCredentialFailureAt = Date()
+        } catch {
+            // Never reached Zabbix (server rebooting, network down, DNS not up yet). Transient by
+            // definition — leave the backoff clear so the next tick retries immediately.
         }
     }
 

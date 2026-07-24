@@ -1205,6 +1205,7 @@ struct PointyTopHexagon: Shape {
 
 struct HoneycombWidgetContentView: View {
     let cells: [HoneycombCell]
+    var labelSizing: HoneycombLabelSizing = .auto
 
     /// A pointy-top hexagon's height as a multiple of its width (`2/sqrt(3)`).
     private static let hexHeightRatio: CGFloat = 1.1547005
@@ -1270,6 +1271,7 @@ struct HoneycombWidgetContentView: View {
     static func honeycombLabelFonts(
         cells: [HoneycombCell],
         hexWidth: CGFloat,
+        sizing: HoneycombLabelSizing = .auto,
         measure: (String, Bool) -> CGFloat = { Self.measuredLabelWidth($0, bold: $1) }
     ) -> [(primary: CGFloat, secondary: CGFloat)] {
         let gap = hexGap(forHexWidth: hexWidth)
@@ -1281,6 +1283,13 @@ struct HoneycombWidgetContentView: View {
         // The label block occupies cellHeight/2.25 of the cell; dividing by the 1.15 line height
         // converts that to a font-size budget, like the frontend does.
         let areaHeight = hexWidth * Self.hexHeightRatio / 2.25 / 1.15
+
+        // A line set to a custom size skips the fit-to-text sizing entirely: Zabbix reads the
+        // percentage against this same label-area budget, so every cell shares one size.
+        func customFonts(_ texts: [String], percent: Double) -> [CGFloat] {
+            let size = max(Self.labelMinFontSize, areaHeight * percent / 100)
+            return texts.map { $0.isEmpty ? 0 : size }
+        }
 
         func fonts(_ texts: [String], bold: Bool) -> [CGFloat] {
             var sizes = texts.map { text -> CGFloat in
@@ -1304,8 +1313,12 @@ struct HoneycombWidgetContentView: View {
             return sizes
         }
 
-        let primary = fonts(cells.map(\.primaryLabel), bold: false)
-        let secondary = fonts(cells.map(\.secondaryLabel), bold: true)
+        let primaryTexts = cells.map(\.primaryLabel)
+        let secondaryTexts = cells.map(\.secondaryLabel)
+        let primary = sizing.primaryPercent.map { customFonts(primaryTexts, percent: $0) }
+            ?? fonts(primaryTexts, bold: false)
+        let secondary = sizing.secondaryPercent.map { customFonts(secondaryTexts, percent: $0) }
+            ?? fonts(secondaryTexts, bold: true)
 
         return zip(primary, secondary).map { p, s in
             if p + s > areaHeight, p + s > 0 {
@@ -1342,7 +1355,7 @@ struct HoneycombWidgetContentView: View {
                 let usedHeight = hexHeight * (0.75 * CGFloat(layout.rows) + 0.25)
                 let originX = (geometry.size.width - usedWidth) / 2
                 let originY = (geometry.size.height - usedHeight) / 2
-                let fonts = Self.honeycombLabelFonts(cells: cells, hexWidth: hexWidth)
+                let fonts = Self.honeycombLabelFonts(cells: cells, hexWidth: hexWidth, sizing: labelSizing)
 
                 ZStack(alignment: .topLeading) {
                     ForEach(Array(cells.enumerated()), id: \.element.id) { index, cell in

@@ -197,7 +197,7 @@ private struct DashboardWidgetCardView: View {
     /// Zabbix's own per-widget background color, when the widget type supports one (currently
     /// just "item value" widgets, via their "bg_color" field).
     private var backgroundColorHex: String? {
-        if case let .itemValue(_, _, _, _, backgroundColorHex, _, _, _) = widget.kind {
+        if case let .itemValue(_, _, _, _, backgroundColorHex, _, _, _, _) = widget.kind {
             return backgroundColorHex
         }
         return nil
@@ -225,8 +225,8 @@ private struct DashboardWidgetCardView: View {
         switch widget.kind {
         case let .clock(configuration):
             ClockWidgetContentView(configuration: configuration)
-        case let .itemValue(name, value, units, decimalPlaces, _, trend, lastUpdated, mappedText):
-            ItemValueWidgetContentView(name: name, value: value, units: units, decimalPlaces: decimalPlaces, trend: trend, lastUpdated: lastUpdated, mappedText: mappedText)
+        case let .itemValue(name, value, units, decimalPlaces, _, trend, lastUpdated, mappedText, appearance):
+            ItemValueWidgetContentView(name: name, value: value, units: units, decimalPlaces: decimalPlaces, trend: trend, lastUpdated: lastUpdated, mappedText: mappedText, appearance: appearance)
         case let .problems(problems, showTimeline):
             ProblemsWidgetContentView(problems: problems, showTimeline: showTimeline)
         case let .problemsBySeverity(counts):
@@ -237,8 +237,8 @@ private struct DashboardWidgetCardView: View {
             SystemInformationWidgetContentView(rows: rows, haNodes: haNodes)
         case let .gauge(reading):
             GaugeWidgetContentView(reading: reading)
-        case let .honeycomb(cells):
-            HoneycombWidgetContentView(cells: cells)
+        case let .honeycomb(cells, labelSizing):
+            HoneycombWidgetContentView(cells: cells, labelSizing: labelSizing)
         case let .topHosts(columns, rows):
             TopHostsWidgetContentView(columns: columns, rows: rows)
         case let .topTriggers(problems):
@@ -398,7 +398,7 @@ private struct ClockHandShape: Shape {
     }
 }
 
-private struct ItemValueWidgetContentView: View {
+struct ItemValueWidgetContentView: View {
     let name: String
     let value: String
     let units: String
@@ -406,6 +406,7 @@ private struct ItemValueWidgetContentView: View {
     let trend: ItemValueTrend?
     let lastUpdated: Date?
     let mappedText: String?
+    var appearance: ItemValueAppearance = .zabbixDefaults
 
     /// Matches Zabbix's own item-value widget: the widget's `decimal_places` precision (a plain "1"
     /// reading is shown as "1.00" at the default 2), not the variable-precision formatting used for
@@ -448,47 +449,115 @@ private struct ItemValueWidgetContentView: View {
     var body: some View {
         // Zabbix's item-value layout is a centered stack — time on top, the bold value (with its
         // trend arrow beside it) in the middle, the description at the bottom — not left-aligned.
-        VStack(spacing: 4) {
-            if let formattedTimestamp {
-                Text(formattedTimestamp)
-                    .font(.system(size: 15, weight: .regular, design: .rounded))
-                    .foregroundStyle(DashboardTheme.primaryText)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-            }
+        //
+        // Every part is sized as a PERCENTAGE OF THE WIDGET'S HEIGHT, which is why this reads the
+        // geometry instead of using fixed point sizes: the frontend renders the same tile's value at
+        // 98.7px and description at 32.9px in a 219px-tall body (its 45%/15% defaults), so any fixed
+        // size can only match at one tile size. The trend arrow tracks the value at Zabbix's ratio.
+        GeometryReader { geometry in
+            let height = geometry.size.height
+            let valueSize = height * appearance.valueSizePercent / 100
+            let descriptionSize = height * appearance.descriptionSizePercent / 100
+            let timeSize = height * appearance.timeSizePercent / 100
 
-            Spacer(minLength: 0)
+            VStack(spacing: 4) {
+                if appearance.showsTime, let formattedTimestamp {
+                    Text(formattedTimestamp)
+                        .font(.system(size: timeSize, weight: .regular, design: .rounded))
+                        .foregroundStyle(color(appearance.timeColorHex))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                }
 
-            HStack(spacing: 8) {
-                Text(displayValue)
-                    .font(.system(size: 44, weight: .bold, design: .rounded))
-                    .foregroundStyle(DashboardTheme.primaryText)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.5)
+                Spacer(minLength: 0)
 
-                if let trend, let trendColor {
-                    switch trend {
-                    case .up:
-                        Image(systemName: "arrow.up")
-                            .font(.system(size: 30, weight: .bold))
-                            .foregroundStyle(trendColor)
-                    case .down:
-                        Image(systemName: "arrow.down")
-                            .font(.system(size: 30, weight: .bold))
-                            .foregroundStyle(trendColor)
+                if appearance.showsValue {
+                    HStack(spacing: valueSize * 0.18) {
+                        Text(displayValue)
+                            .font(.system(size: valueSize, weight: appearance.valueIsBold ? .bold : .regular, design: .rounded))
+                            .foregroundStyle(color(appearance.valueColorHex))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.5)
+
+                        if let trend, let trendColor {
+                            switch trend {
+                            case .up:
+                                Image(systemName: "arrow.up")
+                                    .font(.system(size: valueSize * 0.68, weight: .bold))
+                                    .foregroundStyle(trendColor)
+                            case .down:
+                                Image(systemName: "arrow.down")
+                                    .font(.system(size: valueSize * 0.68, weight: .bold))
+                                    .foregroundStyle(trendColor)
+                            }
+                        }
+                    }
+                }
+
+                Spacer(minLength: 0)
+
+                if appearance.showsDescription {
+                    // Each configured line stays exactly one rendered line, and the whole block is
+                    // scaled down together until the LONGEST line fits — which is what the frontend
+                    // does: "Monochrome \r\nPages" renders as the full "Monochrome" over "Pages",
+                    // never truncated (verified live: every tile reports scrollWidth == clientWidth)
+                    // and never re-wrapped. Sizing each line independently would leave "Monochrome"
+                    // smaller than "Pages"; letting SwiftUI wrap would make it three lines.
+                    let fittedSize = Self.fittedDescriptionSize(
+                        lines: descriptionLines,
+                        baseSize: descriptionSize,
+                        maxWidth: geometry.size.width - 8,
+                        bold: appearance.descriptionIsBold
+                    )
+
+                    VStack(spacing: fittedSize * 0.1) {
+                        ForEach(Array(descriptionLines.enumerated()), id: \.offset) { _, line in
+                            Text(line)
+                                .font(.system(size: fittedSize, weight: appearance.descriptionIsBold ? .bold : .regular, design: .rounded))
+                                .foregroundStyle(color(appearance.descriptionColorHex))
+                                .lineLimit(1)
+                                .fixedSize()
+                        }
                     }
                 }
             }
-
-            Spacer(minLength: 0)
-
-            Text(name)
-                .font(.system(size: 20, weight: .regular, design: .rounded))
-                .foregroundStyle(DashboardTheme.primaryText)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+    }
+
+    /// The description split on its configured line breaks, so each renders as its own single line.
+    private var descriptionLines: [String] {
+        name.components(separatedBy: "\n")
+    }
+
+    /// The largest font size at or below `baseSize` that fits every line within `maxWidth`.
+    ///
+    /// Zabbix lays its item widget out at nominal sizes and then scales the whole content block to
+    /// fit, so a long description shrinks rather than truncating or wrapping. One size for all lines
+    /// keeps "Monochrome" and "Pages" matched, the way the frontend renders them.
+    static func fittedDescriptionSize(
+        lines: [String],
+        baseSize: CGFloat,
+        maxWidth: CGFloat,
+        bold: Bool,
+        measure: (String, CGFloat, Bool) -> CGFloat = { Self.measuredTextWidth($0, size: $1, bold: $2) }
+    ) -> CGFloat {
+        guard baseSize > 0, maxWidth > 0 else { return baseSize }
+        let widest = lines.map { measure($0, baseSize, bold) }.max() ?? 0
+        guard widest > maxWidth, widest > 0 else { return baseSize }
+        return baseSize * maxWidth / widest
+    }
+
+    /// Width of `text` at `size` in the rounded system font the tiles render with.
+    static func measuredTextWidth(_ text: String, size: CGFloat, bold: Bool) -> CGFloat {
+        let base = UIFont.systemFont(ofSize: size, weight: bold ? .bold : .regular)
+        let font = base.fontDescriptor.withDesign(.rounded).map { UIFont(descriptor: $0, size: size) } ?? base
+        return (text as NSString).size(withAttributes: [.font: font]).width
+    }
+
+    /// A configured hex color, falling back to the theme's own text color like Zabbix does.
+    private func color(_ hex: String?) -> Color {
+        hex.flatMap(Color.init(hex:)) ?? DashboardTheme.primaryText
     }
 }
 

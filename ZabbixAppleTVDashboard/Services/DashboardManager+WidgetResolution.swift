@@ -218,15 +218,15 @@ extension DashboardManager {
             let backgroundColorHex = Self.thresholdColorHex(for: numericValue, fields: widget.fields)
                 ?? Self.fieldValue(widget.fields, name: "bg_color")
 
-            // The change indicator is a "show" flag (8), on by default like the widget's other
-            // elements — Zabbix draws it with theme-default green/red when no custom up_color/
-            // down_color is configured (verified live: the QA widget has no color fields yet shows
-            // a green ▲ / red ▼ beside the value). Requiring the color fields hid it entirely.
+            // The change indicator is `show` value 4, on by default like the widget's other parts —
+            // Zabbix draws it with theme-default green/red when no custom up_color/down_color is
+            // configured (verified live: the QA widget has no color fields yet shows a green ▲ /
+            // red ▼ beside the value). Requiring the color fields hid it entirely.
             let showFlags = Set(Self.indexedValues(widget.fields, name: "show").compactMap(Int.init))
-            let effectiveShow: Set<Int> = showFlags.isEmpty ? [1, 2, 4, 8] : showFlags
+            let effectiveShow: Set<Int> = showFlags.isEmpty ? Self.ItemValueShow.all : showFlags
 
             var trend: ItemValueTrend?
-            if effectiveShow.contains(8), aggregateFunction == 0, let lastvalue = item.lastvalue.flatMap(Double.init), let prevvalue = item.prevvalue.flatMap(Double.init) {
+            if effectiveShow.contains(Self.ItemValueShow.changeIndicator), aggregateFunction == 0, let lastvalue = item.lastvalue.flatMap(Double.init), let prevvalue = item.prevvalue.flatMap(Double.init) {
                 let upColor = Self.fieldValue(widget.fields, name: "up_color").flatMap { $0.isEmpty ? nil : $0 } ?? "59DB8F"
                 let downColor = Self.fieldValue(widget.fields, name: "down_color").flatMap { $0.isEmpty ? nil : $0 } ?? "E45959"
                 if lastvalue > prevvalue {
@@ -253,6 +253,8 @@ extension DashboardManager {
             )
 
             // Zabbix's default item-value header is "HOST: item name".
+            let appearance = Self.itemValueAppearance(from: widget.fields, show: effectiveShow)
+
             pendingDefaultTitle = Self.hostPrefixedTitle(host: item.hosts?.first?.name, name: item.name)
             return .itemValue(
                 name: label,
@@ -262,7 +264,8 @@ extension DashboardManager {
                 backgroundColorHex: backgroundColorHex,
                 trend: trend,
                 lastUpdated: item.lastclock.flatMap(TimeInterval.init).map { Date(timeIntervalSince1970: $0) },
-                mappedText: mappedText
+                mappedText: mappedText,
+                appearance: appearance
             )
 
         case "problemsbysv":
@@ -591,14 +594,23 @@ extension DashboardManager {
         // "itempatterns.N.itemname" this used to read — so the pattern was never applied and an
         // unfiltered fetch returned every item on the server.
         let itemPatterns = Self.indexedValues(widget.fields, name: "items")
-        let tags = Self.tagFilters(from: widget.fields)
+        // The honeycomb has TWO tag filters: item tags in `item_tags.N.*`/`item_evaltype` and host
+        // tags in `tags.N.*`/`evaltype`. Only the item one can be pushed into item.get, and it is
+        // the one the widget's own "Item tags" control writes — reading just `tags` left a
+        // tag-filtered widget completely unfiltered, so every item on the host became a cell
+        // (53 printers turned into ~275 hexagons, including the fleet-summary items).
+        let itemTags = Self.tagFilters(from: widget.fields, prefix: "item_tags")
+        let tags = itemTags.isEmpty ? Self.tagFilters(from: widget.fields) : itemTags
+        let evalType = itemTags.isEmpty
+            ? Self.tagEvalType(from: widget.fields)
+            : Self.tagEvalType(from: widget.fields, field: "item_evaltype")
 
         let items = try await itemsMatchingPatterns(
             itemPatterns,
             groupIDs: groupIDs.isEmpty ? nil : groupIDs,
             hostIDs: hostIDs.isEmpty ? nil : hostIDs,
             tags: tags,
-            evalType: Self.tagEvalType(from: widget.fields),
+            evalType: evalType,
             serverBaseURL: serverBaseURL,
             authToken: authToken
         )
@@ -647,8 +659,19 @@ extension DashboardManager {
                     secondaryLabel: Self.expandMacros(secondaryTemplate, macros),
                     backgroundColorHex: cellColor
                 )
-            }
+            },
+            labelSizing: Self.honeycombLabelSizing(from: widget.fields)
         )
+    }
+
+    /// A honeycomb's label sizing: a custom percentage per line when `*_label_size_type` is 1,
+    /// otherwise nil so that line keeps Zabbix's auto fit-to-cell sizing.
+    static func honeycombLabelSizing(from fields: [ZabbixWidgetField]) -> HoneycombLabelSizing {
+        func percent(_ prefix: String) -> Double? {
+            guard fieldValue(fields, name: "\(prefix)_label_size_type") == "1" else { return nil }
+            return fieldValue(fields, name: "\(prefix)_label_size").flatMap(Double.init)
+        }
+        return HoneycombLabelSizing(primaryPercent: percent("primary"), secondaryPercent: percent("secondary"))
     }
 
     // MARK: - Top hosts
@@ -2964,14 +2987,22 @@ extension DashboardManager {
     /// "{ITEM.NAME}", so this reproduces the prior behavior.
     static func expandLabel(template: String?, item: ZabbixItemSummary, decimalPlaces: Int) -> String {
         guard let template, !template.isEmpty else { return item.name }
-        return expandMacros(template, itemLabelMacros(
+        // A multi-line description is stored with the CRLF the web form submitted ("Total \r\nJobs")
+        // and the frontend renders it as two lines. Normalizing to \n keeps the same break here
+        // instead of leaking a stray carriage return into the label.
+        return normalizingLineBreaks(expandMacros(template, itemLabelMacros(
             itemName: item.name,
             hostName: item.hosts?.first?.name ?? "",
             lastValue: item.lastvalue,
             units: item.units ?? "",
             valueMap: item.valuemap?.valueMap,
             decimalPlaces: decimalPlaces
-        ))
+        )))
+    }
+
+    /// CRLF/CR to LF, so a label's line breaks survive into SwiftUI's `Text` as real newlines.
+    static func normalizingLineBreaks(_ text: String) -> String {
+        text.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
     }
 
     /// Like `mappedItemValue`, but an unmapped *numeric* reading is formatted with its units and the
@@ -3005,6 +3036,49 @@ extension DashboardManager {
     /// Returns the value of a scalar widget field, e.g. "min" or "show_lines".
     static func fieldValue(_ fields: [ZabbixWidgetField], name: String) -> String? {
         fields.first { $0.name == name }?.value
+    }
+
+    /// The item-value widget's `show` values.
+    ///
+    /// These are SEQUENTIAL, not bit flags — verified against the live server, which rejects any
+    /// other value outright: `Invalid parameter "Show/1": value must be one of 1, 2, 3, 4`. A probe
+    /// dashboard rendering one widget per value confirmed the meanings below. (The earlier reading
+    /// of these as bits made 4 mean "time" and looked for the change indicator at a nonexistent 8.)
+    enum ItemValueShow {
+        static let description = 1
+        static let value = 2
+        static let time = 3
+        static let changeIndicator = 4
+
+        /// What a widget that sets no `show` fields renders: all four parts.
+        static let all: Set<Int> = [description, value, time, changeIndicator]
+    }
+
+    /// A field's value, treating an empty string as absent — Zabbix stores "use the default" as an
+    /// empty color field rather than by omitting it.
+    static func nonEmptyFieldValue(_ fields: [ZabbixWidgetField], name: String) -> String? {
+        fieldValue(fields, name: name).flatMap { $0.isEmpty ? nil : $0 }
+    }
+
+    /// The item-value widget's text styling, read from its own fields.
+    ///
+    /// Zabbix sizes each part as a percentage of the widget's height (`desc_size` 15, `value_size`
+    /// 45, `time_size` 15 by default) and hides whatever is missing from `show` — so a tile
+    /// configured to show only a description and a value must not sprout a timestamp row.
+    static func itemValueAppearance(from fields: [ZabbixWidgetField], show: Set<Int>) -> ItemValueAppearance {
+        ItemValueAppearance(
+            showsDescription: show.contains(ItemValueShow.description),
+            showsValue: show.contains(ItemValueShow.value),
+            showsTime: show.contains(ItemValueShow.time),
+            descriptionSizePercent: fieldValue(fields, name: "desc_size").flatMap(Double.init) ?? 15,
+            valueSizePercent: fieldValue(fields, name: "value_size").flatMap(Double.init) ?? 45,
+            timeSizePercent: fieldValue(fields, name: "time_size").flatMap(Double.init) ?? 15,
+            descriptionIsBold: fieldValue(fields, name: "desc_bold") == "1",
+            valueIsBold: fieldValue(fields, name: "value_bold") != "0",
+            descriptionColorHex: nonEmptyFieldValue(fields, name: "desc_color"),
+            valueColorHex: nonEmptyFieldValue(fields, name: "value_color"),
+            timeColorHex: nonEmptyFieldValue(fields, name: "time_color")
+        )
     }
 
     /// The color of the highest `thresholds.N` band the reading meets or exceeds, or nil when the

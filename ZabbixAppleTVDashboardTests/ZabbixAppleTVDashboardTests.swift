@@ -228,6 +228,167 @@ struct ZabbixAppleTVDashboardTests {
         #expect(extent.rows == 4)
     }
 
+    // MARK: - Live dashboard layout changes
+
+    /// Builds a resolved widget with a clock face, standing in for "some already-rendered data".
+    private func renderedWidget(
+        id: String,
+        title: String = "Widget",
+        frame: DashboardWidgetFrame = DashboardWidgetFrame(x: 0, y: 0, width: 4, height: 2),
+        refreshIntervalSeconds: Int = 60
+    ) -> RenderableDashboardWidget {
+        RenderableDashboardWidget(
+            id: id,
+            title: title,
+            frame: frame,
+            refreshIntervalSeconds: refreshIntervalSeconds,
+            hasHiddenHeader: false,
+            kind: .clock(ClockConfiguration(style: .analog, timeZoneIdentifier: nil, hostTimeOffset: nil))
+        )
+    }
+
+    /// Describes a widget as the server just reported it, optionally carrying fresh data.
+    private func reportedWidget(
+        id: String,
+        customTitle: String? = nil,
+        frame: DashboardWidgetFrame = DashboardWidgetFrame(x: 0, y: 0, width: 4, height: 2),
+        refreshIntervalSeconds: Int = 60,
+        resolved: RenderableDashboardWidget? = nil
+    ) -> RefreshedDashboardWidget {
+        RefreshedDashboardWidget(
+            id: id,
+            customTitle: customTitle,
+            frame: frame,
+            refreshIntervalSeconds: refreshIntervalSeconds,
+            hasHiddenHeader: false,
+            resolved: resolved
+        )
+    }
+
+    @Test @MainActor func refreshPicksUpWidgetsAddedInZabbix() throws {
+        // A widget added to the dashboard after the viewer loaded arrives already resolved, since
+        // the viewer has no data of its own to carry over for it.
+        let existing = [
+            RenderableDashboardPage(id: "p1", name: nil, widgets: [renderedWidget(id: "a")], displaySeconds: 30)
+        ]
+        let refreshed = RefreshedDashboard(
+            pages: [
+                RefreshedDashboardPage(
+                    id: "p1",
+                    name: nil,
+                    displaySeconds: 30,
+                    widgets: [
+                        reportedWidget(id: "a"),
+                        reportedWidget(id: "b", resolved: renderedWidget(id: "b", title: "New Widget"))
+                    ]
+                )
+            ],
+            autoRotatesPages: false
+        )
+
+        let merged = DashboardViewerViewModel.mergedPages(from: refreshed, reusingDataFrom: existing)
+
+        #expect(merged.flatMap(\.widgets).map(\.id) == ["a", "b"])
+        #expect(merged[0].widgets[1].title == "New Widget")
+    }
+
+    @Test @MainActor func refreshDropsWidgetsDeletedInZabbix() throws {
+        let existing = [
+            RenderableDashboardPage(
+                id: "p1",
+                name: nil,
+                widgets: [renderedWidget(id: "a"), renderedWidget(id: "b")],
+                displaySeconds: 30
+            )
+        ]
+        let refreshed = RefreshedDashboard(
+            pages: [RefreshedDashboardPage(id: "p1", name: nil, displaySeconds: 30, widgets: [reportedWidget(id: "b")])],
+            autoRotatesPages: false
+        )
+
+        let merged = DashboardViewerViewModel.mergedPages(from: refreshed, reusingDataFrom: existing)
+
+        #expect(merged.flatMap(\.widgets).map(\.id) == ["b"])
+    }
+
+    @Test @MainActor func refreshAppliesNewGeometryToWidgetsThatKeepTheirData() throws {
+        // The regression that made resizes appear to work while additions silently vanished: a
+        // widget whose data isn't due still has to follow the server's current layout.
+        let existing = [
+            RenderableDashboardPage(id: "p1", name: nil, widgets: [renderedWidget(id: "a", title: "Uptime")], displaySeconds: 30)
+        ]
+        let refreshed = RefreshedDashboard(
+            pages: [
+                RefreshedDashboardPage(
+                    id: "p1",
+                    name: nil,
+                    displaySeconds: 30,
+                    widgets: [
+                        reportedWidget(
+                            id: "a",
+                            frame: DashboardWidgetFrame(x: 6, y: 2, width: 12, height: 5),
+                            refreshIntervalSeconds: 10
+                        )
+                    ]
+                )
+            ],
+            autoRotatesPages: false
+        )
+
+        let merged = DashboardViewerViewModel.mergedPages(from: refreshed, reusingDataFrom: existing)
+        let widget = try #require(merged.first?.widgets.first)
+
+        #expect(widget.frame == DashboardWidgetFrame(x: 6, y: 2, width: 12, height: 5))
+        #expect(widget.refreshIntervalSeconds == 10)
+        // Data carried over untouched — only the layout moved.
+        #expect(widget.title == "Uptime")
+        if case .clock = widget.kind {} else {
+            Issue.record("expected the previously resolved clock rendering to be reused")
+        }
+    }
+
+    @Test @MainActor func refreshPicksUpPagesAddedInZabbix() throws {
+        let existing = [
+            RenderableDashboardPage(id: "p1", name: nil, widgets: [renderedWidget(id: "a")], displaySeconds: 30)
+        ]
+        let refreshed = RefreshedDashboard(
+            pages: [
+                RefreshedDashboardPage(id: "p1", name: nil, displaySeconds: 30, widgets: [reportedWidget(id: "a")]),
+                RefreshedDashboardPage(
+                    id: "p2",
+                    name: "Second",
+                    displaySeconds: 45,
+                    widgets: [reportedWidget(id: "b", resolved: renderedWidget(id: "b"))]
+                )
+            ],
+            autoRotatesPages: true
+        )
+
+        let merged = DashboardViewerViewModel.mergedPages(from: refreshed, reusingDataFrom: existing)
+
+        #expect(merged.count == 2)
+        #expect(merged[1].id == "p2")
+        #expect(merged[1].displaySeconds == 45)
+    }
+
+    // MARK: - Reconnect backoff
+
+    @Test @MainActor func rejectedLoginBacksOffFarLongerThanAnUnreachableServer() throws {
+        let unreachable = DashboardViewerViewModel.LoadFailure(isLoginRejection: false)
+        let rejected = DashboardViewerViewModel.LoadFailure(isLoginRejection: true)
+
+        // An unreachable server escalates gently and caps out at a minute, so a Zabbix host coming
+        // back from a reboot is picked up promptly.
+        #expect(DashboardViewerViewModel.retryDelaySeconds(forAttempt: 0, after: unreachable) == 5)
+        #expect(DashboardViewerViewModel.retryDelaySeconds(forAttempt: 9, after: unreachable) == 60)
+
+        // Credentials Zabbix itself turned away need a human, so they get the long backoff.
+        #expect(
+            DashboardViewerViewModel.retryDelaySeconds(forAttempt: 0, after: rejected)
+                == DashboardViewerViewModel.credentialFailureRetryDelaySeconds
+        )
+    }
+
     @Test func zabbixAPIResponseDecodesProblemsWithoutSelectHosts() throws {
         // problem.get does not support selectHosts (verified against a live Zabbix 7.0 server);
         // host names are resolved separately via trigger.get using objectid.
@@ -339,6 +500,168 @@ struct ZabbixAppleTVDashboardTests {
         #expect(DashboardManager.indexedValues(fields, name: "groupids") == ["10", "20"])
         #expect(DashboardManager.firstIndexedValue(fields, name: "itemid") == "155071")
         #expect(DashboardManager.firstIndexedValue(fields, name: "hostid") == nil)
+    }
+
+    @Test func itemValueAppearanceUsesZabbixDefaultPercentages() throws {
+        // A widget with no styling fields renders at Zabbix's own defaults: value 45% of the widget
+        // height and bold, description 15% and not bold. Measured live on a "Total jobs" tile —
+        // 98.7px value / 32.9px description in a 219px-tall body — which is why these are
+        // percentages rather than the fixed point sizes the app used to hard-code.
+        let appearance = DashboardManager.itemValueAppearance(from: [], show: DashboardManager.ItemValueShow.all)
+
+        #expect(appearance.valueSizePercent == 45)
+        #expect(appearance.descriptionSizePercent == 15)
+        #expect(appearance.timeSizePercent == 15)
+        #expect(appearance.valueIsBold)
+        #expect(!appearance.descriptionIsBold)
+        #expect(appearance.valueColorHex == nil)
+    }
+
+    @Test func itemValueAppearanceHidesPartsMissingFromShowFlags() throws {
+        // The Print Insights KPI tiles set show = [description, value], so the frontend draws no
+        // timestamp row. The app rendered one anyway until `show` was honored here.
+        let appearance = DashboardManager.itemValueAppearance(from: [], show: [1, 2])
+
+        #expect(appearance.showsDescription)
+        #expect(appearance.showsValue)
+        #expect(!appearance.showsTime)
+    }
+
+    @Test func itemValueShowValuesAreSequentialNotBitFlags() throws {
+        // Zabbix rejects anything else outright — a probe widget with show=8 renders
+        // `Invalid parameter "Show/1": value must be one of 1, 2, 3, 4` — and a probe dashboard
+        // with one widget per value showed 1=description, 2=value, 3=time, 4=change indicator.
+        // Reading them as bits made 4 mean "time" and hunted the change indicator at a
+        // nonexistent 8, so tiles sprouted a timestamp and lost their trend arrow.
+        #expect(DashboardManager.ItemValueShow.time == 3)
+        #expect(DashboardManager.ItemValueShow.changeIndicator == 4)
+        #expect(DashboardManager.ItemValueShow.all == [1, 2, 3, 4])
+
+        // show=[1,2,3] means time is shown but the change indicator is not.
+        let timeOnly = DashboardManager.itemValueAppearance(from: [], show: [1, 2, 3])
+        #expect(timeOnly.showsTime)
+    }
+
+    @Test func honeycombItemTagFilterIsReadFromItemTagsFields() throws {
+        // A honeycomb's "Item tags" control writes `item_tags.N.*` + `item_evaltype`; `tags.N.*` is
+        // its separate HOST tag filter. Reading only `tags` left this widget unfiltered, so all ~275
+        // items on the PrintOps host became cells instead of the 53 tagged printer-online ones.
+        let fields = [
+            ZabbixWidgetField(name: "items.0", value: "*"),
+            ZabbixWidgetField(name: "item_tags.0.tag", value: "component"),
+            ZabbixWidgetField(name: "item_tags.0.operator", value: "1"),
+            ZabbixWidgetField(name: "item_tags.0.value", value: "printer-online")
+        ]
+
+        let itemTags = DashboardManager.tagFilters(from: fields, prefix: "item_tags")
+        #expect(itemTags.count == 1)
+        #expect(itemTags.first?.tag == "component")
+        #expect(itemTags.first?.value == "printer-online")
+
+        // The host-tag prefix must not pick these up.
+        #expect(DashboardManager.tagFilters(from: fields).isEmpty)
+    }
+
+    @Test func honeycombLabelSizingReadsCustomPercentagesOnly() throws {
+        // `*_label_size_type` 1 means "custom percentage"; 0 (or absent) keeps Zabbix's auto fit.
+        let custom = DashboardManager.honeycombLabelSizing(from: [
+            ZabbixWidgetField(name: "primary_label_size_type", value: "1"),
+            ZabbixWidgetField(name: "primary_label_size", value: "22"),
+            ZabbixWidgetField(name: "secondary_label_size_type", value: "1"),
+            ZabbixWidgetField(name: "secondary_label_size", value: "15")
+        ])
+        #expect(custom.primaryPercent == 22)
+        #expect(custom.secondaryPercent == 15)
+
+        // A size stored alongside type 0 is inert — the frontend auto-sizes regardless.
+        let auto = DashboardManager.honeycombLabelSizing(from: [
+            ZabbixWidgetField(name: "primary_label_size_type", value: "0"),
+            ZabbixWidgetField(name: "primary_label_size", value: "22")
+        ])
+        #expect(auto.primaryPercent == nil)
+        #expect(auto.secondaryPercent == nil)
+    }
+
+    @Test func honeycombCustomLabelSizesArePercentagesOfTheLabelAreaBudget() throws {
+        // Verified live: a 22/15 widget renders 98.18/66.94 in Zabbix's 1000-unit cell space, i.e.
+        // 22% and 15% of the label-area budget cellHeight / 2.25 / 1.15 = 446.26. Every cell shares
+        // one size in custom mode, regardless of how long its text is.
+        let cells = [
+            HoneycombCell(id: "1", primaryLabel: "CO", secondaryLabel: "Danica", backgroundColorHex: nil),
+            HoneycombCell(id: "2", primaryLabel: "LCACTC", secondaryLabel: "Building Trades", backgroundColorHex: nil)
+        ]
+        let hexWidth: CGFloat = 1000
+        let budget = hexWidth * 1.1547005 / 2.25 / 1.15
+
+        let fonts = HoneycombWidgetContentView.honeycombLabelFonts(
+            cells: cells,
+            hexWidth: hexWidth,
+            sizing: HoneycombLabelSizing(primaryPercent: 22, secondaryPercent: 15)
+        )
+
+        #expect(abs(fonts[0].primary - budget * 0.22) < 0.01)
+        #expect(abs(fonts[0].secondary - budget * 0.15) < 0.01)
+        // Same size on the much longer labels — custom mode does not fit per cell.
+        #expect(abs(fonts[1].primary - fonts[0].primary) < 0.01)
+        #expect(abs(fonts[1].secondary - fonts[0].secondary) < 0.01)
+    }
+
+    @Test func longDescriptionLineShrinksToFitInsteadOfTruncating() throws {
+        // Verified live: no tile's description is ever truncated (scrollWidth == clientWidth on all
+        // eight, "Monochrome" included) — Zabbix scales the whole block down instead. So a line
+        // wider than the tile shrinks the WHOLE description, keeping both lines the same size, and
+        // a description that already fits keeps the configured size untouched.
+        let measure: (String, CGFloat, Bool) -> CGFloat = { text, size, _ in
+            CGFloat(text.count) * size * 0.5
+        }
+
+        // "Monochrome" is 10 chars → 10 * 30 * 0.5 = 150pt wide at the base size, over a 100pt tile.
+        let shrunk = ItemValueWidgetContentView.fittedDescriptionSize(
+            lines: ["Monochrome", "Pages"], baseSize: 30, maxWidth: 100, bold: false, measure: measure
+        )
+        #expect(abs(shrunk - 20) < 0.001)
+
+        // The short line alone would have fit; it must still be sized by the longest line.
+        let onlyShort = ItemValueWidgetContentView.fittedDescriptionSize(
+            lines: ["Pages"], baseSize: 30, maxWidth: 100, bold: false, measure: measure
+        )
+        #expect(onlyShort == 30)
+
+        // Nothing overflows → no shrinking at all.
+        let fits = ItemValueWidgetContentView.fittedDescriptionSize(
+            lines: ["Total", "Jobs"], baseSize: 30, maxWidth: 500, bold: false, measure: measure
+        )
+        #expect(fits == 30)
+    }
+
+    @Test func multiLineDescriptionKeepsItsLineBreak() throws {
+        // The web form stores a two-line description with CRLF ("Total \r\nJobs") and renders it on
+        // two lines; a stray \r would otherwise leak into the label.
+        #expect(DashboardManager.normalizingLineBreaks("Total \r\nJobs") == "Total \nJobs")
+        #expect(DashboardManager.normalizingLineBreaks("Monochrome \rPages") == "Monochrome \nPages")
+        #expect(DashboardManager.normalizingLineBreaks("Total jobs") == "Total jobs")
+    }
+
+    @Test func itemValueAppearanceReadsConfiguredSizesBoldAndColors() throws {
+        let fields = [
+            ZabbixWidgetField(name: "desc_size", value: "20"),
+            ZabbixWidgetField(name: "value_size", value: "60"),
+            ZabbixWidgetField(name: "desc_bold", value: "1"),
+            ZabbixWidgetField(name: "value_bold", value: "0"),
+            ZabbixWidgetField(name: "desc_color", value: "FF0000"),
+            // An empty color means "theme default", not a color — Zabbix stores it rather than
+            // omitting the field.
+            ZabbixWidgetField(name: "value_color", value: "")
+        ]
+
+        let appearance = DashboardManager.itemValueAppearance(from: fields, show: DashboardManager.ItemValueShow.all)
+
+        #expect(appearance.descriptionSizePercent == 20)
+        #expect(appearance.valueSizePercent == 60)
+        #expect(appearance.descriptionIsBold)
+        #expect(!appearance.valueIsBold)
+        #expect(appearance.descriptionColorHex == "FF0000")
+        #expect(appearance.valueColorHex == nil)
     }
 
     @Test func classicGraphReferenceIsStoredIndexedNotScalar() throws {

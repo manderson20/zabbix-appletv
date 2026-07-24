@@ -16,6 +16,10 @@ struct DashboardViewerScreen: View {
     /// Screen view model.
     @ObservedObject var viewModel: DashboardViewerViewModel
 
+    /// Watched so the idle-timer request can be re-asserted whenever the app returns to active —
+    /// see the `onChange` below.
+    @Environment(\.scenePhase) private var scenePhase
+
     var body: some View {
         ZStack(alignment: .bottomLeading) {
             DashboardTheme.background.ignoresSafeArea()
@@ -102,6 +106,16 @@ struct DashboardViewerScreen: View {
             // Keeps the Apple TV from going to its screensaver/sleep while the dashboard is on
             // screen — this app has no expected remote interaction during normal operation, so
             // tvOS's default idle behavior would otherwise defeat an always-on wall display.
+            UIApplication.shared.isIdleTimerDisabled = true
+        }
+        .onChange(of: scenePhase) { _, phase in
+            // The idle-timer request only holds while this app is frontmost and active, and it does
+            // not reliably survive a background/foreground cycle. `onAppear` fires once — the view
+            // is never torn down — so anything that suspends the app overnight (the device
+            // sleeping, the TV cutting power over HDMI-CEC, a nightly system task) left the screen
+            // saver re-enabled for good, which is why the wall display was greeting people with
+            // Aerials every morning. Re-assert it every time we come back to active.
+            guard phase == .active else { return }
             UIApplication.shared.isIdleTimerDisabled = true
         }
         .onDisappear {
