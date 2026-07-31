@@ -877,6 +877,28 @@ struct ZabbixAppleTVDashboardTests {
         #expect(DashboardManager.parseGeoMapDefaultView(nil) == nil)
     }
 
+    @Test func geoMapDefaultViewRejectsCoordinatesThatWouldTrapMapKit() throws {
+        // Double("...") happily produces non-finite and out-of-range values from the free-text
+        // widget config; those must be treated as "no configured view" rather than reaching MapKit.
+        #expect(DashboardManager.parseGeoMapDefaultView("1e999,0,5") == nil)          // +inf latitude
+        #expect(DashboardManager.parseGeoMapDefaultView("nan,0,5") == nil)            // NaN latitude
+        #expect(DashboardManager.parseGeoMapDefaultView("0,inf,5") == nil)            // +inf longitude
+        #expect(DashboardManager.parseGeoMapDefaultView("91,0,5") == nil)             // latitude off-globe
+        #expect(DashboardManager.parseGeoMapDefaultView("0,181,5") == nil)           // longitude off-globe
+        #expect(DashboardManager.parseGeoMapDefaultView("42.0,-71.0,1e999") == nil)   // non-finite zoom
+        // A well-formed extreme edge stays valid.
+        #expect(DashboardManager.parseGeoMapDefaultView("-90,180,3")?.longitude == 180)
+    }
+
+    @Test func coordinateValidityMatchesMapKitSafeRange() throws {
+        #expect(DashboardManager.isValidCoordinate(latitude: 42.36, longitude: -71.06))
+        #expect(DashboardManager.isValidCoordinate(latitude: -90, longitude: 180))
+        #expect(!DashboardManager.isValidCoordinate(latitude: .nan, longitude: 0))
+        #expect(!DashboardManager.isValidCoordinate(latitude: 0, longitude: .infinity))
+        #expect(!DashboardManager.isValidCoordinate(latitude: 90.0001, longitude: 0))
+        #expect(!DashboardManager.isValidCoordinate(latitude: 0, longitude: -180.5))
+    }
+
     @Test func clockTimeZoneIdentifierIgnoresLocalSentinels() throws {
         func identifier(_ value: String?) -> String? {
             DashboardManager.clockTimeZoneIdentifier(from: value.map { [ZabbixWidgetField(name: "tzone_timezone", value: $0)] } ?? [])

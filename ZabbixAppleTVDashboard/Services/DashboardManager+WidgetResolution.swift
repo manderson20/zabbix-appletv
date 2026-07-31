@@ -1068,8 +1068,15 @@ extension DashboardManager {
         )
 
         let markers = hosts.compactMap { host -> GeoMapMarker? in
+            // Host inventory lat/long are free-text fields Zabbix does not validate, so the string
+            // can parse to a non-finite or out-of-range Double ("nan", "1e999" → .infinity, a
+            // fat-fingered "915.0"). A non-finite or off-globe coordinate traps MapKit ("Invalid
+            // Region") on every render, so a single bad inventory entry anywhere in the polled set
+            // would crash the whole geomap widget rather than just omitting that one pin. Drop the
+            // marker instead — same treatment as a host with no coordinate at all.
             guard let latitude = host.inventory.locationLatitude.flatMap(Double.init),
-                  let longitude = host.inventory.locationLongitude.flatMap(Double.init) else {
+                  let longitude = host.inventory.locationLongitude.flatMap(Double.init),
+                  Self.isValidCoordinate(latitude: latitude, longitude: longitude) else {
                 return nil
             }
             return GeoMapMarker(
@@ -1531,6 +1538,9 @@ extension DashboardManager {
 
     /// Formats an SLI/SLO percentage with up to four decimals, trailing zeros trimmed ("99.95%").
     static func formatSLIPercent(_ value: Double) -> String {
+        // A non-finite value has no sensible percentage form, and `Int(.infinity)` would trap
+        // before the `String(format:)` fallback could handle it — guard it out up front.
+        guard value.isFinite else { return "\(value)%" }
         let rounded = (value * 10000).rounded() / 10000
         if rounded == rounded.rounded() {
             return "\(Int(rounded))%"
@@ -3283,10 +3293,23 @@ extension DashboardManager {
     static func parseGeoMapDefaultView(_ raw: String?) -> GeoMapView? {
         guard let raw, !raw.isEmpty else { return nil }
         let parts = raw.split(separator: ",").map { Double($0.trimmingCharacters(in: .whitespaces)) }
-        guard parts.count == 3, let latitude = parts[0], let longitude = parts[1], let zoom = parts[2] else {
+        guard parts.count == 3, let latitude = parts[0], let longitude = parts[1], let zoom = parts[2],
+              // Same MapKit trap as the markers: a non-finite or off-globe home view would crash
+              // the widget on render. Treat a bad configured view as no view — fall back to
+              // auto-fitting the markers, which is what an unset default_view already does.
+              isValidCoordinate(latitude: latitude, longitude: longitude), zoom.isFinite else {
             return nil
         }
         return GeoMapView(latitude: latitude, longitude: longitude, zoom: zoom)
+    }
+
+    /// Whether a latitude/longitude pair is safe to hand to MapKit — finite and within the valid
+    /// geographic range. MapKit traps on non-finite or out-of-range coordinates, so every value
+    /// derived from unvalidated Zabbix data is checked through here before it reaches a map.
+    static func isValidCoordinate(latitude: Double, longitude: Double) -> Bool {
+        latitude.isFinite && longitude.isFinite
+            && (-90...90).contains(latitude)
+            && (-180...180).contains(longitude)
     }
 
     /// The Clock widget's configured display timezone (`tzone_timezone`), or nil to use the device's
